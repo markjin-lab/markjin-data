@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 校验 raw/ 存档：1) 每天 MANIFEST.sha256 与文件一致；2) 自基线提交起，已提交 raw 文件未被修改/删除（MANIFEST 只能追加行）。
-# 用法：scripts/verify-raw.sh [BASE_COMMIT]   默认基线 = 引入本脚本的提交
+# 用法：scripts/verify-raw.sh [BASE_COMMIT]   基线优先级：参数 > 环境变量 VERIFY_RAW_BASE > origin/main；
+#       origin/main 不可用或等于 HEAD 时回退到 HEAD^（无父提交则为 HEAD）。CI 传 PR base sha / push before sha，pre-push 传远端 sha。
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 fail=0
@@ -33,8 +34,15 @@ for m in raw/*/MANIFEST.sha256; do
     grep -qF "  ./$f" "$m" || grep -qF "  $f" "$m" || { echo "FAIL 未登记: $d/$f"; fail=1; }
   done < <(cd "$d" && find . -type f ! -name MANIFEST.sha256 | sed 's|^\./||' | sort)
 done
-base=${1:-$(git log --diff-filter=A --format=%H -- scripts/verify-raw.sh | tail -1)}
-[ -n "$base" ] || base=HEAD
+base=${1:-${VERIFY_RAW_BASE:-}}
+case "$base" in 0000000000000000000000000000000000000000) base= ;; esac   # 新分支 push 的 before sha
+if [ -z "$base" ]; then
+  om=$(git rev-parse -q --verify "origin/main^{commit}" 2>/dev/null || true)
+  if [ -n "$om" ] && [ "$om" != "$(git rev-parse HEAD)" ]; then base=$om
+  else base=$(git rev-parse -q --verify "HEAD^{commit}^" 2>/dev/null || git rev-parse HEAD); fi
+fi
+git rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "FAIL 基线提交不可用: $base"; echo "verify-raw: 失败"; exit 1; }
+base=$(git rev-parse "$base^{commit}")
 while IFS=$'\t' read -r st path rest; do
   [ -n "${st:-}" ] || continue
   case "$st" in
@@ -50,6 +58,7 @@ while IFS=$'\t' read -r st path rest; do
            echo "FAIL MANIFEST 删改了旧行: $path"; fail=1; fi
        else echo "FAIL 已提交 raw 文件被修改: $path"; fail=1; fi ;;
     D) if [[ "$path" == */RETRACTIONS.md ]]; then echo "FAIL RETRACTIONS.md 被删除: $path"; fail=1
+       elif [[ "$path" == */MANIFEST.sha256 ]]; then echo "FAIL MANIFEST 被删除（基线行必须保留）: $path"; fail=1
        elif is_retracted "$path" "$(git show "$base:$path" | sha256sum | cut -d' ' -f1)"; then
          echo "RETRACTED $path（见 RETRACTIONS.md）"
        else echo "FAIL 已提交 raw 文件被删除/改名($st): $path"; fail=1; fi ;;

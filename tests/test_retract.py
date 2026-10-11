@@ -88,7 +88,69 @@ class VerifyRawRetractions(Base):
         r = self.verify(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
+    def test_delete_file_and_manifest_line_fails(self):
+        (self.d / "src/gone.txt").unlink()
+        (self.d / "MANIFEST.sha256").write_text(f"{sha(self.keep)}  ./src/keep.txt\n")
+        self.commit("rm both")
+        r = self.verify(); self.assertEqual(r.returncode, 1)
+        self.assertIn("MANIFEST 删改了旧行", r.stdout); self.assertIn("被删除", r.stdout)
+
+    def test_rewrite_reason_then_append_manifest_fails(self):
+        self.retract(sha(self.gone)); self.base = self.head()
+        f = self.d / "RETRACTIONS.md"
+        f.write_bytes(f.read_bytes().replace(b"| test |", b"| edited |"))
+        with open(self.d / "MANIFEST.sha256", "a") as m:
+            m.write(f"{sha(f.read_bytes())}  ./RETRACTIONS.md\n")
+        self.commit("rewrite")
+        r = self.verify(); self.assertEqual(r.returncode, 1); self.assertIn("非追加式修改", r.stdout)
+
+    def test_manifest_deleted_fails(self):
+        (self.d / "MANIFEST.sha256").unlink(); self.commit("rm manifest")
+        r = self.verify(); self.assertEqual(r.returncode, 1); self.assertIn("MANIFEST 被删除", r.stdout)
+
+    def run_default(self, env_base=None):
+        env = dict(os.environ); env.pop("VERIFY_RAW_BASE", None)
+        if env_base is not None:
+            env["VERIFY_RAW_BASE"] = env_base
+        return subprocess.run(["bash", "scripts/verify-raw.sh"], cwd=self.repo, capture_output=True, text=True, env=env)
+
+    def test_default_base_parent_catches_deletion(self):
+        # 无 origin/main → 回退 HEAD^：最近一次提交里的删除必须被发现
+        (self.d / "src/gone.txt").unlink(); self.commit("rm")
+        r = self.run_default(); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("被删除", r.stdout)
+
+    def test_default_base_origin_main(self):
+        subprocess.run(["git", "update-ref", "refs/remotes/origin/main", self.base], cwd=self.repo, check=True)
+        (self.d / "src/gone.txt").unlink(); self.commit("rm")
+        (self.repo / "other.txt").write_text("x\n"); self.commit("later")   # HEAD^ 已含删除，只有 origin/main 能发现
+        r = self.run_default(); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("被删除", r.stdout)
+
+    def test_env_base_override(self):
+        (self.d / "src/gone.txt").unlink(); self.commit("rm")
+        r = self.run_default(env_base=self.head()); self.assertNotIn("被删除", r.stdout)   # 基线=HEAD：无历史差异
+        r = self.run_default(env_base=self.base); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("被删除", r.stdout)
+
+    def test_bad_base_fails(self):
+        r = self.run_default(env_base="deadbeef" * 5); self.assertEqual(r.returncode, 1)
+
+
 class PublicLocalPath(Base):
+    def add_raw(self, body):
+        (self.repo / "raw").mkdir(exist_ok=True); (self.repo / "raw/a.json").write_text(body)
+        self.commit("add")
+
+    def test_url_path_not_flagged(self):
+        self.add_raw('{"url": "https://sam.gov/workspace/contract/1", "u2": "sam.gov/workspace/x", "u3": "https://x/home/y"}\n')
+        self.expect(self.public(), True)
+
+    def test_home_path_flagged(self):
+        self.add_raw("stored at '/home/box/x'\n")
+        self.expect(self.public(), False, "E-PUBLIC-LOCAL-PATH")
+
+    def test_quoted_workspace_path_flagged(self):
+        self.add_raw('{"p": "/workspace/a"}\n')
+        self.expect(self.public(), False, "E-PUBLIC-LOCAL-PATH")
+
     def test_new_raw_file_with_local_path_rejected(self):
         (self.repo / "raw").mkdir(); (self.repo / "raw/a.json").write_text(f'{{"stored": "{LOCAL}x"}}\n')
         self.commit("add")
