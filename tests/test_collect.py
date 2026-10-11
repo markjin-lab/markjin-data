@@ -98,8 +98,8 @@ class Paths(unittest.TestCase):
 
 class Redact(unittest.TestCase):
     def test_public_url_strips_secrets_and_tracking(self):
-        u = collect.public_url("https://user:pw@Example.org/a?api_key=SEKRIT&x=1&utm_source=t&token=T&s=20#f")
-        self.assertEqual(u, "https://example.org/a?x=1")
+        u = collect.public_url("https://user:pw@Example.org/a?api_key=SEKRIT&page=1&utm_source=t&token=T&s=20#f")
+        self.assertEqual(u, "https://example.org/a?page=1")
         self.assertNotIn("SEKRIT", collect.public_url("https://e.org/?apiKey=SEKRIT"))
         self.assertNotIn("SEKRIT", collect.public_url("https://e.org/?X-Amz-Signature=SEKRIT"))
 
@@ -310,6 +310,112 @@ class CaptureT(unittest.TestCase):
         finally:
             if env is not None:
                 os.environ["MARKJIN_PRIVATE_DIR"] = env
+
+
+class R2Fixes(unittest.TestCase):
+    """PR #3 审查 r2 REJECTED 修复的针对性测试。"""
+
+    def test_robots_redirect_to_tco_refused(self):
+        f, _ = mk({"https://a.org/robots.txt": Resp(302, headers={"Location": "https://t.co/r"}),
+                   "https://t.co/r": Resp(200, b""), "https://a.org/x": Resp(200, b"body")})
+        r = f.get("https://a.org/x")
+        self.assertEqual(r.error, "robots_disallow")
+        urls = [u for u, _ in f.opener.calls]
+        self.assertNotIn("https://t.co/r", urls)
+        self.assertNotIn("https://a.org/x", urls)
+
+    def test_robots_cross_host_redirect_is_disallow(self):
+        f, _ = mk({"https://a.org/robots.txt": Resp(301, headers={"Location": "https://cdn.b.org/robots.txt"}),
+                   "https://cdn.b.org/robots.txt": Resp(200, b"User-agent: *\nAllow: /\n"),
+                   "https://a.org/x": Resp(200, b"body")})
+        self.assertEqual(f.get("https://a.org/x").error, "robots_disallow")
+        self.assertNotIn("https://cdn.b.org/robots.txt", [u for u, _ in f.opener.calls])
+
+    def test_robots_redirect_bad_scheme_and_disabled_host(self):
+        f, _ = mk({"https://a.org/robots.txt": Resp(302, headers={"Location": "ftp://a.org/robots.txt"}),
+                   "https://a.org/x": Resp(200, b"body")})
+        self.assertEqual(f.get("https://a.org/x").error, "robots_disallow")
+        st = collect.HostState(None)
+        st.disable("a.org", None, "manual")
+        f, _ = mk({"http://a.org/robots.txt": Resp(301, headers={"Location": "https://a.org/robots.txt"})}, state=st)
+        f.robots("http://a.org/x")                       # 同主机跳转，但目标主机已停用
+        self.assertEqual([u for u, _ in f.opener.calls], ["http://a.org/robots.txt"])
+
+    def test_robots_same_host_redirect_ok(self):
+        f, _ = mk({"http://a.org/robots.txt": Resp(301, headers={"Location": "https://a.org/robots.txt"}),
+                   "https://a.org/robots.txt": Resp(200, b"User-agent: *\nDisallow: /p\n")})
+        rp = f.robots("http://a.org/x")
+        self.assertTrue(rp.can_fetch("markjin-collector", "http://a.org/x"))
+        self.assertFalse(rp.can_fetch("markjin-collector", "http://a.org/p"))
+
+    def _robots_disables(self, resp):
+        p = Path(tempfile.mkdtemp()) / "state.json"
+        f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/x": Resp(200, b"body")},
+                  state=collect.HostState(p))
+        r = f.get("https://a.org/x", sid="s1")
+        self.assertEqual(r.error, "disabled")
+        self.assertNotIn("https://a.org/x", [u for u, _ in f.opener.calls])
+        d = collect.HostState(p).data
+        self.assertIn("a.org", d["hosts"])
+        self.assertIn("s1", d["sources"])
+
+    def test_robots_403_disables(self):
+        self._robots_disables(Resp(403))
+
+    def test_robots_200_challenge_disables(self):
+        self._robots_disables(Resp(200, b"<html><title>Just a moment...</title></html>"))
+
+    def test_robots_503_challenge_disables(self):
+        self._robots_disables(Resp(503, b"<script src='/cdn-cgi/challenge-platform/x'></script>"))
+
+    def test_hops_redacted_after_302_no_api_key_anywhere(self):
+        f, _ = mk({"https://api.f.org/obs?series_id=X&api_key=SEKRITKEY":
+                   Resp(302, headers={"Location": "https://api.f.org/v2/obs?series_id=X&api_key=SEKRITKEY"}),
+                   "https://api.f.org/v2/obs?series_id=X&api_key=SEKRITKEY": Resp(200, b"{}")})
+        r = f.get("https://api.f.org/obs?series_id=X&api_key=SEKRITKEY")
+        self.assertTrue(r.ok)
+        self.assertNotIn("SEKRITKEY", json.dumps(r.hops))
+        self.assertEqual(r.hops[0]["from"], "https://api.f.org/obs?series_id=X")
+
+    def test_capture_after_302_no_api_key_in_any_log(self):
+        t = CaptureT("test_auth_key_never_logged"); t.setUp()
+        s = dict(CaptureT.S, id="fred", method="api", url="https://api.f.org/obs?series_id=X",
+                 auth_env="TEST_KEY_ENV", auth_param="api_key")
+        os.environ["TEST_KEY_ENV"] = "SEKRITKEY"
+        import io, contextlib
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                rc = t.run_cs([s], {
+                    "https://api.f.org/obs?series_id=X&api_key=SEKRITKEY":
+                        Resp(302, headers={"Location": "/v2/obs?series_id=X&api_key=SEKRITKEY"}),
+                    "https://api.f.org/v2/obs?series_id=X&api_key=SEKRITKEY": Resp(200, b'{"o": []}')})
+        finally:
+            del os.environ["TEST_KEY_ENV"]
+        self.assertEqual(rc, 0)
+        self.assertNotIn("SEKRITKEY", err.getvalue())
+        logs = [p for root in (t.out, t.priv) for p in root.rglob("*") if p.is_file()
+                and p.suffix in (".json", ".jsonl", ".sha256", ".tsv")]
+        self.assertTrue(any("fetch-log" in p.name for p in logs))
+        for p in logs:
+            self.assertNotIn("SEKRITKEY", p.read_text(encoding="utf-8"), p.name)
+        fl = next(p for p in logs if "fetch-log" in p.name).read_text(encoding="utf-8")
+        self.assertIn('"hops": [{"from": "https://api.f.org/obs?series_id=X"', fl)
+
+    def test_public_url_allowlist(self):
+        u = collect.public_url("https://s3.a.org/o?AWSAccessKeyId=AKIA123&Expires=1&Signature=S&series_id=X"
+                               "&X-Goog-Credential=G&whatever=W&page=2")
+        self.assertEqual(u, "https://s3.a.org/o?series_id=X&page=2")
+
+    def test_interval_floor(self):
+        f, _ = mk({}, interval=0)
+        self.assertEqual(f.interval, collect.HOST_INTERVAL)
+        d = Path(tempfile.mkdtemp())
+        (d / "s.yaml").write_text("sources: []\n", encoding="utf-8")
+        (d / "pub").mkdir()
+        self.assertEqual(CS.main(["--sources", str(d / "s.yaml"), "--date", "2026-10-12", "--round", "1",
+                                  "--out-root", str(d / "pub"), "--private-root", str(d / "priv"),
+                                  "--interval", "0.5"]), 2)
 
 
 if __name__ == "__main__":
