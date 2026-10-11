@@ -1,0 +1,16 @@
+#!/bin/sh
+# 本机 pre-push hook：推送前执行内部主题检查 + 公开仓库守卫，两者都按待推送的 local_sha 检查 git 对象（不看工作树）。
+# 安装：git config core.hooksPath scripts/hooks
+# fail-closed：stdin 为空或格式异常、本机读不到内部清单、git 出错、解码失败或命中任何一项 → 拒绝推送。CI 不运行本 hook。
+set -u
+# 整体验收 r7 BLOCKER 3：把 Git 传入的 $1（远端名）与 $2（本次实际推送 URL）交给守卫；只有推往 markjin-lab/markjin-data
+# 且远端 main 等于基线时才只扫新增提交，其他情况一律全量扫描。
+remote=${1-}
+url=${2-}
+root=$(git rev-parse --show-toplevel) || exit 1
+input=$(cat) || exit 1
+if [ -z "$input" ]; then
+  echo "pre-push: stdin 为空（E-CHECK-STDIN），推送已拒绝" >&2; exit 1
+fi
+printf '%s\n' "$input" | python3 "$root/scripts/check-internal.py" --pre-push --remote "$remote" --remote-url "$url" || { echo "pre-push: 内部主题检查未通过，推送已拒绝" >&2; exit 1; }
+printf '%s\n' "$input" | python3 "$root/scripts/check-public.py" --pre-push --remote "$remote" --remote-url "$url" || { echo "pre-push: 公开仓库守卫未通过，推送已拒绝" >&2; exit 1; }

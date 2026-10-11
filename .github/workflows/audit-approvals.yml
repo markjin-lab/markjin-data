@@ -1,0 +1,25 @@
+name: audit-approvals
+# approvals/ 只追加审计（协调决定 2026-10-10：接进 CI，不接 pre-push）。只用 Python 标准库，不调用外部服务。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: audit approvals/ on HEAD
+        run: python3 scripts/audit-approvals.py --repo . --ref HEAD
+      - name: audit approvals/ on main
+        run: |
+          if git rev-parse --verify --quiet origin/main >/dev/null; then
+            python3 scripts/audit-approvals.py --repo . --ref origin/main
+          fi
