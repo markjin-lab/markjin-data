@@ -14,6 +14,7 @@
 3) 每个推送目标提交的树中必须有 review/ledger/；每个被扫描提交中，review/ledger/ 下只允许 .gitkeep 与 YYYY-MM-DD.jsonl，
    台账非空、无重复键，每行通过字段白名单、真实日历日期、与文件名日期一致、card_id 有对应公开稿件锚点的校验。
 解码失败（E-CHECK-DECODE）、stdin 为空或格式异常（E-CHECK-STDIN）、git 失败（E-CHECK-GIT）一律拒绝。
+4) 新增 raw/ 文件不得含 '/workspace/' 本机绝对路径（E-PUBLIC-LOCAL-PATH；本规则引入前已提交的文件豁免）。
 内部主题词检查不在这里（见 check-internal.py，仅本机 pre-push）。输出已脱敏：只给提交短 SHA、文件序号、行号。"""
 import argparse, sys
 from pathlib import Path
@@ -25,6 +26,30 @@ from markjin import gitscan  # noqa: E402
 def internal_path(p):
     parts = p.split("/")
     return any(x.startswith("topics-private") for x in parts) or "markjin-internal" in parts
+
+
+# 2026-10-12 合规撤回：新增 raw/ 文件不得含本机绝对路径（'/workspace/'）。
+# 豁免：本规则引入前已提交的文件（基线 main@224fd88 树中已有的 raw 路径），以及该提交父提交中已存在的同一路径。
+LOCAL_PATH_MARK = "/workspace/"
+LOCAL_PATH_BASELINE = "224fd88fd0321652a184679664fb5bb5e6a1c730"
+
+
+def _tree_paths(rev):
+    import subprocess
+    r = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", "--full-tree", rev, "--", "raw"],
+                       capture_output=True)
+    if r.returncode != 0:
+        return set()                     # 基线/父提交不存在（如测试仓库、根提交）→ 无豁免
+    return {x.decode("utf-8", "surrogateescape") for x in r.stdout.split(b"\0") if x}
+
+
+def local_path_exempt_paths(commit):
+    import subprocess
+    paths = set(_tree_paths(LOCAL_PATH_BASELINE + "^{commit}"))
+    r = subprocess.run(["git", "rev-list", "--parents", "-n", "1", commit], capture_output=True, text=True)
+    for parent in (r.stdout.split()[1:] if r.returncode == 0 else []):
+        paths |= _tree_paths(parent)
+    return paths
 
 
 def main(argv=None, stdin=None):
@@ -51,7 +76,14 @@ def main(argv=None, stdin=None):
             items = list(gitscan.iter_commit(c, blob_cache=cache))
             anchors = unique_anchors([text for kind, idx, path, text in items
                                       if kind == "blob" and path and text is not None and is_public_draft(path)])
+            exempt = None
             for kind, idx, path, text in items:
+                if (kind == "blob" and path and path.startswith("raw/") and text is not None
+                        and LOCAL_PATH_MARK in text):
+                    if exempt is None:
+                        exempt = local_path_exempt_paths(c)
+                    if path not in exempt:
+                        print(f"FAIL E-PUBLIC-LOCAL-PATH 新增 raw 文件含本机绝对路径: {gitscan.loc(c, kind, idx, 0)}"); fail = 1
                 where = lambda ln: gitscan.loc(c, kind, idx, ln)  # noqa: E731
                 if text is None:
                     print(f"FAIL E-CHECK-DECODE 无法解码: {where(0)}"); fail = 1
