@@ -201,8 +201,21 @@
 - **整体验收 r13 修复（审查 bot 定）**：FRED 只在被引用的那一期观测里核数字（断言写观测日期则按 date 选；写 vintage 则再按 realtime_start/realtime_end 限定；多条观测且没写日期 → 不算支持；日期与 vintage 本身不当作要核对的数字）；带来源段落、非结构化行核对时带上断言原文（去掉 raw 路径与 URL），断言里有数字却不被引用条目支持 → R-SUPPORT-UNVERIFIED。
 - **整体验收 r15 修复（审查 bot 定的技术方案）**：(1) front matter 统一用 yaml.safe_load 解析一次，更正稿元数据（corrects / corrected_at）与日期字段都按解析后的值判断，带引号与不带引号等价；(2) tongyi 长文豁免：front matter `type: tongyi` 且路径为 `tongyi/<name>.md`（站点 `content/posts/tongyi/<name>.md`）的稿件及其更正稿，不报日报专用的 E-INFER-UNCLEAR、E-REPLAY-001；硬拦（买卖建议、仓位、宏观观点、内部词表、X-only 等）照常；type 与路径只有一方是 tongyi → E-TONGYI-MISMATCH（fail-closed，照常跑日报检查）。理由：长文由 Codex 加王总 v2 direct 逐篇把关。`check_text` 新增 `rel` 参数，CLI 按稿件相对 --repo 的路径传入。
 
-## 采集辅助（2026-10-12）
+## 采集规则（PR #3 审查 REJECTED 修复，2026-10-12）
 
-- `x_capture.py`：X 翻页计划 / 结果入账 / 预算守卫（next_token；A 批次 ≤4 页、主题 ≤2 页；≤400 次/日、≤25 次/分）。详见 `improve/x-queries.md`。
-- `fetch_primary.py`：按 leads.json 的 `unwound_url`/`expanded_url` 抓一手来源（遵守 robots.txt，每主机 ≥2 秒，不解析 t.co）。arXiv abs/pdf、NASA、美国联邦 .gov/.mil = full-text-ok（字节与 .txt 公开）；其他仅存 url+sha256+fetched_at+license，字节进 private。
-- `scrapers/`：`method: scraper` 的列表页/官方 sitemap 解析器（无 JS、无 cookie、遇验证页即记失败，不绕过）。
+- 公共层 `markjin/collect.py`，`capture_sources.py` 只经它访问网络。
+- **审批门禁**：只采集 `enabled: true` + `approval_status: approved` + 非空 `approval_basis` 的源；其他一律拒绝（`--only` 点名未审批源 → 退出码 1）。`approval_basis` 写法见 `improve/sources.yaml` 文件头。
+- **许可**：所有源默认 `url+hash-only`。不再有整源或整域名（含 .gov/.mil）全文许可；整份 RSS/API 响应永不进公开目录。全文只能逐条目公开：须有针对该 URL 的许可证据（`url, license, license_url, evidence_url, attribution, verified_by, verified_at`，许可限 CC-BY-4.0 / CC0-1.0 / US-Gov-PD 且后者须 `third_party_excluded: true`），由 `collect.public_fulltext_ok` 在写公开目录前逐条校验，否则默认私有。
+- **原件与只追加**：原字节不解压、不脱敏，按 sha256 独占创建写入私有 `raw/DATE/[round2/]<id>/<sha256>.<ext>`，追加私有 `MANIFEST.sha256`；解压等派生物写 `derived/` 并登记 `DERIVED.sha256` / `DERIVED-FROM.tsv`。公开目录每次运行只独占创建 `<id>/index-<run>.json`、`query-log-<run>.jsonl`、`failures-<run>.json`，追加公开 `MANIFEST.sha256`，任何已存在文件都不改写（字节不同 → `ArchiveError`）。
+- **访问礼仪**：UA `markjin-collector/0.1 (+https://markjin-lab.github.io; markjin@mail.grokbot.com)`；每主机限速（默认 2 秒，robots `Crawl-delay`/`Request-rate` 更严则从严），robots.txt 请求本身也限速；RSS/API 也查 robots；不自动跟随重定向，每一跳重新查拒绝主机（t.co）、停用状态、robots 与限速。
+- **拒绝与重试**：403 或验证页 → 持久停用主机与源（私有 `state/collector-hosts.json`，人工复核后删条目恢复）；只有 429/5xx/网络错误重试，按 `Retry-After`（>120 秒则放弃本次）或指数退避（2、4、8 秒），最多 3 次；超过 25 MiB 明确失败，不存半截。
+- **路径与日志**：私有根目录必须 `--private-root` 或 `MARKJIN_PRIVATE_DIR` 显式给出，且与公开根目录互不包含；代码中无本机默认路径。公开记录只写 `stored: private|internal`、错误类别和脱敏 URL（去 userinfo、跟踪参数、凭证型参数）；需要免费密钥的 API 用 `auth_env`/`auth_param`，密钥只在请求时拼接，不进任何记录。
+- **严格 JSON**：`capture_sources.parse_ok`、`collect.HostState`、`collect.load_license_evidence` 用 `markjin/strictjson.py`（重复键 → 无法解析）。
+- 测试：`tests/test_collect.py`（审批门禁、路径、URL 脱敏、逐条许可、只追加档案、robots/重定向/t.co、403 与验证页停用、退避、限速、超限、重复键）。
+## 采集辅助（2026-10-12；PR #6 审查 REJECTED 修复）
+
+- `x_capture.py`：X 计划 / 额度预留 / 入账 / 补全 / 线索导出。**每次实际 X 调用（首页、翻页、`get_posts_by_ids` 补全）前必须 `reserve`**，入账只认已预留且未入账的 call_id；≤400 次 / UTC 日（00:00Z 重置）、≤25 次 / 滚动 60 秒。`plan --date --round` 必填并自动计算窗口（round1 = D−3 21:00Z，round2 = D−1 21:00Z）；查询完整参数写入状态，翻页从状态恢复。页数上限按 x-queries.md：账号批次 4 页、主题 2 页。`leads` 输出每条固定 `label: 线索`、`source_role: lead`。
+- `fetch_primary.py`：按线索 `unwound_url`/`expanded_url` 抓一手 URL，全部经 `markjin/collect.py`（逐跳 robots/停用/限速、不自动重定向、拒绝 t.co、403/验证页持久停用、超限明确失败）。**域名不构成许可**：原字节与提取文本默认只进私有档案；仅当 `--license-evidence` 中针对该 URL（及最终 URL）的逐条目证据通过 `public_fulltext_ok`，原字节与带署名头的 `.txt` 才进公开目录，证据随条目写入公开 index。线索保持 `label: 线索`，抓取结果只写 `fetch_status`，`primary_verification` 恒为 `unverified`——HTTP 200 不等于核验。公开输出按运行戳独占创建并登记 MANIFEST；URL 先脱敏。
+- `scrapers/`：`method: scraper` 的列表页/官方 sitemap 解析器。网络请求全部由 `capture_sources.run_scraper` 提供的 fetch 完成：每个请求（含子 sitemap）逐个查 robots/停用/限速，原始响应先按字节私有存档并登记 MANIFEST；条目 JSON 只作派生物（`derived/…items-<run>.json`）。无 JS、无 cookie、遇验证页即停用该主机，不绕过。
+- 严格 JSON 入口（新增）：`fetch_primary` 读取 leads、`x_capture` 读取状态/查询/工具结果，均用 `markjin/strictjson.py`。
+- 测试：`tests/test_primary_x.py`（scraper 原件存档与子 sitemap robots、许可分流与逐条证据、重定向后许可、t.co/403 停用、超限、不可改写、线索身份、X 预留/翻页/页数/每分钟与 UTC 日预算、重复键）。

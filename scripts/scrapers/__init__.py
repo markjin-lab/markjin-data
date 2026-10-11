@@ -1,10 +1,12 @@
 """Per-site list-page scrapers for markjin (method: scraper in sources.yaml).
 
 Contract: scrape(fetch, url, date) -> list of {"title", "url", "date"} (newest first, <=50).
-`fetch(url)` is capture_sources.fetch bound with timeout -> (status, ctype, body, err).
-Rules: plain HTTP GET with a declared UA, robots.txt checked by the caller, no cookies,
-no JS execution, no challenge/captcha handling. A challenge/interstitial page is a failure
-(raise ScrapeError), never something to work around.
+`fetch(url)` is provided by capture_sources.run_scraper -> (status, ctype, body, err). Every call
+(list page, each sub-sitemap) goes through markjin.collect.Fetcher: honest UA, robots.txt and
+host-disable state re-checked on every request and redirect hop, per-host rate limit, t.co refused,
+and the raw response bytes are archived privately (MANIFEST) before the scraper sees them.
+Scrapers never open network connections themselves. No cookies, no JS, no challenge handling: a challenge
+page is detected by the Fetcher (host disabled persistently) and surfaces here as err -> ScrapeError.
 """
 import importlib, re
 
@@ -17,7 +19,7 @@ CHALLENGE = re.compile(rb"Just a moment\.\.\.|challenges\.cloudflare\.com|Access
 
 
 def check_body(st, body, err):
-    if st != 200:
+    if err or st != 200:
         raise ScrapeError(err or f"HTTP {st}")
     if CHALLENGE.search(body[:20000]):
         raise ScrapeError("bot-challenge/interstitial page (not bypassed)")

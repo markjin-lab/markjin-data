@@ -1,5 +1,9 @@
 # markjin P0 sources (from source-research/report.md, checked 2026-10-12 00:08 SGT)
-# license: full-text-ok | url+hash-only | market-data-restricted | public data
+# license: url+hash-only (default for every source) | market-data-restricted. No whole-source / whole-domain
+#   full-text permission: full text may go public only per item with verified license evidence (scripts/markjin/collect.py).
+# approval_status: approved | pending. Capture code refuses any source that is not approved (approval_gate).
+# approval_basis: "王总 2026-10-11 整体确认，报告条目号 三.<核心|文明><小节>.<行>" = source-research/report.md 第三节，
+#   核心六主题 / 文明轨迹领域 的第 <小节> 张表第 <行> 行（从 1 起）。Sources not in the report: pending + disabled.
 sources:
 - id: arxiv-cs-ai
   theme: ai
@@ -9,6 +13,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.1
   license: url+hash-only
   internal_only: false
   notes: metadata ok; per-paper license, default index
@@ -20,6 +26,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license, default index
@@ -31,6 +39,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.2
   license: url+hash-only
   internal_only: false
   notes: no blanket reprint license
@@ -42,6 +52,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.3
   license: url+hash-only
   internal_only: false
   notes: 'report: no confirmed official RSS; candidate URL tested'
@@ -53,10 +65,11 @@ sources:
   check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
   checked_at: '2026-10-12T07:00:00+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.4
   license: url+hash-only
   internal_only: false
-  notes: no official RSS; robots allows all; official sitemap.xml filtered to /news/
-    and /research/
+  notes: no official RSS; robots allows all; official sitemap.xml filtered to /news/ and /research/
   scraper: anthropic_sitemap
 - id: qwen-research
   theme: ai
@@ -66,6 +79,8 @@ sources:
   check_status: 200 but JS-rendered SPA (no links in HTML)
   checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.5
   license: url+hash-only
   internal_only: false
   notes: qwen.ai/research needs JS; see qwen-blog-rss
@@ -75,6 +90,8 @@ sources:
   url: https://qwenlm.github.io/blog/index.xml
   check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.5
   notes: official Qwen blog RSS; WARNING latest item 2025-09-23 (stale, low yield)
   priority: P0
   license: url+hash-only
@@ -88,6 +105,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:33+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.1
   license: url+hash-only
   internal_only: false
   notes: no reliable login-free API
@@ -98,6 +117,8 @@ sources:
   url: https://www.stats.gov.cn/sj/zxfb/
   check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.1
   notes: 国家统计局 最新发布 static list page; robots.txt 404 (no restrictions)
   priority: P0
   license: url+hash-only
@@ -108,10 +129,11 @@ sources:
   priority: P0
   method: web
   url: https://www.pbc.gov.cn/diaochatongjisi/116219/index.html
-  check_status: '200 but robots.txt Disallow: / for User-agent * (only Baiduspider
-    allowed)'
+  check_status: '200 but robots.txt Disallow: / for User-agent * (only Baiduspider allowed)'
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.2
   license: url+hash-only
   internal_only: false
   notes: 'abandoned: robots.txt allows only Baiduspider; PBOC data via FRED or official republication'
@@ -122,10 +144,15 @@ sources:
   url: https://api.stlouisfed.org/fred/series/observations?series_id=MYAGM2CNM189N&file_type=json&sort_order=desc&limit=30
   check_status: '200'
   checked_at: '2026-10-12T07:04:05+08:00'
-  enabled: true
-  license: public data
+  enabled: false
+  approval_status: pending
+  license: url+hash-only
   internal_only: false
-  notes: 'FRED public data; series MYAGM2CNM189N (China M2, PBOC-sourced via FRED); fetch needs env FRED_API_KEY; obs end 2019-08 (stale)'
+  notes: 'not in source-research report: pending approval; disabled 2026-10-12: series stale (observations end 2019-08); FRED
+    public data; series MYAGM2CNM189N (China M2, PBOC-sourced via FRED); fetch needs env FRED_API_KEY; obs end 2019-08 (stale)'
+  auth_env: FRED_API_KEY
+  auth_param: api_key
+  license_note: research note said public data; not a permission - per-item license evidence required
 - id: fred-china-interbank
   theme: macro
   priority: P0
@@ -134,9 +161,14 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: true
-  license: public data
+  approval_status: approved
+  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
+  license: url+hash-only
   internal_only: false
-  notes: 'FRED public data; series IR3TIB01CNM156N (China 3M interbank); fetch needs env FRED_API_KEY'
+  notes: FRED public data; series IR3TIB01CNM156N (China 3M interbank); fetch needs env FRED_API_KEY
+  auth_env: FRED_API_KEY
+  auth_param: api_key
+  license_note: research note said public data; not a permission - per-item license evidence required
 - id: fred-china-reserves
   theme: macro
   priority: P0
@@ -145,9 +177,14 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: true
-  license: public data
+  approval_status: approved
+  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
+  license: url+hash-only
   internal_only: false
-  notes: 'FRED public data; series TRESEGCNM052N (China total reserves ex-gold); fetch needs env FRED_API_KEY'
+  notes: FRED public data; series TRESEGCNM052N (China total reserves ex-gold); fetch needs env FRED_API_KEY
+  auth_env: FRED_API_KEY
+  auth_param: api_key
+  license_note: research note said public data; not a permission - per-item license evidence required
 - id: fed-press-monetary
   theme: macro
   priority: P0
@@ -156,6 +193,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:34+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.3
   license: url+hash-only
   internal_only: false
   notes: default index per report
@@ -167,6 +206,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:35+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.3
   license: url+hash-only
   internal_only: false
   notes: default index per report
@@ -178,6 +219,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:35+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.4
   license: market-data-restricted
   internal_only: false
   notes: rate data; public repo index only
@@ -189,6 +232,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:35+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.5
   license: url+hash-only
   internal_only: false
   notes: v1 no key; daily cap 25 req; attribute+revision
@@ -200,6 +245,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:36+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.6
   license: url+hash-only
   internal_only: false
   notes: API needs free key; page only
@@ -211,6 +258,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.7
   license: url+hash-only
   internal_only: false
   notes: default index per report
@@ -222,6 +271,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license
@@ -233,6 +284,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license
@@ -244,6 +297,8 @@ sources:
   check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
   checked_at: '2026-10-12T07:00:00+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.2
   license: url+hash-only
   internal_only: false
   notes: WordPress RSS (home.cern/feed/); REST API requires auth -> not used
@@ -252,13 +307,15 @@ sources:
   priority: P0
   method: api
   url: https://gwosc.org/api/v2/events?format=json
-  check_status: TLS unexpected EOF from box egress proxy (198.18.0.1); endpoint itself
-    OK via external fetch
+  check_status: TLS unexpected EOF from box egress network; endpoint itself OK via external fetch
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.3
+  license: url+hash-only
   internal_only: false
-  notes: 'disabled: box outbound proxy 198.18.0.1 resets TLS; site OK externally; no network change for now'
+  notes: 'disabled: box egress network resets TLS; site OK externally; no network change for now'
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: scoap3-records
   theme: physics
   priority: P0
@@ -267,6 +324,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:50+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.4
   license: url+hash-only
   internal_only: false
   notes: articles usually CC BY / metadata CC0; per-record check before archiving
@@ -278,6 +337,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:08+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.1
   license: market-data-restricted
   internal_only: false
   notes: no redistribution right
@@ -289,6 +350,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:10+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.2
   license: market-data-restricted
   internal_only: false
   notes: no redistribution right
@@ -297,10 +360,11 @@ sources:
   priority: P0
   method: web
   url: https://www.bse.cn/static/statisticdata.html
-  check_status: 302 self-redirect sets C3VK cookie (300s); with cookie jar -> 200
-    HTML shell, data loaded by JS (marketData/daily.min.js)
+  check_status: 302 self-redirect sets C3VK cookie (300s); with cookie jar -> 200 HTML shell, data loaded by JS (marketData/daily.min.js)
   checked_at: '2026-10-12T07:00:00+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.3
   license: market-data-restricted
   internal_only: false
   notes: 'not enabled: data needs JS/XHR; market data restricted anyway'
@@ -312,6 +376,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:16+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.4
   license: url+hash-only
   internal_only: false
   notes: filings PDFs; index
@@ -323,6 +389,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:16+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.5
   license: url+hash-only
   internal_only: false
   notes: 'SEC fair-access: needs declared UA; filer content not PD'
@@ -334,6 +402,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:17+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.1
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -345,9 +415,12 @@ sources:
   check_status: '401'
   checked_at: '2026-10-12T00:08:18+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.2
+  license: url+hash-only
   internal_only: false
   notes: CC BY 4.0 with attribution
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: unsc
   theme: geopolitics
   priority: P0
@@ -356,6 +429,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:18+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.3
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -367,6 +442,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:20+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.4
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -378,6 +455,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:21+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明2.1
   license: url+hash-only
   internal_only: false
   notes: annual
@@ -389,6 +468,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:22+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明2.2
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -400,9 +481,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:23+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明2.3
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: eia-api
   theme: energy
   priority: P0
@@ -411,9 +495,12 @@ sources:
   check_status: '403'
   checked_at: '2026-10-12T00:08:23+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.1
+  license: url+hash-only
   internal_only: false
   notes: requires free API key (none configured)
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: iaea-pris
   theme: energy
   priority: P0
@@ -422,6 +509,8 @@ sources:
   check_status: 302 -> pris-stats.iaea.org (stats web app)
   checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.2
   license: url+hash-only
   internal_only: false
   notes: no feed; index only manually
@@ -430,8 +519,9 @@ sources:
   method: rss
   url: https://www.iaea.org/feeds/topnews
   check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
-  enabled: true
-  notes: official IAEA top-news RSS
+  enabled: false
+  approval_status: pending
+  notes: 'not in source-research report: pending approval; official IAEA top-news RSS'
   priority: P0
   license: url+hash-only
   internal_only: false
@@ -444,6 +534,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:26+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.3
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -455,9 +547,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:28+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.4
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: nea-cn
   theme: energy
   priority: P0
@@ -466,6 +561,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:29+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.6
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -477,10 +574,11 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:29+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.1
   license: url+hash-only
   internal_only: false
-  notes: per-paper license; default index; URL uses {date-N} placeholders expanded
-    by capture_sources.py
+  notes: per-paper license; default index; URL uses {date-N} placeholders expanded by capture_sources.py
 - id: ctgov-recent
   theme: bio
   priority: P0
@@ -489,6 +587,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:29+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.2
   license: url+hash-only
   internal_only: false
   notes: keep NCT ids
@@ -500,6 +600,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.3
   license: url+hash-only
   internal_only: false
   notes: PMID index
@@ -511,9 +613,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:30+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.4
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: bis-fr-notices
   theme: semis
   priority: P0
@@ -522,9 +627,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:30+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.1
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: tsmc-quarterly
   theme: semis
   priority: P0
@@ -533,9 +641,11 @@ sources:
   check_status: Cloudflare challenge page on investor.tsmc.com (not bypassed)
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.2
   license: url+hash-only
   internal_only: false
-  notes: 'blocked by bot challenge (no bypass); use sec-edgar-tsmc for filings'
+  notes: blocked by bot challenge (no bypass); use sec-edgar-tsmc for filings
 - id: tsmc-pr
   theme: semis
   method: scraper
@@ -543,7 +653,8 @@ sources:
   url: https://pr.tsmc.com/english/sitemap.xml
   check_status: 403 Cloudflare challenge for urllib client (curl got 200 intermittently)
   enabled: false
-  notes: 'official news sitemap; Cloudflare challenge (no bypass); no official PR RSS without challenge; use sec-edgar-tsmc'
+  approval_status: pending
+  notes: official news sitemap; Cloudflare challenge (no bypass); no official PR RSS without challenge; use sec-edgar-tsmc
   priority: P0
   license: url+hash-only
   internal_only: false
@@ -556,9 +667,11 @@ sources:
   check_status: 403 Akamai Access Denied (investor.asml.com, incl. robots.txt)
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.3
   license: url+hash-only
   internal_only: false
-  notes: 'blocked at CDN (no bypass); no official press RSS without challenge; use sec-edgar-asml'
+  notes: blocked at CDN (no bypass); no official press RSS without challenge; use sec-edgar-asml
 - id: sec-edgar-tsmc
   theme: semis
   priority: P0
@@ -567,6 +680,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
   license: url+hash-only
   internal_only: false
   notes: 'SEC fair-access: needs declared UA with contact; TSMC CIK 0001046179; filer content not PD; atom also OK'
@@ -578,6 +693,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T07:04:05+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
   license: url+hash-only
   internal_only: false
   notes: 'SEC fair-access: needs declared UA with contact; ASML CIK 0000937966; filer content not PD; atom also OK'
@@ -589,6 +706,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:31+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.5
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -600,6 +719,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:32+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明6.1
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -611,6 +732,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:33+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明6.2
   license: url+hash-only
   internal_only: false
   notes: per-dataset license
@@ -622,6 +745,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:34+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明6.3
   license: url+hash-only
   internal_only: false
   notes: CC BY generally, includes external sources -> index
@@ -633,9 +758,12 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:34+08:00'
   enabled: true
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明7.1
+  license: url+hash-only
   internal_only: false
   notes: federal original; exclude images/3rd-party
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: esa-top
   theme: space
   priority: P0
@@ -644,6 +772,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:34+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明7.2
   license: url+hash-only
   internal_only: false
   notes: index; per-item license
@@ -655,6 +785,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:36+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明7.3
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -666,6 +798,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明8.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license
@@ -677,9 +811,12 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明8.2
+  license: url+hash-only
   internal_only: false
   notes: CC BY 4.0; keep attribution+DOI
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: ctgov-bci
   theme: bci
   priority: P0
@@ -688,6 +825,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.2
   license: url+hash-only
   internal_only: false
   notes: keep NCT ids
@@ -699,9 +838,12 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.3
+  license: url+hash-only
   internal_only: false
   notes: openFDA data usable; applicant material index only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: frontiers-bci
   theme: bci
   priority: P0
@@ -710,9 +852,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:40+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.4
+  license: url+hash-only
   internal_only: false
   notes: CC BY articles; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: nmpa
   theme: bci
   priority: P0
@@ -721,6 +866,8 @@ sources:
   check_status: 412 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:41+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.5
   license: url+hash-only
   internal_only: false
   notes: webpage only
