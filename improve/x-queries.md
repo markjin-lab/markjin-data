@@ -1,8 +1,6 @@
-# X query rule (applies to future days only)
-
-Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. From 2026-10-11 onward, runs follow the spec below (canonical working copy: /workspace/markjin/x-queries.md; v1 kept as x-queries.v1.md); each day's raw/<date>/x-queries.md snapshot should record the actual computed start_time values.
-
 # markjin X query set v2（P0 新源接入；依据：王总 2026-10-11 整体确认 source-research/report.md 第四、五节；2026-10-12 起执行）
+
+适用于今后日期：既往 raw/<date>/x-queries.md 为不可改写存档，不回改。每天 raw/<date>/x-queries.md 快照记录实际计算出的 start_time。v1 保存为 x-queries.v1.md。
 
 来源：source-research/report.md 第四节（123 个已核验账号，x_all.tsv active30d=Y 全部覆盖）+ 第五节分主题查询。旧版保存为 x-queries.v1.md。
 
@@ -20,7 +18,7 @@ Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. Fr
 
 - **每条 X 结果固定写入 `source_role: lead`**（含派生过滤结果、白名单作者、高互动帖）。点赞数、转发数、作者白名单只决定“是否进入线索列表”，不改变线索身份。
 - X 帖子本身不能形成事实断言。只有在独立一手材料（原发布者页面/文件/数据）经核验——来源身份、页面内容与帖子原断言三者一致——之后，才可在稿件里写事实断言，且断言引用一手材料而非帖子。`fetch_primary.py` 抓到 HTTP 200 只记 `fetch_status`，不等于核验（见 `scripts/README.md`）。
-- 两轮窗口是执行参数，不靠人工：`x_capture.py plan --date YYYY-MM-DD --round 1|2` 按下文规则自动计算 `start_time`，缺参数或时间格式不对即报错退出。
+- 两轮窗口是执行参数，不靠人工（脚本随叠加的 PR #6 提供）：`x_capture.py plan --date YYYY-MM-DD --round 1|2` 按下文规则自动计算 `start_time`，缺参数或时间格式不对即报错退出。
 
 ## A. from: 账号批次（7 条）
 
