@@ -84,7 +84,11 @@ def expand_url(url, date):
 
 
 def round_dir(root, date, rnd):
-    d = Path(root) / "raw" / date
+    root = Path(root)
+    # Idempotent: if out-root (or private/internal root) already ends with /raw, don't nest raw/raw.
+    if root.name != "raw":
+        root = root / "raw"
+    d = root / date
     return d / "round2" if rnd == 2 else d
 
 
