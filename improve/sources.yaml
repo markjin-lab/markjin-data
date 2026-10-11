@@ -1,5 +1,5 @@
 # markjin P0 sources (from source-research/report.md, checked 2026-10-12 00:08 SGT)
-# license: full-text-ok | url+hash-only | market-data-restricted
+# license: full-text-ok | url+hash-only | market-data-restricted | public data
 sources:
 - id: arxiv-cs-ai
   theme: ai
@@ -110,12 +110,44 @@ sources:
   url: https://www.pbc.gov.cn/diaochatongjisi/116219/index.html
   check_status: '200 but robots.txt Disallow: / for User-agent * (only Baiduspider
     allowed)'
-  checked_at: '2026-10-12T06:50:00+08:00'
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: 'NOT scraped: robots.txt disallows; use X/second-hand leads only, verify
-    manually'
+  notes: 'abandoned: robots.txt allows only Baiduspider; PBOC data via FRED or official republication'
+- id: fred-china-m2
+  theme: macro
+  priority: P0
+  method: api
+  url: https://api.stlouisfed.org/fred/series/observations?series_id=MYAGM2CNM189N&file_type=json&sort_order=desc&limit=30
+  check_status: '200'
+  checked_at: '2026-10-12T07:04:05+08:00'
+  enabled: true
+  license: public data
+  internal_only: false
+  notes: 'FRED public data; series MYAGM2CNM189N (China M2, PBOC-sourced via FRED); fetch needs env FRED_API_KEY; obs end 2019-08 (stale)'
+- id: fred-china-interbank
+  theme: macro
+  priority: P0
+  method: api
+  url: https://api.stlouisfed.org/fred/series/observations?series_id=IR3TIB01CNM156N&file_type=json&sort_order=desc&limit=30
+  check_status: '200'
+  checked_at: '2026-10-12T07:04:05+08:00'
+  enabled: true
+  license: public data
+  internal_only: false
+  notes: 'FRED public data; series IR3TIB01CNM156N (China 3M interbank); fetch needs env FRED_API_KEY'
+- id: fred-china-reserves
+  theme: macro
+  priority: P0
+  method: api
+  url: https://api.stlouisfed.org/fred/series/observations?series_id=TRESEGCNM052N&file_type=json&sort_order=desc&limit=30
+  check_status: '200'
+  checked_at: '2026-10-12T07:04:05+08:00'
+  enabled: true
+  license: public data
+  internal_only: false
+  notes: 'FRED public data; series TRESEGCNM052N (China total reserves ex-gold); fetch needs env FRED_API_KEY'
 - id: fed-press-monetary
   theme: macro
   priority: P0
@@ -222,12 +254,11 @@ sources:
   url: https://gwosc.org/api/v2/events?format=json
   check_status: TLS unexpected EOF from box egress proxy (198.18.0.1); endpoint itself
     OK via external fetch
-  checked_at: '2026-10-12T07:00:00+08:00'
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   license: full-text-ok
   internal_only: false
-  notes: box-network issue, not site; fetch via agent WebFetch or another network;
-    do not enable in box capture
+  notes: 'disabled: box outbound proxy 198.18.0.1 resets TLS; site OK externally; no network change for now'
 - id: scoap3-records
   theme: physics
   priority: P0
@@ -500,11 +531,11 @@ sources:
   method: web
   url: https://investor.tsmc.com/english/quarterly-results
   check_status: Cloudflare challenge page on investor.tsmc.com (not bypassed)
-  checked_at: '2026-10-12T06:50:00+08:00'
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: blocked by bot challenge; use tsmc-pr for release headlines
+  notes: 'blocked by bot challenge (no bypass); use sec-edgar-tsmc for filings'
 - id: tsmc-pr
   theme: semis
   method: scraper
@@ -512,23 +543,44 @@ sources:
   url: https://pr.tsmc.com/english/sitemap.xml
   check_status: 403 Cloudflare challenge for urllib client (curl got 200 intermittently)
   enabled: false
-  notes: official news sitemap; robots allows; intermittent Cloudflare challenge ->
-    logged failure
+  notes: 'official news sitemap; Cloudflare challenge (no bypass); no official PR RSS without challenge; use sec-edgar-tsmc'
   priority: P0
   license: url+hash-only
   internal_only: false
-  checked_at: '2026-10-12T07:00:00+08:00'
+  checked_at: '2026-10-12T07:04:05+08:00'
 - id: asml-quarterly
   theme: semis
   priority: P0
   method: web
   url: https://investor.asml.com/quarterly-results
   check_status: 403 Akamai Access Denied (investor.asml.com, incl. robots.txt)
-  checked_at: '2026-10-12T06:50:00+08:00'
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: blocked at CDN for non-browser clients; not bypassed
+  notes: 'blocked at CDN (no bypass); no official press RSS without challenge; use sec-edgar-asml'
+- id: sec-edgar-tsmc
+  theme: semis
+  priority: P0
+  method: api
+  url: https://data.sec.gov/submissions/CIK0001046179.json
+  check_status: '200'
+  checked_at: '2026-10-12T07:04:05+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: 'SEC fair-access: needs declared UA with contact; TSMC CIK 0001046179; filer content not PD; atom also OK'
+- id: sec-edgar-asml
+  theme: semis
+  priority: P0
+  method: api
+  url: https://data.sec.gov/submissions/CIK0000937966.json
+  check_status: '200'
+  checked_at: '2026-10-12T07:04:05+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: 'SEC fair-access: needs declared UA with contact; ASML CIK 0000937966; filer content not PD; atom also OK'
 - id: mlcommons-inference
   theme: semis
   priority: P0
