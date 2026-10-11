@@ -11,7 +11,8 @@
   每一跳都先查目标主机 robots.txt 与停用状态；不自动跟随重定向；拒绝 t.co。
 - 403 / 验证页：持久写入停用状态（主机 + 源），人工复核后才恢复；只有 429、5xx、网络错误按
   Retry-After 或指数退避重试，次数与等待均有上限。
-- 公开日志不写本机路径、不写凭证型 URL 参数；私有根目录必须显式给出且不能与公开根目录重叠。
+- robots.txt 自身的跳转逐跳校验（scheme / t.co / 停用 / 跨主机即禁止）；robots 403 或验证页 → 持久停用。
+- 一切日志（公开与私有）不写本机路径、不写凭证：URL 查询参数只留白名单，hops 只存脱敏 URL；私有根目录必须显式给出且不能与公开根目录重叠。
 """
 import datetime as dt
 import email.utils
@@ -98,18 +99,23 @@ def resolve_internal_root(arg, out_root, env="MARKJIN_INTERNAL_DIR"):
 
 
 # ---------------------------------------------------------------- URL 脱敏
-SECRET_PARAM = re.compile(r"(?i)^(.*[_-])?(api[_-]?key|apikey|key|token|access[_-]?token|auth|authorization|sig|"
-                          r"signature|secret|password|passwd|pwd|session|sessionid|sid|code|credential|jwt)$")
-TRACKING_PARAM = re.compile(r"(?i)^(utm_.*|linkid|s|ref_src|ref|fbclid|gclid|mc_eid|mc_cid)$")
+# 公开 URL 只保留白名单内的查询参数（审查 r2：黑名单漏掉 AWSAccessKeyId 等凭证名）。
+# 未列入的参数一律丢弃；新增数据源若需公开展示别的参数，须在此显式加入并确认不是凭证。
+SAFE_PARAMS = frozenset({
+    "series_id", "file_type", "sort_order", "sort", "sortBy", "sortOrder", "limit", "offset", "start",
+    "page", "page[size]", "size", "pagesize", "pageSize", "per_page", "max_results", "retmax", "mrv",
+    "format", "db", "term", "query.term", "q", "query", "search_query", "id", "id_list", "lang",
+    "date", "year", "month", "yearFrom", "yearTo", "from", "to", "observation_start", "observation_end",
+    "frequency", "units", "category", "type", "tag",
+})
 
 
 def public_url(u):
-    """用于公开记录/日志：去掉 userinfo、片段、跟踪参数和凭证型参数。原 URL 只留私有记录。"""
+    """用于一切记录/日志（公开与私有）：去掉 userinfo、片段，查询参数只留 SAFE_PARAMS 白名单。"""
     p = urlsplit(u.strip())
     host = (p.hostname or "").lower()
     netloc = host + (f":{p.port}" if p.port else "")
-    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
-         if not SECRET_PARAM.match(k) and not TRACKING_PARAM.match(k)]
+    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k in SAFE_PARAMS]
     return urlunsplit((p.scheme.lower(), netloc, p.path, urlencode(q), ""))
 
 
@@ -284,6 +290,7 @@ class Fetcher:
     def __init__(self, state=None, interval=HOST_INTERVAL, timeout=30, opener=None, sleep=time.sleep,
                  clock=time.monotonic, max_bytes=MAX_BYTES, log=None):
         self.state = state or HostState(None)
+        interval = max(float(interval), HOST_INTERVAL)   # 每主机间隔下限 2s，不能调低
         self.interval, self.timeout, self.max_bytes = interval, timeout, max_bytes
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
         self.sleep, self.clock = sleep, clock
@@ -344,38 +351,67 @@ class Fetcher:
         return st, h, body, ec, det
 
     # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速）
-    def robots(self, url):
+    def robots(self, url, sid=None):
+        """robots.txt 自身的每一跳也逐跳校验（审查 r2）：scheme、t.co 拒绝、停用状态；跨主机跳转一律按禁止处理
+        （不拿别处的 robots 当本站许可）。robots 返回 403 或验证页（含 HTTP 200 验证页）→ 持久停用主机/源，
+        禁止继续请求该站正文。"""
         p = urlsplit(url)
+        host = (p.hostname or "").lower()
         base = f"{p.scheme}://{p.netloc}"
         if base in self._robots:
             return self._robots[base]
         rp = urllib.robotparser.RobotFileParser()
         cur = base + "/robots.txt"
-        for _ in range(MAX_REDIRECTS + 1):
+        st, ec, body = 0, "too_many_redirects", b""
+        for hop in range(MAX_REDIRECTS + 1):
+            if hop:
+                q = urlsplit(cur)
+                qh = (q.hostname or "").lower()
+                if q.scheme not in ("http", "https") or not qh:
+                    st, ec = 0, "robots_bad_redirect"; break
+                if qh in REFUSED_HOSTS:
+                    st, ec = 0, "robots_redirect_refused_host"; break
+                if self.state.disabled(qh, sid):
+                    st, ec = 0, "robots_redirect_disabled_host"; break
+                if qh != host:
+                    st, ec = 0, "robots_cross_host_redirect"; break
             st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*")
-            if st in REDIRECT_CODES and h.get("Location"):
-                cur = urljoin(cur, h["Location"])
+            if st in REDIRECT_CODES:
+                loc = h.get("Location") if h else None
+                if not loc:
+                    ec = "robots_redirect_without_location"; break
+                cur = urljoin(cur, loc)
+                st, ec = 0, "too_many_redirects"
                 continue
             break
-        if st == 200 and not ec:
+        challenged = bool(body) and CHALLENGE.search(body[:20000])
+        if challenged:
+            self.state.disable(host, sid, f"robots.txt bot challenge page (HTTP {st})")
+            rp.disallow_all = True
+        elif st == 403:
+            self.state.disable(host, sid, "robots.txt HTTP 403")
+            rp.disallow_all = True
+        elif st == 200 and not ec:
             rp.parse(body.decode("utf-8", "replace").splitlines())
             cd = rp.crawl_delay(UA_TOKEN)
             rr = rp.request_rate(UA_TOKEN)
             stricter = max(float(cd or 0), (rr.seconds / rr.requests) if rr and rr.requests else 0)
             if stricter:
-                self._host_interval[p.hostname.lower()] = stricter
-        elif st in (404, 410):
+                self._host_interval[host] = stricter
+        elif st in (404, 410) and not ec:
             rp.allow_all = True
-        else:                     # 401/403/5xx/网络错误 → 按禁止处理
+        else:                     # 401/5xx/网络错误/跳转被拒 → 按禁止处理
             rp.disallow_all = True
         self._robots[base] = rp
         return rp
 
-    def allowed(self, url):
-        return self.robots(url).can_fetch(UA_TOKEN, url)
+    def allowed(self, url, sid=None):
+        return self.robots(url, sid).can_fetch(UA_TOKEN, url)
 
     def get(self, url, sid=None, accept="*/*"):
-        """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、停用状态、robots 与限速。"""
+        """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、停用状态、robots 与限速。
+        Result.hops 从一开始只持有 public_url（凭证参数不进任何日志）；final_url 为完整 URL，仅供内存内核对，
+        写记录前必须经 public_url。"""
         hops, cur = [], url
         for _ in range(MAX_REDIRECTS + 1):
             p = urlsplit(cur)
@@ -387,7 +423,10 @@ class Fetcher:
             why = self.state.disabled(host, sid)
             if why:
                 return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
-            if not self.allowed(cur):
+            if not self.allowed(cur, sid):
+                why = self.state.disabled(host, sid)   # robots 403/验证页刚触发的停用
+                if why:
+                    return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
                 return Result(False, final_url=cur, hops=hops, error="robots_disallow")
             st, h, body, ec, det = self._with_retry(cur, accept)
             ctype = (h.get("Content-Type") if h else "") or ""
@@ -395,7 +434,7 @@ class Fetcher:
                 loc = h.get("Location") if h else None
                 if not loc:
                     return Result(False, st, final_url=cur, hops=hops, error="redirect_without_location")
-                hops.append({"from": cur, "status": st})
+                hops.append({"from": public_url(cur), "status": st})   # hops 只存脱敏 URL
                 cur = urljoin(cur, loc)
                 continue
             if body and CHALLENGE.search(body[:20000]):

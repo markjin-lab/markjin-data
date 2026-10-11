@@ -109,9 +109,12 @@ def main(argv=None):
     ap.add_argument("--private-root")
     ap.add_argument("--internal-root")
     ap.add_argument("--only", default="")
-    ap.add_argument("--interval", type=float, default=collect.HOST_INTERVAL)
+    ap.add_argument("--interval", type=float, default=collect.HOST_INTERVAL,
+                    help=f"每主机最小间隔秒数，下限 {collect.HOST_INTERVAL}")
     ap.add_argument("--timeout", type=float, default=30)
     a = ap.parse_args(argv)
+    if a.interval < collect.HOST_INTERVAL:
+        print(f"--interval must be >= {collect.HOST_INTERVAL}", file=sys.stderr); return 2
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a.date):
         print("bad --date", file=sys.stderr); return 2
     try:
@@ -164,7 +167,7 @@ def main(argv=None):
                    "license": lic, "content_type": "scraper", "raw_responses": [x["sha256"] for x in raws]}
             if raws:
                 rec["stored"] = "internal" if internal else "private"
-                raw_logs[where].append({"id": sid, "run": run, "raws": raws, "url": url})
+                raw_logs[where].append({"id": sid, "run": run, "raws": raws, "url": collect.public_url(url)})
             if r.ok:
                 raw_ar.put_derived(sub, sid, sha, f"items-{run}.json", r.body)
         else:
@@ -180,7 +183,7 @@ def main(argv=None):
                 if ext == "gz" and kind:
                     raw_ar.put_derived(sub, sid, sha, kind, gzip.decompress(r.body))
                 rec["stored"] = "internal" if internal else "private"
-                raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": url, "parsed": kind,
+                raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": collect.public_url(url), "parsed": kind,
                                         "final_url": collect.public_url(r.final_url or url), "hops": r.hops})
         if r.ok and kind:
             (int_ar if internal else pub_ar).put_json(
