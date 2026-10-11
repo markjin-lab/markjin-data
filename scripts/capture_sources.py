@@ -6,7 +6,9 @@ Usage:
       [--out-root REPO_ROOT] [--private-root /workspace/markjin/private] \
       [--internal-root $MARKJIN_INTERNAL_DIR] [--only id1,id2] [--delay 1.0]
 
-For every source with enabled: true and method rss/api:
+For every source with enabled: true and method rss/api/scraper
+(scraper: `scraper: <module>` -> scrapers/<module>.py next to this file; robots.txt is
+checked first; output is a JSON list of {title,url,date}; challenge pages = failure):
   license full-text-ok          -> bytes saved to OUT/raw/DATE[/round2]/<id>/  (+ meta.json)
   license url+hash-only /
           market-data-restricted -> bytes saved ONLY to PRIVATE/raw/DATE[/round2]/<id>/;
@@ -20,7 +22,8 @@ Exit code: 0 = all ok, 1 = at least one failure, 2 = bad arguments.
 import argparse, gzip, datetime as dt, hashlib, json, os, re, sys, time
 import xml.etree.ElementTree as ET
 from pathlib import Path
-import urllib.request, urllib.error
+import urllib.request, urllib.error, urllib.robotparser
+from urllib.parse import urlsplit
 import yaml
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36 markjin-capture/1.0"
@@ -50,6 +53,32 @@ def fetch(url, timeout, retries=1):
             last = (0, "", b"", f"{type(e).__name__}: {str(e)[:160]}")
         time.sleep(2 * (i + 1))
     return last
+
+
+def robots_ok(url, timeout):
+    p = urlsplit(url); rp = urllib.robotparser.RobotFileParser()
+    st, _, body, _ = fetch(f"{p.scheme}://{p.netloc}/robots.txt", timeout, retries=0)
+    if st in (404, 410):
+        return True
+    if st != 200:
+        return False
+    rp.parse(body.decode("utf-8", "replace").splitlines())
+    return rp.can_fetch(UA, url)
+
+
+def run_scraper(s, url, timeout):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import scrapers
+    if not robots_ok(url, timeout):
+        return 0, "", b"", "robots.txt disallows"
+    try:
+        items = scrapers.get(s["scraper"]).scrape(lambda u: fetch(u, timeout), url, None,
+                                                  **(s.get("scraper_args") or {}))
+    except Exception as e:
+        return 0, "", b"", f"scraper: {type(e).__name__}: {str(e)[:160]}"
+    if not items:
+        return 0, "", b"", "scraper: no items"
+    return 200, "application/json", json.dumps(items, ensure_ascii=False).encode(), None
 
 
 def parse_ok(method, body):
@@ -115,14 +144,18 @@ def main(argv=None):
         sid = s["id"]
         if only and sid not in only:
             continue
-        if not s.get("enabled") or s.get("method") not in ("rss", "api"):
+        if not s.get("enabled") or s.get("method") not in ("rss", "api", "scraper"):
             continue
         lic = s.get("license", "url+hash-only")
         internal = bool(s.get("internal_only"))
         pub_rd = round_dir(a.internal_root if internal else a.out_root, a.date, a.round)
         priv_rd = round_dir(a.internal_root if internal else a.private_root, a.date, a.round)
         url = expand_url(s["url"], a.date)
-        t0 = now(); st, ctype, body, err = fetch(url, a.timeout)
+        t0 = now()
+        if s["method"] == "scraper":
+            st, ctype, body, err = run_scraper(s, url, a.timeout)
+        else:
+            st, ctype, body, err = fetch(url, a.timeout)
         sha = hashlib.sha256(body).hexdigest() if body else None
         kind = parse_ok(s["method"], body) if st == 200 else None
         rec = {"id": sid, "theme": s.get("theme"), "url": url, "round": a.round, "fetched_at": t0,

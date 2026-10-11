@@ -200,3 +200,9 @@
 - **整体验收 r12 修复（数字核对范围）**：`check_pair` 判“来源支持”时只用被引用的那一条——arXiv / X 为 `select_entries` 按条目 id（及版本）选出的正文域；FRED 存档已按 series_id 绑定为单一系列（URL 不带 vintage），范围即该系列文件。同一 raw 里其他条目的数字不再算作支持。
 - **整体验收 r13 修复（审查 bot 定）**：FRED 只在被引用的那一期观测里核数字（断言写观测日期则按 date 选；写 vintage 则再按 realtime_start/realtime_end 限定；多条观测且没写日期 → 不算支持；日期与 vintage 本身不当作要核对的数字）；带来源段落、非结构化行核对时带上断言原文（去掉 raw 路径与 URL），断言里有数字却不被引用条目支持 → R-SUPPORT-UNVERIFIED。
 - **整体验收 r15 修复（审查 bot 定的技术方案）**：(1) front matter 统一用 yaml.safe_load 解析一次，更正稿元数据（corrects / corrected_at）与日期字段都按解析后的值判断，带引号与不带引号等价；(2) tongyi 长文豁免：front matter `type: tongyi` 且路径为 `tongyi/<name>.md`（站点 `content/posts/tongyi/<name>.md`）的稿件及其更正稿，不报日报专用的 E-INFER-UNCLEAR、E-REPLAY-001；硬拦（买卖建议、仓位、宏观观点、内部词表、X-only 等）照常；type 与路径只有一方是 tongyi → E-TONGYI-MISMATCH（fail-closed，照常跑日报检查）。理由：长文由 Codex 加王总 v2 direct 逐篇把关。`check_text` 新增 `rel` 参数，CLI 按稿件相对 --repo 的路径传入。
+
+## 采集辅助（2026-10-12）
+
+- `x_capture.py`：X 翻页计划 / 结果入账 / 预算守卫（next_token；A 批次 ≤4 页、主题 ≤2 页；≤400 次/日、≤25 次/分）。详见 `improve/x-queries.md`。
+- `fetch_primary.py`：按 leads.json 的 `unwound_url`/`expanded_url` 抓一手来源（遵守 robots.txt，每主机 ≥2 秒，不解析 t.co）。arXiv abs/pdf、NASA、美国联邦 .gov/.mil = full-text-ok（字节与 .txt 公开）；其他仅存 url+sha256+fetched_at+license，字节进 private。
+- `scrapers/`：`method: scraper` 的列表页/官方 sitemap 解析器（无 JS、无 cookie、遇验证页即记失败，不绕过）。

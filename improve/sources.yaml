@@ -48,25 +48,38 @@ sources:
 - id: anthropic-news
   theme: ai
   priority: P0
-  method: web
-  url: https://www.anthropic.com/news
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:31+08:00'
-  enabled: false
+  method: scraper
+  url: https://www.anthropic.com/sitemap.xml
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  checked_at: '2026-10-12T07:00:00+08:00'
+  enabled: true
   license: url+hash-only
   internal_only: false
-  notes: webpage only; no official RSS/API
+  notes: no official RSS; robots allows all; official sitemap.xml filtered to /news/
+    and /research/
+  scraper: anthropic_sitemap
 - id: qwen-research
   theme: ai
   priority: P0
   method: web
   url: https://qwen.ai/research
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:31+08:00'
+  check_status: 200 but JS-rendered SPA (no links in HTML)
+  checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: qwen.ai/research needs JS; see qwen-blog-rss
+- id: qwen-blog-rss
+  theme: ai
+  method: rss
+  url: https://qwenlm.github.io/blog/index.xml
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  enabled: true
+  notes: official Qwen blog RSS; WARNING latest item 2025-09-23 (stale, low yield)
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:00:00+08:00'
 - id: nbs-data
   theme: macro
   priority: P0
@@ -78,17 +91,31 @@ sources:
   license: url+hash-only
   internal_only: false
   notes: no reliable login-free API
+- id: nbs-releases
+  theme: macro
+  method: scraper
+  scraper: nbs_releases
+  url: https://www.stats.gov.cn/sj/zxfb/
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  enabled: true
+  notes: 国家统计局 最新发布 static list page; robots.txt 404 (no restrictions)
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:00:00+08:00'
 - id: pbc-stats
   theme: macro
   priority: P0
   method: web
   url: https://www.pbc.gov.cn/diaochatongjisi/116219/index.html
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:34+08:00'
+  check_status: '200 but robots.txt Disallow: / for User-agent * (only Baiduspider
+    allowed)'
+  checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: webpage + attachments
+  notes: 'NOT scraped: robots.txt disallows; use X/second-hand leads only, verify
+    manually'
 - id: fed-press-monetary
   theme: macro
   priority: P0
@@ -180,25 +207,27 @@ sources:
 - id: cern-news
   theme: physics
   priority: P0
-  method: web
-  url: https://home.cern/news/
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:39+08:00'
-  enabled: false
+  method: rss
+  url: https://home.cern/feed/
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  checked_at: '2026-10-12T07:00:00+08:00'
+  enabled: true
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: WordPress RSS (home.cern/feed/); REST API requires auth -> not used
 - id: gwosc-events
   theme: physics
   priority: P0
   method: api
   url: https://gwosc.org/api/v2/events?format=json
-  check_status: '000 curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading'
-  checked_at: '2026-10-12T00:07:49+08:00'
+  check_status: TLS unexpected EOF from box egress proxy (198.18.0.1); endpoint itself
+    OK via external fetch
+  checked_at: '2026-10-12T07:00:00+08:00'
   enabled: false
   license: full-text-ok
   internal_only: false
-  notes: open data, attribution per gwosc.org/acknowledgement
+  notes: box-network issue, not site; fetch via agent WebFetch or another network;
+    do not enable in box capture
 - id: scoap3-records
   theme: physics
   priority: P0
@@ -237,12 +266,13 @@ sources:
   priority: P0
   method: web
   url: https://www.bse.cn/static/statisticdata.html
-  check_status: '302 curl: (47) Maximum (50) redirects followed (web-only; not auto-collected)'
-  checked_at: '2026-10-12T00:08:12+08:00'
+  check_status: 302 self-redirect sets C3VK cookie (300s); with cookie jar -> 200
+    HTML shell, data loaded by JS (marketData/daily.min.js)
+  checked_at: '2026-10-12T07:00:00+08:00'
   enabled: false
   license: market-data-restricted
   internal_only: false
-  notes: no redistribution right
+  notes: 'not enabled: data needs JS/XHR; market data restricted anyway'
 - id: cninfo
   theme: stock
   priority: P0
@@ -358,12 +388,23 @@ sources:
   priority: P0
   method: web
   url: https://pris.iaea.org/PRIS/
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:08:24+08:00'
+  check_status: 302 -> pris-stats.iaea.org (stats web app)
+  checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: no feed; index only manually
+- id: iaea-news
+  theme: energy
+  method: rss
+  url: https://www.iaea.org/feeds/topnews
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  enabled: true
+  notes: official IAEA top-news RSS
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:00:00+08:00'
 - id: iter-news
   theme: energy
   priority: P0
@@ -407,7 +448,8 @@ sources:
   enabled: true
   license: url+hash-only
   internal_only: false
-  notes: per-paper license; default index; URL uses {date-N} placeholders expanded by capture_sources.py
+  notes: per-paper license; default index; URL uses {date-N} placeholders expanded
+    by capture_sources.py
 - id: ctgov-recent
   theme: bio
   priority: P0
@@ -457,23 +499,36 @@ sources:
   priority: P0
   method: web
   url: https://investor.tsmc.com/english/quarterly-results
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:08:31+08:00'
+  check_status: Cloudflare challenge page on investor.tsmc.com (not bypassed)
+  checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: blocked by bot challenge; use tsmc-pr for release headlines
+- id: tsmc-pr
+  theme: semis
+  method: scraper
+  scraper: tsmc_pr_sitemap
+  url: https://pr.tsmc.com/english/sitemap.xml
+  check_status: 403 Cloudflare challenge for urllib client (curl got 200 intermittently)
+  enabled: false
+  notes: official news sitemap; robots allows; intermittent Cloudflare challenge ->
+    logged failure
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:00:00+08:00'
 - id: asml-quarterly
   theme: semis
   priority: P0
   method: web
   url: https://investor.asml.com/quarterly-results
-  check_status: 403 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:08:31+08:00'
+  check_status: 403 Akamai Access Denied (investor.asml.com, incl. robots.txt)
+  checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: blocked at CDN for non-browser clients; not bypassed
 - id: mlcommons-inference
   theme: semis
   priority: P0

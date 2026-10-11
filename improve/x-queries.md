@@ -1,7 +1,3 @@
-# X query rule (applies to future days only)
-
-Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. From 2026-10-11 onward, runs follow the spec below (canonical working copy: /workspace/markjin/x-queries.md; v1 kept as x-queries.v1.md); each day's raw/<date>/x-queries.md snapshot should record the actual computed start_time values.
-
 # markjin X query set v2（P0 新源接入；生效 2026-10-12 起）
 
 来源：source-research/report.md 第四节（123 个已核验账号，x_all.tsv active30d=Y 全部覆盖）+ 第五节分主题查询。旧版保存为 x-queries.v1.md。
@@ -68,3 +64,30 @@ Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. Fr
 - A01（18 个账号）：有效，返回 8 条（start_time 2026-10-10T16:00Z，max 10）。
 - B15 quantum：有效，返回 10 条。
 - `(TSMC OR ASML OR HBM OR CoWoS) -is:retweet -is:reply min_faves:100`：**无效**（min_faves 不可用），故 B14 已去掉该条件。
+
+## 翻页（next_token）与链接补全 — 2026-10-12 修订（取代上方“调用预算”中的翻页上限）
+
+实测（2026-10-12 06:2x SGT，`x.search_posts_all`，同一查询连续 2 页）：
+- 工具把 `max_results` 限制在 **25/次**。
+- 翻页参数名：**`next_token`**，取上一页 `meta.next_token` 原值传入（schema 另列 `pagination_token`，未用；统一用 `next_token`）。
+- 第 2 页返回 25 条新 id，与第 1 页 0 重叠，且全部早于第 1 页（recency 排序），翻页有效。
+- **`search_posts_all` 不返回 `entities`**（即便 `post.fields` 含 entities）。链接必须用 `get_posts_by_ids`（≤100 id/次，`post.fields=entities,created_at,note_tweet`）补全，取 `entities.urls[].unwound_url`，无则 `expanded_url`。
+- t.co 的 robots.txt 对 `*` 全站 Disallow：**不自行解析 t.co**。
+
+每查询页数上限：A 批次（from: 账号）**4 页**；B 主题 **2 页**。到上限、无 `next_token`、本页无新 id、或日预算用尽即停。
+预算：**≤400 次/SGT 日，≤25 次/分钟**（工具硬限 30/分、1000/日）。
+| 轮次 | A（7×≤4） | B（17×≤2） | 补全 get_posts_by_ids | 上限 |
+|---|---|---|---|---|
+| round1 | ≤28 | ≤34 | ≤10 | ≤72 |
+| round2 | ≤28 | ≤34 | ≤10 | ≤72 |
+| 合计/日（含内部集 ≤24） | | | | **≤168** |
+
+辅助脚本 `x_capture.py`（不直接调 X，由 agent 调工具并以 write_to_file 落盘后交给脚本）：
+```
+x_capture.py plan    --queries q.json [--start-time ISO]          # 首页调用参数
+x_capture.py ingest  --state S.json --slug A01 --kind account --page 1 --file RESULT.txt --prev-args ARGS.json
+                     # -> {"next": {...args with next_token..., "sleep_s": N}} 或 {"next": null, "reason": ...}
+x_capture.py hydrate --state S.json                               # get_posts_by_ids 批次（≤100）
+x_capture.py budget  --state S.json                               # 今日已用/剩余、需等待秒数
+```
+补全后的链接写入 leads.json 的 `expanded_url`/`unwound_url`，再交 `fetch_primary.py` 抓一手来源。
