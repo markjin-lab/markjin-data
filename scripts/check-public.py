@@ -14,9 +14,9 @@
 3) 每个推送目标提交的树中必须有 review/ledger/；每个被扫描提交中，review/ledger/ 下只允许 .gitkeep 与 YYYY-MM-DD.jsonl，
    台账非空、无重复键，每行通过字段白名单、真实日历日期、与文件名日期一致、card_id 有对应公开稿件锚点的校验。
 解码失败（E-CHECK-DECODE）、stdin 为空或格式异常（E-CHECK-STDIN）、git 失败（E-CHECK-GIT）一律拒绝。
-4) 新增 raw/ 文件不得含 '/workspace/' 本机绝对路径（E-PUBLIC-LOCAL-PATH；本规则引入前已提交的文件豁免）。
+4) 新增 raw/ 文件不得含 /workspace/、/home/ 本机绝对路径（URL 中的路径段除外）（E-PUBLIC-LOCAL-PATH；本规则引入前已提交的文件豁免）。
 内部主题词检查不在这里（见 check-internal.py，仅本机 pre-push）。输出已脱敏：只给提交短 SHA、文件序号、行号。"""
-import argparse, sys
+import argparse, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from markjin.ledger import (verify_text, LEDGER_DIR, unique_anchors, is_public_draft, review_path_ok,  # noqa: E402
@@ -30,7 +30,8 @@ def internal_path(p):
 
 # 2026-10-12 合规撤回：新增 raw/ 文件不得含本机绝对路径（'/workspace/'）。
 # 豁免：本规则引入前已提交的文件（基线 main@224fd88 树中已有的 raw 路径），以及该提交父提交中已存在的同一路径。
-LOCAL_PATH_MARK = "/workspace/"
+# 前面紧跟主机名/协议（如 https://x/、sam.gov/）的视为 URL 路径段，不算本机路径
+LOCAL_PATH_RE = re.compile(r"(?<![A-Za-z0-9.:/_-])/(?:workspace|home)/[^\s\"'<>]+")
 LOCAL_PATH_BASELINE = "224fd88fd0321652a184679664fb5bb5e6a1c730"
 
 
@@ -79,7 +80,7 @@ def main(argv=None, stdin=None):
             exempt = None
             for kind, idx, path, text in items:
                 if (kind == "blob" and path and path.startswith("raw/") and text is not None
-                        and LOCAL_PATH_MARK in text):
+                        and LOCAL_PATH_RE.search(text)):
                     if exempt is None:
                         exempt = local_path_exempt_paths(c)
                     if path not in exempt:
