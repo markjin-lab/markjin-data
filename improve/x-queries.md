@@ -1,46 +1,70 @@
 # X query rule (applies to future days only)
 
-Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. From 2026-10-11 onward, runs follow the spec below (canonical working copy: /workspace/markjin/x-queries.md); each day's raw/<date>/x-queries.md snapshot should record the actual computed start_time values.
+Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. From 2026-10-11 onward, runs follow the spec below (canonical working copy: /workspace/markjin/x-queries.md; v1 kept as x-queries.v1.md); each day's raw/<date>/x-queries.md snapshot should record the actual computed start_time values.
 
-# markjin X query set (rolling window; effective 2026-10-11 onward)
+# markjin X query set v2（P0 新源接入；生效 2026-10-12 起）
 
-Common params (from 2026-10-11): x.search_posts_all with `post.fields=created_at,author_id,public_metrics,entities`, `expansions=author_id,attachments.media_keys`, `user.fields=username`. `entities.urls[]` gives `expanded_url` / `unwound_url` for each t.co link; leads.json primary-source matching must use `expanded_url` (prefer `unwound_url` if present), never the t.co `url`.
+来源：source-research/report.md 第四节（123 个已核验账号，x_all.tsv active30d=Y 全部覆盖）+ 第五节分主题查询。旧版保存为 x-queries.v1.md。
 
-**Rolling start_time rule:** `start_time = now − 48h` (UTC ISO 8601, e.g. `2026-10-08T23:11:00Z`); queries 04 and 12 use `now − 96h`. The start_time column below is historical (2026-10-10 run) and is superseded by this rule.
+## 通用参数
 
-## Capture schedule & round2 window (effective 2026-10-12)
+- 工具 `x.search_posts_all`；`post.fields=created_at,author_id,public_metrics,entities`，`expansions=author_id,attachments.media_keys`，`user.fields=username`。链接匹配用 `entities.urls[].unwound_url`/`expanded_url`，不用 t.co。
+- `max_results=25`；from: 批次按 recency，主题查询按 relevancy。
+- **round1（05:00 SGT）**：`start_time = now − 48h`。**round2（06:00 SGT）**：`start_time = 当日 05:00 SGT（前一 UTC 日 21:00Z）`，与 round1 按 id 去重。
+- 所有查询都带 `-is:retweet -is:reply`；每条 ≤512 字符（实际最长 375）。
+- **`min_faves` 在当前 API 套餐不可用**（2026-10-12 00:1x SGT 实测：`Reference to invalid operator 'min_faves'`），报告中的 min_faves 条件全部去掉，改为在派生过滤阶段按 `public_metrics.like_count ≥ 20 或 retweet_count ≥ 5 或作者在白名单` 过滤（白名单 = 下列 from: 批次的全部账号）。
+- 报告中已被 from: 批次完全覆盖的主题查询（如 `from:NickTimiraos` 的 FOMC、`from:BLS_gov/BEA_News`、`from:CERN/Fermilab/PhysRevLett`、`from:SECGov/HKEXGroup`、`from:CopernicusECMWF/hausfath`、`from:planet4589/jeff_foust/SpaceX`）不单独发请求。
+- 旧版中不在 123 名单内的账号（如 xai、NatureNews 不存在/异常；OpenAIDevs、JeffDean 等未入核验名单）已移出；如需保留请单独补核验。
 
-Capture rounds run at **05:00 SGT (round1)** and **06:00 SGT (round2)**; the daily report is published at 07:00 SGT. (Through 2026-10-11 the rounds were 07:00 and 08:15 SGT.)
+## A. from: 账号批次（7 条）
 
-- **round1:** rolling window unchanged — `start_time = now − 48h`; queries 04 and 12 use `now − 96h`.
-- **round2:** `start_time = 05:00 SGT the same day` (= `21:00Z` previous UTC day, e.g. for 2026-10-12 use `2026-10-11T21:00:00Z`), i.e. only posts since round1 started. Dedup against round1 ids as before.
+| # | slug | 主题 | 账号数 | query |
+|---|---|---|---|---|
+| A01 | accounts-01 | AI 前沿 | 18 | `(from:karpathy OR from:ylecun OR from:demishassabis OR from:AndrewYNg OR from:OpenAI OR from:AnthropicAI OR from:GoogleDeepMind OR from:AIatMeta OR from:deepseek_ai OR from:Alibaba_Qwen OR from:huggingface OR from:_akhaliq OR from:jackclarkSF OR from:EpochAIResearch OR from:SemiAnalysis_ OR from:dylan522p OR from:natolambert OR from:simonw) -is:retweet -is:reply` |
+| A02 | accounts-02 | AI 前沿 / 宏观投资 | 18 | `(from:fchollet OR from:polynoamial OR from:DrJimFan OR from:emollick OR from:Miles_Brundage OR from:Yoshua_Bengio OR from:sama OR from:federalreserve OR from:NewYorkFed OR from:FedResearch OR from:BLS_gov OR from:BEA_News OR from:ecb OR from:bankofengland OR from:IMFNews OR from:NickTimiraos OR from:elerianm OR from:jasonfurman) -is:retweet -is:reply` |
+| A03 | accounts-03 | 宏观投资 / 物理与前沿科学 | 18 | `(from:Brad_Setser OR from:michaelxpettis OR from:adam_tooze OR from:TheStalwart OR from:lisaabramowicz1 OR from:biancoresearch OR from:LizAnnSonders OR from:SoberLook OR from:Lingling_Wei OR from:niubi OR from:ChinaBeigeBook OR from:georgemagnus1 OR from:M_C_Klein OR from:EconBerger OR from:CERN OR from:Fermilab OR from:APSphysics OR from:PhysRevLett) -is:retweet -is:reply` |
+| A04 | accounts-04 | 物理与前沿科学 / 公共卫生/医学 / 股市 | 18 | `(from:PhysicsMagazine OR from:QuantaMagazine OR from:Nature OR from:ScienceMagazine OR from:skdh OR from:preskill OR from:stephen_wolfram OR from:ProfBrianCox OR from:arxiv OR from:NASAWebb OR from:NIH OR from:WHO OR from:NatureMedicine OR from:EricTopol OR from:statnews OR from:SECGov OR from:HKEXGroup OR from:WSJmarkets) -is:retweet -is:reply` |
+| A05 | accounts-05 | 股市 / 地缘政治与 AI 治理 / 气候与地球系统 | 18 | `(from:charliebilello OR from:MacroCharts OR from:carlquintanilla OR from:caixin OR from:SCMPNews OR from:XHNews OR from:CSIS OR from:CFR_org OR from:CSETGeorgetown OR from:AISecurityInst OR from:ianbremmer OR from:KeithBradsher OR from:metaculus OR from:NOAA OR from:IPCC_CH OR from:CopernicusECMWF OR from:hausfath OR from:KHayhoe) -is:retweet -is:reply` |
+| A06 | accounts-06 | 气候与地球系统 / 能源 / 生物技术与长寿 / 半导体与算力 | 18 | `(from:OurWorldInData OR from:IEA OR from:EIAgov OR from:ENERGY OR from:iaeaorg OR from:NRCgov OR from:iterorg OR from:CFS_energy OR from:JesseJenkins OR from:AukeHoekstra OR from:BloombergNEF OR from:broadinstitute OR from:arcinstitute OR from:patrickc OR from:bryan_johnson OR from:nvidia OR from:ASMLcompany OR from:dnystedt) -is:retweet -is:reply` |
+| A07 | accounts-07 | 航天 / 量子计算 / 人口 / 脑机接口 | 12 | `(from:NASA OR from:esa OR from:SpaceX OR from:planet4589 OR from:jeff_foust OR from:SpaceflightNow OR from:GoogleQuantumAI OR from:IBMResearch OR from:NIST OR from:lymanstoneky OR from:MaxCRoser OR from:neuralink) -is:retweet -is:reply` |
 
-Sort: recency for from: lists, relevancy for topic queries.
+## B. 主题查询（17 条）
 
-| # | slug | query | start_time | max | returned |
-|---|---|---|---|---|---|
-| 01 | ai-labs | `((from:OpenAI OR from:AnthropicAI OR from:GoogleDeepMind OR from:xai OR from:MetaAI OR from:MistralAI) -is:retweet -is:reply)` | 2026-10-08 (hist; now−48h) | 25 | 4 |
-| 02 | openai-google | `((from:OpenAI OR from:OpenAIDevs OR from:GoogleDeepMind OR from:GoogleAI OR from:sama OR from:demishassabis) -is:retweet -is:reply)` | 2026-10-08 (hist; now−48h) | 25 | 6 |
-| 03 | science-journals | `((from:Nature OR from:ScienceMagazine OR from:NatureNews OR from:CellPressNews OR from:physorg_com OR from:QuantaMagazine) -is:retweet -is:reply)` | 2026-10-08 (hist; now−48h) | 25 | 25 |
-| 04 | official-econ | `((from:federalreserve OR from:BLS_gov OR from:stlouisfed OR from:NewYorkFed OR from:BEA_News OR from:USTreasury) -is:retweet -is:reply)` | 2026-10-06 (hist; now−96h) | 25 | 25 |
-| 05 | arxiv-llm | `((url:arxiv.org) (LLM OR "language model" OR reasoning OR agents OR RL) lang:en -is:retweet -is:reply -giveaway -airdrop -bonus -homework -essay)` | 2026-10-08 (hist; now−48h) | 25 | 25 |
-| 06 | ai-math-proofs | `(("Navier-Stokes" OR "Navier–Stokes" OR "700 papers" OR "AI-generated proofs") (OpenAI OR Lean) lang:en -is:retweet -is:reply -giveaway -airdrop -bonus)` | 2026-10-08 (hist; now−48h) | 10 | 10 |
-| 07 | ai-researchers | `((from:karpathy OR from:ylecun OR from:JeffDean OR from:_akhaliq OR from:omarsar0 OR from:DrJimFan OR from:jaschasd) -is:retweet -is:reply)` | 2026-10-08 (hist; now−48h) | 10 | 10 |
-| 08 | macro-economists | `((from:NickTimiraos OR from:elerianm OR from:jasonfurman OR from:LizAnnSonders OR from:M_McDonough OR from:biancoresearch) -is:retweet -is:reply)` | 2026-10-08 (hist; now−48h) | 10 | 10 |
-| 09 | bond-yields | `(("10-year yield" OR "bond vigilantes" OR "term premium" OR "yield curve") lang:en -is:retweet -is:reply -giveaway -airdrop -bonus -BingX -XAU -signals)` | 2026-10-08 (hist; now−48h) | 10 | 10 |
-| 10 | physics-space | `((from:NaturePhysics OR from:NatureComms OR from:PhysRevLett OR from:APSphysics OR from:CERN OR from:NASA) -is:retweet -is:reply)` | 2026-10-08 (hist; now−48h) | 10 | 10 |
-| 11 | zh-ai-research | `((大模型 OR 论文 OR arXiv) (发布 OR 开源 OR 研究) lang:zh -is:retweet -is:reply -空投 -抽奖 -福利)` | 2026-10-08 (hist; now−48h) | 10 | 10 |
-| 12 | ai-evals-policy | `((from:AISecurityInst OR from:METR_Evals OR from:EpochAIResearch OR from:StanfordHAI OR from:apolloaievals) -is:retweet -is:reply)` | 2026-10-06 (hist; now−96h) | 10 | 10 |
+| # | slug | query |
+|---|---|---|
+| B01 | ai-tech-reports | `("technical report" OR "model card" OR "system card") (from:OpenAI OR from:AnthropicAI OR from:GoogleDeepMind OR from:deepseek_ai OR from:Alibaba_Qwen) -is:retweet -is:reply` |
+| B02 | ai-arxiv | `url:arxiv.org (LLM OR reasoning OR RL) lang:en -is:retweet -is:reply` |
+| B03 | ai-benchmarks | `(SOTA OR benchmark) (ARC-AGI OR SWE-bench OR FrontierMath) lang:en -is:retweet -is:reply` |
+| B04 | ai-compute | `(GPU OR datacenter OR gigawatt) (cluster OR training) lang:en -is:retweet -is:reply` |
+| B05 | macro-pboc | `(PBOC OR 人民银行 OR 社融 OR LPR) -is:retweet -is:reply` |
+| B06 | macro-liquidity | `(SOFR OR "reverse repo" OR TGA OR "bank reserves") lang:en -is:retweet -is:reply` |
+| B07 | physics-arxiv | `url:arxiv.org ("quantum gravity" OR "string theory" OR holography) -is:retweet -is:reply` |
+| B08 | stock-chanlun | `(缠论 OR 缠中说禅) -is:retweet -is:reply` |
+| B09 | stock-a-share | `(上证 OR 沪深300 OR 创业板) (成交额 OR 北向) lang:zh -is:retweet -is:reply` |
+| B10 | geo-export-controls | `("export controls" OR BIS) (chips OR AI) lang:en -is:retweet -is:reply` |
+| B11 | ai-governance | `("AI Safety Institute" OR "frontier AI" OR "AI Act") lang:en -is:retweet -is:reply` |
+| B12 | energy | `(fusion OR SMR OR "grid interconnection" OR "sodium-ion") lang:en -is:retweet -is:reply` |
+| B13 | bio | `(url:biorxiv.org OR CRISPR OR "base editing" OR "prime editing") -is:retweet -is:reply` |
+| B14 | semis | `(TSMC OR ASML OR HBM OR CoWoS) -is:retweet -is:reply` |
+| B15 | quantum | `("logical qubit" OR "error correction") (quantum OR qubit) lang:en -is:retweet -is:reply` |
+| B16 | population | `(fertility OR TFR OR 出生人口) -is:retweet -is:reply` |
+| B17 | bci | `(BCI OR "brain-computer interface" OR 脑机接口) -is:retweet -is:reply` |
 
-Re-run 2026-10-10 16:37-16:43 SGT with identical query strings/start_time/max_results; added only output fields (post.fields=created_at,author_id,public_metrics; expansions=author_id; user.fields=username). Raw files x/NN-<slug>.json are full tool returns, transcribed (no spill file appeared in /workspace/agent-tools/); see x/PROVENANCE.md.
+## 调用预算（每次请求 = 1 次调用，25 条/次）
 
-## Derived filter (x/filtered-ids.json)
+| 轮次 | A 批次 | B 主题 | 小计（基础） | 上限（含翻页） |
+|---|---|---|---|---|
+| round1 05:00 | 7（next_token 存在时最多再翻 2 页） | 17（不翻页） | 24 | 38 |
+| round2 06:00 | 7（最多再翻 1 页） | 17 | 24 | 31 |
+| 账号核验 lookup（每月 1 次，100 个/次） | | | 0 | 2 |
+| **公开集合合计/日** | | | **48** | **71** |
 
-Raw x/NN-*.json stay complete. Derived x/filtered-ids.json keeps a post (deduped by id) if ANY of:
-- public_metrics.like_count >= 20
-- public_metrics.retweet_count >= 5
-- author username (from includes.users) is on the authority whitelist below
+另有内部专用查询集（不在公开仓库，见本机内部目录），每日 ≤ 8 次（含翻页上限 ≤ 12）。
+全部合计每日基础约 56 次、上限约 83 次，低于约 400 次/日 的目标与 1000 次/日 硬上限；限速 30 次/分，批次之间间隔 ≥ 2.5 秒。
+注意：X 每日额度在 00:00Z（08:00 SGT）重置，05:00 与 06:00 两轮落在同一额度日内。
 
-### Authority whitelist
-Defined as every `from:` account in the curated queries above (46 accounts):
-_akhaliq, AISecurityInst, AnthropicAI, apolloaievals, APSphysics, BEA_News, biancoresearch, BLS_gov, CellPressNews, CERN, demishassabis, DrJimFan, elerianm, EpochAIResearch, federalreserve, GoogleAI, GoogleDeepMind, jaschasd, jasonfurman, JeffDean, karpathy, LizAnnSonders, M_McDonough, MetaAI, METR_Evals, MistralAI, NASA, Nature, NatureComms, NatureNews, NaturePhysics, NewYorkFed, NickTimiraos, omarsar0, OpenAI, OpenAIDevs, physorg_com, PhysRevLett, QuantaMagazine, sama, ScienceMagazine, StanfordHAI, stlouisfed, USTreasury, xai, ylecun
+## 有效性实测（2026-10-12 00:1x SGT，各 1 次）
+
+- A01（18 个账号）：有效，返回 8 条（start_time 2026-10-10T16:00Z，max 10）。
+- B15 quantum：有效，返回 10 条。
+- `(TSMC OR ASML OR HBM OR CoWoS) -is:retweet -is:reply min_faves:100`：**无效**（min_faves 不可用），故 B14 已去掉该条件。

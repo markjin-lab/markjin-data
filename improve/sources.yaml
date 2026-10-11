@@ -1,0 +1,619 @@
+# markjin P0 sources (from source-research/report.md, checked 2026-10-12 00:08 SGT)
+# license: full-text-ok | url+hash-only | market-data-restricted
+sources:
+- id: arxiv-cs-ai
+  theme: ai
+  priority: P0
+  method: rss
+  url: https://rss.arxiv.org/rss/cs.AI
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:30+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: metadata ok; per-paper license, default index
+- id: arxiv-cs-lg
+  theme: ai
+  priority: P0
+  method: rss
+  url: https://rss.arxiv.org/rss/cs.LG
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:30+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: per-paper license, default index
+- id: openai-news
+  theme: ai
+  priority: P0
+  method: rss
+  url: https://openai.com/news/rss.xml
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:30+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: no blanket reprint license
+- id: deepmind-blog
+  theme: ai
+  priority: P0
+  method: rss
+  url: https://deepmind.google/blog/rss.xml
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:30+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: 'report: no confirmed official RSS; candidate URL tested'
+- id: anthropic-news
+  theme: ai
+  priority: P0
+  method: web
+  url: https://www.anthropic.com/news
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:07:31+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only; no official RSS/API
+- id: qwen-research
+  theme: ai
+  priority: P0
+  method: web
+  url: https://qwen.ai/research
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:07:31+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: nbs-data
+  theme: macro
+  priority: P0
+  method: web
+  url: https://data.stats.gov.cn/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:07:33+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: no reliable login-free API
+- id: pbc-stats
+  theme: macro
+  priority: P0
+  method: web
+  url: https://www.pbc.gov.cn/diaochatongjisi/116219/index.html
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:07:34+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage + attachments
+- id: fed-press-monetary
+  theme: macro
+  priority: P0
+  method: rss
+  url: https://www.federalreserve.gov/feeds/press_monetary.xml
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:34+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: default index per report
+- id: fed-prates
+  theme: macro
+  priority: P0
+  method: rss
+  url: https://www.federalreserve.gov/feeds/prates.xml
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:35+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: default index per report
+- id: nyfed-sofr
+  theme: macro
+  priority: P0
+  method: api
+  url: https://markets.newyorkfed.org/api/rates/secured/sofr/last/5.json
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:35+08:00'
+  enabled: true
+  license: market-data-restricted
+  internal_only: false
+  notes: rate data; public repo index only
+- id: bls-cpi
+  theme: macro
+  priority: P0
+  method: api
+  url: https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:35+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: v1 no key; daily cap 25 req; attribute+revision
+- id: bea-gdp
+  theme: macro
+  priority: P0
+  method: web
+  url: https://www.bea.gov/data/gdp/gross-domestic-product
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:07:36+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: API needs free key; page only
+- id: fiscaldata-debt
+  theme: macro
+  priority: P0
+  method: api
+  url: https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny?sort=-record_date&page%5Bsize%5D=1
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:37+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: default index per report
+- id: arxiv-gr-qc
+  theme: physics
+  priority: P0
+  method: rss
+  url: https://rss.arxiv.org/rss/gr-qc
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:37+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: per-paper license
+- id: arxiv-hep-th
+  theme: physics
+  priority: P0
+  method: rss
+  url: https://rss.arxiv.org/rss/hep-th
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:37+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: per-paper license
+- id: cern-news
+  theme: physics
+  priority: P0
+  method: web
+  url: https://home.cern/news/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:07:39+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: gwosc-events
+  theme: physics
+  priority: P0
+  method: api
+  url: https://gwosc.org/api/v2/events?format=json
+  check_status: '000 curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading'
+  checked_at: '2026-10-12T00:07:49+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: open data, attribution per gwosc.org/acknowledgement
+- id: scoap3-records
+  theme: physics
+  priority: P0
+  method: api
+  url: https://repo.scoap3.org/api/records/?page=1&size=10
+  check_status: '200'
+  checked_at: '2026-10-12T00:07:50+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: articles usually CC BY / metadata CC0; per-record check before archiving
+- id: sse-stats
+  theme: stock
+  priority: P0
+  method: web
+  url: https://www.sse.com.cn/market/stockdata/overview/day/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:08+08:00'
+  enabled: false
+  license: market-data-restricted
+  internal_only: false
+  notes: no redistribution right
+- id: szse-market
+  theme: stock
+  priority: P0
+  method: web
+  url: https://www.szse.cn/market/trend/index.html
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:10+08:00'
+  enabled: false
+  license: market-data-restricted
+  internal_only: false
+  notes: no redistribution right
+- id: bse-stats
+  theme: stock
+  priority: P0
+  method: web
+  url: https://www.bse.cn/static/statisticdata.html
+  check_status: '302 curl: (47) Maximum (50) redirects followed (web-only; not auto-collected)'
+  checked_at: '2026-10-12T00:08:12+08:00'
+  enabled: false
+  license: market-data-restricted
+  internal_only: false
+  notes: no redistribution right
+- id: cninfo
+  theme: stock
+  priority: P0
+  method: web
+  url: https://www.cninfo.com.cn/new/index
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:16+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: filings PDFs; index
+- id: sec-edgar-aapl
+  theme: stock
+  priority: P0
+  method: api
+  url: https://data.sec.gov/submissions/CIK0000320193.json
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:16+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: 'SEC fair-access: needs declared UA; filer content not PD'
+- id: sipri-arms
+  theme: geopolitics
+  priority: P0
+  method: web
+  url: https://armstransfers.sipri.org/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:17+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: ucdp-api
+  theme: geopolitics
+  priority: P0
+  method: api
+  url: https://ucdpapi.pcr.uu.se/api/gedevents/25.1?pagesize=1
+  check_status: '401'
+  checked_at: '2026-10-12T00:08:18+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: CC BY 4.0 with attribution
+- id: unsc
+  theme: geopolitics
+  priority: P0
+  method: web
+  url: https://main.un.org/securitycouncil/en
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:18+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: oecd-ai
+  theme: geopolitics
+  priority: P0
+  method: web
+  url: https://oecd.ai/en/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:20+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: wmo-climate
+  theme: climate
+  priority: P0
+  method: web
+  url: https://wmo.int/publication-series/state-of-global-climate
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:21+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: annual
+- id: copernicus-bulletin
+  theme: climate
+  priority: P0
+  method: web
+  url: https://climate.copernicus.eu/climate-bulletin
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:22+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: noaa-globaltemp
+  theme: climate
+  priority: P0
+  method: web
+  url: https://www.ncei.noaa.gov/products/land-based-station/noaa-global-temp
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:23+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: federal; page only
+- id: eia-api
+  theme: energy
+  priority: P0
+  method: api
+  url: https://api.eia.gov/v2/
+  check_status: '403'
+  checked_at: '2026-10-12T00:08:23+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: requires free API key (none configured)
+- id: iaea-pris
+  theme: energy
+  priority: P0
+  method: web
+  url: https://pris.iaea.org/PRIS/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:24+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: iter-news
+  theme: energy
+  priority: P0
+  method: web
+  url: https://www.iter.org/news
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:26+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: doe-oe-news
+  theme: energy
+  priority: P0
+  method: web
+  url: https://www.energy.gov/oe/news-and-events
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:28+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: federal; page only
+- id: nea-cn
+  theme: energy
+  priority: P0
+  method: web
+  url: https://www.nea.gov.cn/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:29+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: biorxiv-api
+  theme: bio
+  priority: P0
+  method: api
+  url: https://api.biorxiv.org/details/biorxiv/{date-2}/{date}/0/json
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:29+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: per-paper license; default index; URL uses {date-N} placeholders expanded by capture_sources.py
+- id: ctgov-recent
+  theme: bio
+  priority: P0
+  method: api
+  url: https://clinicaltrials.gov/api/v2/studies?sort=LastUpdatePostDate:desc&pageSize=20
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:29+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: keep NCT ids
+- id: pubmed-recent
+  theme: bio
+  priority: P0
+  method: api
+  url: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=gene+editing&sort=pub_date&retmax=20
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:30+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: PMID index
+- id: fda-biologics
+  theme: bio
+  priority: P0
+  method: web
+  url: https://www.fda.gov/vaccines-blood-biologics/news-events-biologics/whats-new-biologics
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:30+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: federal; page only
+- id: bis-fr-notices
+  theme: semis
+  priority: P0
+  method: web
+  url: https://www.bis.gov/regulations/federal-register-notices
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:30+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: federal; page only
+- id: tsmc-quarterly
+  theme: semis
+  priority: P0
+  method: web
+  url: https://investor.tsmc.com/english/quarterly-results
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:31+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: asml-quarterly
+  theme: semis
+  priority: P0
+  method: web
+  url: https://investor.asml.com/quarterly-results
+  check_status: 403 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:31+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: mlcommons-inference
+  theme: semis
+  priority: P0
+  method: web
+  url: https://mlcommons.org/benchmarks/inference-datacenter/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:31+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: un-wpp
+  theme: population
+  priority: P0
+  method: web
+  url: https://population.un.org/wpp/
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:32+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: unhcr-api
+  theme: population
+  priority: P0
+  method: api
+  url: https://api.unhcr.org/population/v1/population/?limit=5&yearFrom=2024
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:33+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: per-dataset license
+- id: worldbank-pop
+  theme: population
+  priority: P0
+  method: api
+  url: https://api.worldbank.org/v2/country/all/indicator/SP.POP.TOTL?format=json&mrv=1&per_page=50
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:34+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: CC BY generally, includes external sources -> index
+- id: nasa-news
+  theme: space
+  priority: P0
+  method: rss
+  url: https://www.nasa.gov/news-release/feed/
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:34+08:00'
+  enabled: true
+  license: full-text-ok
+  internal_only: false
+  notes: federal original; exclude images/3rd-party
+- id: esa-top
+  theme: space
+  priority: P0
+  method: rss
+  url: https://www.esa.int/rssfeed/TopNews
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:34+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: index; per-item license
+- id: cnsa
+  theme: space
+  priority: P0
+  method: web
+  url: https://www.cnsa.gov.cn/index.html
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:36+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
+- id: arxiv-quant-ph
+  theme: quantum
+  priority: P0
+  method: rss
+  url: https://rss.arxiv.org/rss/quant-ph
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:37+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: per-paper license
+- id: prx-quantum
+  theme: quantum
+  priority: P0
+  method: rss
+  url: https://feeds.aps.org/rss/recent/prxquantum.xml
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:37+08:00'
+  enabled: true
+  license: full-text-ok
+  internal_only: false
+  notes: CC BY 4.0; keep attribution+DOI
+- id: ctgov-bci
+  theme: bci
+  priority: P0
+  method: api
+  url: https://clinicaltrials.gov/api/v2/studies?query.term=brain-computer+interface&sort=LastUpdatePostDate:desc&pageSize=20
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:37+08:00'
+  enabled: true
+  license: url+hash-only
+  internal_only: false
+  notes: keep NCT ids
+- id: openfda-510k
+  theme: bci
+  priority: P0
+  method: api
+  url: https://api.fda.gov/device/510k.json?sort=decision_date:desc&limit=20
+  check_status: '200'
+  checked_at: '2026-10-12T00:08:37+08:00'
+  enabled: true
+  license: full-text-ok
+  internal_only: false
+  notes: openFDA data usable; applicant material index only
+- id: frontiers-bci
+  theme: bci
+  priority: P0
+  method: web
+  url: https://www.frontiersin.org/journals/human-neuroscience/sections/brain-computer-interfaces
+  check_status: 200 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:40+08:00'
+  enabled: false
+  license: full-text-ok
+  internal_only: false
+  notes: CC BY articles; page only
+- id: nmpa
+  theme: bci
+  priority: P0
+  method: web
+  url: https://www.nmpa.gov.cn/
+  check_status: 412 (web-only; not auto-collected)
+  checked_at: '2026-10-12T00:08:41+08:00'
+  enabled: false
+  license: url+hash-only
+  internal_only: false
+  notes: webpage only
