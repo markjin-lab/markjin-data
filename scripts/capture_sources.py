@@ -1,95 +1,79 @@
 #!/usr/bin/env python3
-"""markjin P0 source capture.
+"""markjin P0 source capture（审查 REJECTED 修复版，规则见 scripts/markjin/collect.py）。
 
 Usage:
-  capture_sources.py --sources sources.yaml --date YYYY-MM-DD --round 1|2 \
-      [--out-root REPO_ROOT] [--private-root /workspace/markjin/private] \
-      [--internal-root $MARKJIN_INTERNAL_DIR] [--only id1,id2] [--delay 1.0]
+  capture_sources.py --sources improve/sources.yaml --date YYYY-MM-DD --round 1|2 \
+      --private-root DIR (或环境变量 MARKJIN_PRIVATE_DIR) [--out-root REPO_ROOT] \
+      [--internal-root DIR (或 MARKJIN_INTERNAL_DIR)] [--only id1,id2] [--interval 2.0]
 
-For every source with enabled: true and method rss/api:
-  license full-text-ok          -> bytes saved to OUT/raw/DATE[/round2]/<id>/  (+ meta.json)
-  license url+hash-only /
-          market-data-restricted -> bytes saved ONLY to PRIVATE/raw/DATE[/round2]/<id>/;
-                                    OUT/raw/DATE[/round2]/<id>/index.json holds url+sha256+fetched_at
-  internal_only: true            -> everything (bytes, index, logs) under INTERNAL/raw/DATE[/round2]/<id>/;
-                                    nothing is written to OUT.
-Logs: <round dir>/query-log.jsonl (one line per fetch) and <round dir>/failures.json.
-Free endpoints only: no credentials, no cookies, no login/paywall handling.
-Exit code: 0 = all ok, 1 = at least one failure, 2 = bad arguments.
+只采集 approval_gate 通过的源（enabled + approval_status: approved + approval_basis），method rss/api。
+未通过审批的源一律拒绝（--only 点名未审批源 → 退出码 1）。
+每次响应：
+  原字节（不解压、不脱敏）→ PRIVATE/raw/DATE/[round2/]<id>/<sha256>.<ext>，独占创建，追加 PRIVATE/raw/DATE/MANIFEST.sha256；
+  gzip 原件的解压结果只作派生物（derived/，登记 DERIVED.sha256）；
+  公开目录 OUT/raw/DATE/[round2/]：本次运行独占创建 <id>/index-<run>.json（url+sha256+fetched_at+license）、
+  query-log-<run>.jsonl、failures-<run>.json，并追加 OUT/raw/DATE/MANIFEST.sha256。整份 RSS/API 响应是多条目聚合，
+  不做逐条许可核验，因此全文永不进公开目录（逐条全文见 fetch_primary.py 的 license evidence）。
+  internal_only 源：原件与记录全部写入内部目录，公开目录不写任何东西。
+公开记录不含本机路径与凭证型 URL 参数（stored 只写 private/internal）。
+需要免费密钥的 API：auth_env（环境变量名）+ auth_param（查询参数名），密钥只在请求时拼接，不进任何记录。
+403 / 验证页 → 持久停用（PRIVATE/state/collector-hosts.json），人工复核后删除条目才恢复。
+Exit code: 0 = all ok, 1 = 有失败或拒绝, 2 = 参数/配置错误.
 """
-import argparse, gzip, datetime as dt, hashlib, json, os, re, sys, time
+import argparse, datetime as dt, gzip, json, os, re, sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-import urllib.request, urllib.error
+from urllib.parse import urlencode
 import yaml
 
-UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36 markjin-capture/1.0"
-USER_KEYS = {"user", "users", "username", "screen_name", "author_id", "user_id", "profile_image_url",
-             "avatar", "email", "commenter", "commenters"}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from markjin import collect, strictjson  # noqa: E402
+
+METHODS = ("rss", "api")
 
 
-def now():
-    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def fetch(url, timeout, retries=1):
-    last = None
-    for i in range(retries + 1):
+def parse_ok(body):
+    """严格解析：JSON 用 strictjson（重复键判失败），XML 用 ElementTree。返回 json / xml / None。"""
+    b = body
+    if b[:2] == b"\x1f\x8b":
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                body = r.read()
-                if body[:2] == b"\x1f\x8b":  # some CDNs (deepmind.google) send gzip unasked
-                    body = gzip.decompress(body)
-                return r.status, r.headers.get("Content-Type", ""), body, None
-        except urllib.error.HTTPError as e:
-            last = (e.code, "", b"", f"HTTP {e.code}")
-            if e.code < 500:
-                break
-        except Exception as e:  # network / TLS / timeout
-            last = (0, "", b"", f"{type(e).__name__}: {str(e)[:160]}")
-        time.sleep(2 * (i + 1))
-    return last
-
-
-def parse_ok(method, body):
+            b = gzip.decompress(b)
+        except OSError:
+            return None
+    b = b.lstrip(b"\xef\xbb\xbf \r\n\t")
     try:
-        b = body.lstrip(b"\xef\xbb\xbf \r\n\t")  # tolerate UTF-8 BOM (federalreserve.gov feeds)
-        s = b[:1]
-        if s in (b"{", b"["):
-            json.loads(b); return "json"
-        if s == b"<":
-            ET.fromstring(b); return "xml"
-    except Exception:
+        if b[:1] in (b"{", b"["):
+            strictjson.loads(b.decode("utf-8"))
+            return "json"
+        if b[:1] == b"<":
+            ET.fromstring(b)
+            return "xml"
+    except (ValueError, ET.ParseError, UnicodeDecodeError):
         return None
     return None
-
-
-def strip_users(o):
-    """Remove user-identifying fields (comment rule) from JSON before public storage."""
-    if isinstance(o, dict):
-        return {k: strip_users(v) for k, v in o.items() if k.lower() not in USER_KEYS}
-    if isinstance(o, list):
-        return [strip_users(x) for x in o]
-    return o
 
 
 def expand_url(url, date):
     """Placeholders: {date} = target date, {date-N} = target date minus N days (YYYY-MM-DD)."""
     d0 = dt.date.fromisoformat(date)
-    def rep(m):
-        n = int(m.group(1) or 0)
-        return (d0 - dt.timedelta(days=n)).isoformat()
-    return re.sub(r"\{date(?:-(\d+))?\}", rep, url)
+    return re.sub(r"\{date(?:-(\d+))?\}", lambda m: (d0 - dt.timedelta(days=int(m.group(1) or 0))).isoformat(), url)
 
 
-def round_dir(root, date, rnd):
+def day_dir(root, date):
     root = Path(root)
-    # Idempotent: if out-root (or private/internal root) already ends with /raw, don't nest raw/raw.
     if root.name != "raw":
         root = root / "raw"
-    d = root / date
-    return d / "round2" if rnd == 2 else d
+    return root / date
+
+
+def request_url(s, url):
+    env, param = s.get("auth_env"), s.get("auth_param")
+    if not env:
+        return url, None
+    key = os.environ.get(env)
+    if not key or not param:
+        return None, "missing_credential"
+    return url + ("&" if "?" in url else "?") + urlencode({param: key}), None
 
 
 def main(argv=None):
@@ -98,76 +82,96 @@ def main(argv=None):
     ap.add_argument("--date", required=True)
     ap.add_argument("--round", type=int, choices=(1, 2), required=True)
     ap.add_argument("--out-root", default=".")
-    ap.add_argument("--private-root", default="/workspace/markjin/private")
-    ap.add_argument("--internal-root", default=os.environ.get("MARKJIN_INTERNAL_DIR", "/workspace/markjin-internal"))
+    ap.add_argument("--private-root")
+    ap.add_argument("--internal-root")
     ap.add_argument("--only", default="")
-    ap.add_argument("--delay", type=float, default=1.0)
+    ap.add_argument("--interval", type=float, default=collect.HOST_INTERVAL)
     ap.add_argument("--timeout", type=float, default=30)
     a = ap.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a.date):
         print("bad --date", file=sys.stderr); return 2
-    srcs = (yaml.safe_load(open(a.sources)) or {}).get("sources", [])
+    try:
+        priv_root = collect.resolve_private_root(a.private_root, a.out_root)
+        int_root = collect.resolve_internal_root(a.internal_root, a.out_root)
+    except collect.ConfigError as e:
+        print(f"config: {e}", file=sys.stderr); return 2
+    srcs = (yaml.safe_load(open(a.sources, encoding="utf-8")) or {}).get("sources", [])
     only = {x for x in a.only.split(",") if x}
-    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    fails = {}
-    n_ok = 0
+    run = collect.stamp()
+    sub = "round2/" if a.round == 2 else ""
+    fetcher = collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"),
+                              interval=a.interval, timeout=a.timeout)
+    pub_ar = collect.Archive(day_dir(a.out_root, a.date))
+    priv_ar = collect.Archive(day_dir(priv_root, a.date))
+    int_ar = collect.Archive(day_dir(int_root, a.date)) if int_root else None
+    logs = {"public": [], "internal": []}
+    fails = {"public": [], "internal": []}
+    raw_logs = {"public": [], "internal": []}
+    n_ok = n_bad = 0
     for s in srcs:
         sid = s["id"]
         if only and sid not in only:
             continue
-        if not s.get("enabled") or s.get("method") not in ("rss", "api"):
+        if s.get("method") not in METHODS:
+            if sid in only:
+                print(f"REFUSED {sid}: method {s.get('method')} not capturable here", file=sys.stderr); n_bad += 1
             continue
-        lic = s.get("license", "url+hash-only")
+        ok, why = collect.approval_gate(s)
+        if not ok:
+            if sid in only or s.get("enabled"):
+                print(f"REFUSED {sid}: {why}", file=sys.stderr); n_bad += 1
+            continue
         internal = bool(s.get("internal_only"))
-        pub_rd = round_dir(a.internal_root if internal else a.out_root, a.date, a.round)
-        priv_rd = round_dir(a.internal_root if internal else a.private_root, a.date, a.round)
+        if internal and int_ar is None:
+            print(f"REFUSED {sid}: internal_only source needs --internal-root / MARKJIN_INTERNAL_DIR", file=sys.stderr)
+            n_bad += 1; continue
+        raw_ar = int_ar if internal else priv_ar
+        where = "internal" if internal else "public"
         url = expand_url(s["url"], a.date)
-        t0 = now(); st, ctype, body, err = fetch(url, a.timeout)
-        sha = hashlib.sha256(body).hexdigest() if body else None
-        kind = parse_ok(s["method"], body) if st == 200 else None
-        rec = {"id": sid, "theme": s.get("theme"), "url": url, "round": a.round, "fetched_at": t0,
-               "http_status": st, "bytes": len(body), "sha256": sha, "license": lic, "content_type": ctype}
-        ok = st == 200 and kind is not None
-        if ok:
-            ext = {"json": "json", "xml": "xml"}[kind]
-            fname = f"{stamp}.{ext}"
-            if lic == "full-text-ok" or internal:
-                d = pub_rd / sid; d.mkdir(parents=True, exist_ok=True)
-                data = body
-                if kind == "json" and lic == "full-text-ok" and not internal:
-                    stripped = strip_users(json.loads(body))
-                    if stripped != json.loads(body):
-                        data = json.dumps(stripped, ensure_ascii=False).encode()
-                        rec["stored_sha256"] = hashlib.sha256(data).hexdigest(); rec["user_fields_stripped"] = True
-                (d / fname).write_bytes(data)
-                rec["stored"] = str(d / fname)
-            else:
-                pd = priv_rd / sid; pd.mkdir(parents=True, exist_ok=True)
-                (pd / fname).write_bytes(body)
-                d = pub_rd / sid; d.mkdir(parents=True, exist_ok=True)
-                idx_p = d / "index.json"
-                idx = json.loads(idx_p.read_text()) if idx_p.exists() else []
-                idx.append({"id": sid, "url": url, "sha256": sha, "fetched_at": t0, "bytes": len(body),
-                            "license": lic, "round": a.round})
-                idx_p.write_text(json.dumps(idx, ensure_ascii=False, indent=1) + "\n")
-                rec["stored"] = "private"  # bytes never written to public tree
-            n_ok += 1
+        lic = s.get("license", "url+hash-only")
+        t0 = collect.now()
+        req_url, cred_err = request_url(s, url)
+        if cred_err:
+            r = collect.Result(False, error=cred_err)
         else:
-            rec["error"] = err or ("unparseable" if st == 200 else f"HTTP {st}")
-            fails.setdefault(pub_rd, []).append({k: rec[k] for k in ("id", "url", "fetched_at", "http_status", "error")})
-        pub_rd.mkdir(parents=True, exist_ok=True)
-        with open(pub_rd / "query-log.jsonl", "a") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        print(f"{'OK ' if ok else 'ERR'} {sid} {st} {len(body)}B", file=sys.stderr)
-        time.sleep(a.delay)
-    for rd in {round_dir(a.out_root, a.date, a.round), round_dir(a.internal_root, a.date, a.round)} | set(fails):
-        if rd in fails or (rd / "query-log.jsonl").exists():
-            p = rd / "failures.json"
-            old = json.loads(p.read_text()) if p.exists() else []
-            p.write_text(json.dumps(old + fails.get(rd, []), ensure_ascii=False, indent=1) + "\n")
-    tot = sum(len(v) for v in fails.values())
-    print(f"done: ok={n_ok} failed={tot}", file=sys.stderr)
-    return 1 if tot else 0
+            r = fetcher.get(req_url, sid=sid)
+        rec = {"id": sid, "theme": s.get("theme"), "url": collect.public_url(url), "round": a.round,
+               "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
+               "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
+        kind = parse_ok(r.body) if r.ok else None
+        if r.ok:   # 每个成功响应的原字节都先私有存档（不论能否解析）
+            ext = collect.ext_for(r.ctype, r.body)
+            rel, sha = raw_ar.put_raw(sub, sid, r.body, ext)
+            if ext == "gz" and kind:
+                raw_ar.put_derived(sub, sid, sha, kind, gzip.decompress(r.body))
+            rec["stored"] = "internal" if internal else "private"
+            raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": url, "parsed": kind,
+                                    "final_url": collect.public_url(r.final_url or url), "hops": r.hops})
+        if r.ok and kind:
+            (int_ar if internal else pub_ar).put_json(
+                f"{sub}{sid}/index-{run}.json",
+                [{"id": sid, "url": rec["url"], "sha256": sha, "fetched_at": t0, "bytes": len(r.body),
+                  "license": lic, "round": a.round, "stored": rec["stored"]}])
+            n_ok += 1
+            print(f"OK  {sid} {r.status} {len(r.body)}B", file=sys.stderr)
+        else:
+            rec["error"] = r.error or "unparseable"
+            fails[where].append({k: rec[k] for k in ("id", "url", "fetched_at", "http_status", "error")})
+            n_bad += 1
+            print(f"ERR {sid} {r.status} {rec['error']}", file=sys.stderr)
+        logs[where].append(rec)
+    for where, ar in (("public", pub_ar), ("internal", int_ar)):
+        if ar is None or not (logs[where] or fails[where]):
+            continue
+        ar.put(f"{sub}query-log-{run}.jsonl",
+               "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in logs[where]).encode())
+        ar.put_json(f"{sub}failures-{run}.json", fails[where])
+    for where, ar in (("public", priv_ar), ("internal", int_ar)):
+        if raw_logs[where]:
+            ar.put(f"{sub}fetch-log-{run}.jsonl",
+                   "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in raw_logs[where]).encode())
+    print(f"done: ok={n_ok} failed_or_refused={n_bad}", file=sys.stderr)
+    return 1 if n_bad else 0
 
 
 if __name__ == "__main__":

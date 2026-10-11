@@ -2,7 +2,7 @@
 
 Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. From 2026-10-11 onward, runs follow the spec below (canonical working copy: /workspace/markjin/x-queries.md; v1 kept as x-queries.v1.md); each day's raw/<date>/x-queries.md snapshot should record the actual computed start_time values.
 
-# markjin X query set v2（P0 新源接入；生效 2026-10-12 起）
+# markjin X query set v2（P0 新源接入；依据：王总 2026-10-11 整体确认 source-research/report.md 第四、五节；2026-10-12 起执行）
 
 来源：source-research/report.md 第四节（123 个已核验账号，x_all.tsv active30d=Y 全部覆盖）+ 第五节分主题查询。旧版保存为 x-queries.v1.md。
 
@@ -10,11 +10,17 @@ Past raw/<date>/x-queries.md files are immutable archives and are NOT edited. Fr
 
 - 工具 `x.search_posts_all`；`post.fields=created_at,author_id,public_metrics,entities`，`expansions=author_id,attachments.media_keys`，`user.fields=username`。链接匹配用 `entities.urls[].unwound_url`/`expanded_url`，不用 t.co。
 - `max_results=25`；from: 批次按 recency，主题查询按 relevancy。
-- **round1（05:00 SGT）**：`start_time = now − 48h`。**round2（06:00 SGT）**：`start_time = 当日 05:00 SGT（前一 UTC 日 21:00Z）`，与 round1 按 id 去重。
+- **round1（05:00 SGT）**：`start_time = 当日 05:00 SGT − 48h`（= D−3 日 21:00Z，固定值，不随执行时刻漂移）。**round2（06:00 SGT）**：`start_time = 当日 05:00 SGT（D−1 日 21:00Z）`，与 round1 按 id 去重。
 - 所有查询都带 `-is:retweet -is:reply`；每条 ≤512 字符（实际最长 375）。
 - **`min_faves` 在当前 API 套餐不可用**（2026-10-12 00:1x SGT 实测：`Reference to invalid operator 'min_faves'`），报告中的 min_faves 条件全部去掉，改为在派生过滤阶段按 `public_metrics.like_count ≥ 20 或 retweet_count ≥ 5 或作者在白名单` 过滤（白名单 = 下列 from: 批次的全部账号）。
 - 报告中已被 from: 批次完全覆盖的主题查询（如 `from:NickTimiraos` 的 FOMC、`from:BLS_gov/BEA_News`、`from:CERN/Fermilab/PhysRevLett`、`from:SECGov/HKEXGroup`、`from:CopernicusECMWF/hausfath`、`from:planet4589/jeff_foust/SpaceX`）不单独发请求。
 - 旧版中不在 123 名单内的账号（如 xai、NatureNews 不存在/异常；OpenAIDevs、JeffDean 等未入核验名单）已移出；如需保留请单独补核验。
+
+## 线索身份（审查 PR #3 MEDIUM 8 修复）
+
+- **每条 X 结果固定写入 `source_role: lead`**（含派生过滤结果、白名单作者、高互动帖）。点赞数、转发数、作者白名单只决定“是否进入线索列表”，不改变线索身份。
+- X 帖子本身不能形成事实断言。只有在独立一手材料（原发布者页面/文件/数据）经核验——来源身份、页面内容与帖子原断言三者一致——之后，才可在稿件里写事实断言，且断言引用一手材料而非帖子。`fetch_primary.py` 抓到 HTTP 200 只记 `fetch_status`，不等于核验（见 `scripts/README.md`）。
+- 两轮窗口是执行参数，不靠人工：`x_capture.py plan --date YYYY-MM-DD --round 1|2` 按下文规则自动计算 `start_time`，缺参数或时间格式不对即报错退出。
 
 ## A. from: 账号批次（7 条）
 

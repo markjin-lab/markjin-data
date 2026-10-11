@@ -200,3 +200,15 @@
 - **整体验收 r12 修复（数字核对范围）**：`check_pair` 判“来源支持”时只用被引用的那一条——arXiv / X 为 `select_entries` 按条目 id（及版本）选出的正文域；FRED 存档已按 series_id 绑定为单一系列（URL 不带 vintage），范围即该系列文件。同一 raw 里其他条目的数字不再算作支持。
 - **整体验收 r13 修复（审查 bot 定）**：FRED 只在被引用的那一期观测里核数字（断言写观测日期则按 date 选；写 vintage 则再按 realtime_start/realtime_end 限定；多条观测且没写日期 → 不算支持；日期与 vintage 本身不当作要核对的数字）；带来源段落、非结构化行核对时带上断言原文（去掉 raw 路径与 URL），断言里有数字却不被引用条目支持 → R-SUPPORT-UNVERIFIED。
 - **整体验收 r15 修复（审查 bot 定的技术方案）**：(1) front matter 统一用 yaml.safe_load 解析一次，更正稿元数据（corrects / corrected_at）与日期字段都按解析后的值判断，带引号与不带引号等价；(2) tongyi 长文豁免：front matter `type: tongyi` 且路径为 `tongyi/<name>.md`（站点 `content/posts/tongyi/<name>.md`）的稿件及其更正稿，不报日报专用的 E-INFER-UNCLEAR、E-REPLAY-001；硬拦（买卖建议、仓位、宏观观点、内部词表、X-only 等）照常；type 与路径只有一方是 tongyi → E-TONGYI-MISMATCH（fail-closed，照常跑日报检查）。理由：长文由 Codex 加王总 v2 direct 逐篇把关。`check_text` 新增 `rel` 参数，CLI 按稿件相对 --repo 的路径传入。
+
+## 采集规则（PR #3 审查 REJECTED 修复，2026-10-12）
+
+- 公共层 `markjin/collect.py`，`capture_sources.py` 只经它访问网络。
+- **审批门禁**：只采集 `enabled: true` + `approval_status: approved` + 非空 `approval_basis` 的源；其他一律拒绝（`--only` 点名未审批源 → 退出码 1）。`approval_basis` 写法见 `improve/sources.yaml` 文件头。
+- **许可**：所有源默认 `url+hash-only`。不再有整源或整域名（含 .gov/.mil）全文许可；整份 RSS/API 响应永不进公开目录。全文只能逐条目公开：须有针对该 URL 的许可证据（`url, license, license_url, evidence_url, attribution, verified_by, verified_at`，许可限 CC-BY-4.0 / CC0-1.0 / US-Gov-PD 且后者须 `third_party_excluded: true`），由 `collect.public_fulltext_ok` 在写公开目录前逐条校验，否则默认私有。
+- **原件与只追加**：原字节不解压、不脱敏，按 sha256 独占创建写入私有 `raw/DATE/[round2/]<id>/<sha256>.<ext>`，追加私有 `MANIFEST.sha256`；解压等派生物写 `derived/` 并登记 `DERIVED.sha256` / `DERIVED-FROM.tsv`。公开目录每次运行只独占创建 `<id>/index-<run>.json`、`query-log-<run>.jsonl`、`failures-<run>.json`，追加公开 `MANIFEST.sha256`，任何已存在文件都不改写（字节不同 → `ArchiveError`）。
+- **访问礼仪**：UA `markjin-collector/0.1 (+https://markjin-lab.github.io; markjin@mail.grokbot.com)`；每主机限速（默认 2 秒，robots `Crawl-delay`/`Request-rate` 更严则从严），robots.txt 请求本身也限速；RSS/API 也查 robots；不自动跟随重定向，每一跳重新查拒绝主机（t.co）、停用状态、robots 与限速。
+- **拒绝与重试**：403 或验证页 → 持久停用主机与源（私有 `state/collector-hosts.json`，人工复核后删条目恢复）；只有 429/5xx/网络错误重试，按 `Retry-After`（>120 秒则放弃本次）或指数退避（2、4、8 秒），最多 3 次；超过 25 MiB 明确失败，不存半截。
+- **路径与日志**：私有根目录必须 `--private-root` 或 `MARKJIN_PRIVATE_DIR` 显式给出，且与公开根目录互不包含；代码中无本机默认路径。公开记录只写 `stored: private|internal`、错误类别和脱敏 URL（去 userinfo、跟踪参数、凭证型参数）；需要免费密钥的 API 用 `auth_env`/`auth_param`，密钥只在请求时拼接，不进任何记录。
+- **严格 JSON**：`capture_sources.parse_ok`、`collect.HostState`、`collect.load_license_evidence` 用 `markjin/strictjson.py`（重复键 → 无法解析）。
+- 测试：`tests/test_collect.py`（审批门禁、路径、URL 脱敏、逐条许可、只追加档案、robots/重定向/t.co、403 与验证页停用、退避、限速、超限、重复键）。

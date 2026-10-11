@@ -1,5 +1,9 @@
 # markjin P0 sources (from source-research/report.md, checked 2026-10-12 00:08 SGT)
-# license: full-text-ok | url+hash-only | market-data-restricted
+# license: url+hash-only (default for every source) | market-data-restricted. No whole-source / whole-domain
+#   full-text permission: full text may go public only per item with verified license evidence (scripts/markjin/collect.py).
+# approval_status: approved | pending. Capture code refuses any source that is not approved (approval_gate).
+# approval_basis: "王总 2026-10-11 整体确认，报告条目号 三.<核心|文明><小节>.<行>" = source-research/report.md 第三节，
+#   核心六主题 / 文明轨迹领域 的第 <小节> 张表第 <行> 行（从 1 起）。Sources not in the report: pending + disabled.
 sources:
 - id: arxiv-cs-ai
   theme: ai
@@ -9,6 +13,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.1
   license: url+hash-only
   internal_only: false
   notes: metadata ok; per-paper license, default index
@@ -20,6 +26,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license, default index
@@ -31,6 +39,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.2
   license: url+hash-only
   internal_only: false
   notes: no blanket reprint license
@@ -42,6 +52,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.3
   license: url+hash-only
   internal_only: false
   notes: 'report: no confirmed official RSS; candidate URL tested'
@@ -53,6 +65,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:31+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.4
   license: url+hash-only
   internal_only: false
   notes: webpage only; no official RSS/API
@@ -64,6 +78,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:31+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.5
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -75,6 +91,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:33+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.1
   license: url+hash-only
   internal_only: false
   notes: no reliable login-free API
@@ -86,6 +104,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:34+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.2
   license: url+hash-only
   internal_only: false
   notes: webpage + attachments
@@ -97,6 +117,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:34+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.3
   license: url+hash-only
   internal_only: false
   notes: default index per report
@@ -108,6 +130,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:35+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.3
   license: url+hash-only
   internal_only: false
   notes: default index per report
@@ -119,6 +143,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:35+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.4
   license: market-data-restricted
   internal_only: false
   notes: rate data; public repo index only
@@ -130,6 +156,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:35+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.5
   license: url+hash-only
   internal_only: false
   notes: v1 no key; daily cap 25 req; attribute+revision
@@ -141,6 +169,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:36+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.6
   license: url+hash-only
   internal_only: false
   notes: API needs free key; page only
@@ -152,6 +182,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.7
   license: url+hash-only
   internal_only: false
   notes: default index per report
@@ -163,6 +195,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license
@@ -174,6 +208,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license
@@ -185,6 +221,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:07:39+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.2
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -196,9 +234,12 @@ sources:
   check_status: '000 curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading'
   checked_at: '2026-10-12T00:07:49+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.3
+  license: url+hash-only
   internal_only: false
   notes: open data, attribution per gwosc.org/acknowledgement
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: scoap3-records
   theme: physics
   priority: P0
@@ -207,6 +248,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:07:50+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.4
   license: url+hash-only
   internal_only: false
   notes: articles usually CC BY / metadata CC0; per-record check before archiving
@@ -218,6 +261,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:08+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.1
   license: market-data-restricted
   internal_only: false
   notes: no redistribution right
@@ -229,6 +274,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:10+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.2
   license: market-data-restricted
   internal_only: false
   notes: no redistribution right
@@ -240,6 +287,8 @@ sources:
   check_status: '302 curl: (47) Maximum (50) redirects followed (web-only; not auto-collected)'
   checked_at: '2026-10-12T00:08:12+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.3
   license: market-data-restricted
   internal_only: false
   notes: no redistribution right
@@ -251,6 +300,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:16+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.4
   license: url+hash-only
   internal_only: false
   notes: filings PDFs; index
@@ -262,6 +313,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:16+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.5
   license: url+hash-only
   internal_only: false
   notes: 'SEC fair-access: needs declared UA; filer content not PD'
@@ -273,6 +326,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:17+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.1
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -284,9 +339,12 @@ sources:
   check_status: '401'
   checked_at: '2026-10-12T00:08:18+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.2
+  license: url+hash-only
   internal_only: false
   notes: CC BY 4.0 with attribution
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: unsc
   theme: geopolitics
   priority: P0
@@ -295,6 +353,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:18+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.3
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -306,6 +366,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:20+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明1.4
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -317,6 +379,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:21+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明2.1
   license: url+hash-only
   internal_only: false
   notes: annual
@@ -328,6 +392,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:22+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明2.2
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -339,9 +405,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:23+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明2.3
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: eia-api
   theme: energy
   priority: P0
@@ -350,9 +419,12 @@ sources:
   check_status: '403'
   checked_at: '2026-10-12T00:08:23+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.1
+  license: url+hash-only
   internal_only: false
   notes: requires free API key (none configured)
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: iaea-pris
   theme: energy
   priority: P0
@@ -361,6 +433,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:24+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.2
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -372,6 +446,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:26+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.3
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -383,9 +459,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:28+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.4
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: nea-cn
   theme: energy
   priority: P0
@@ -394,6 +473,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:29+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.6
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -405,6 +486,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:29+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license; default index; URL uses {date-N} placeholders expanded by capture_sources.py
@@ -416,6 +499,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:29+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.2
   license: url+hash-only
   internal_only: false
   notes: keep NCT ids
@@ -427,6 +512,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:30+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.3
   license: url+hash-only
   internal_only: false
   notes: PMID index
@@ -438,9 +525,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:30+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明4.4
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: bis-fr-notices
   theme: semis
   priority: P0
@@ -449,9 +539,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:30+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.1
+  license: url+hash-only
   internal_only: false
   notes: federal; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: tsmc-quarterly
   theme: semis
   priority: P0
@@ -460,6 +553,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:31+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.2
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -471,6 +566,8 @@ sources:
   check_status: 403 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:31+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.3
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -482,6 +579,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:31+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.5
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -493,6 +592,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:32+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明6.1
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -504,6 +605,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:33+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明6.2
   license: url+hash-only
   internal_only: false
   notes: per-dataset license
@@ -515,6 +618,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:34+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明6.3
   license: url+hash-only
   internal_only: false
   notes: CC BY generally, includes external sources -> index
@@ -526,9 +631,12 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:34+08:00'
   enabled: true
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明7.1
+  license: url+hash-only
   internal_only: false
   notes: federal original; exclude images/3rd-party
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: esa-top
   theme: space
   priority: P0
@@ -537,6 +645,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:34+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明7.2
   license: url+hash-only
   internal_only: false
   notes: index; per-item license
@@ -548,6 +658,8 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:36+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明7.3
   license: url+hash-only
   internal_only: false
   notes: webpage only
@@ -559,6 +671,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明8.1
   license: url+hash-only
   internal_only: false
   notes: per-paper license
@@ -570,9 +684,12 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明8.2
+  license: url+hash-only
   internal_only: false
   notes: CC BY 4.0; keep attribution+DOI
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: ctgov-bci
   theme: bci
   priority: P0
@@ -581,6 +698,8 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.2
   license: url+hash-only
   internal_only: false
   notes: keep NCT ids
@@ -592,9 +711,12 @@ sources:
   check_status: '200'
   checked_at: '2026-10-12T00:08:37+08:00'
   enabled: true
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.3
+  license: url+hash-only
   internal_only: false
   notes: openFDA data usable; applicant material index only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: frontiers-bci
   theme: bci
   priority: P0
@@ -603,9 +725,12 @@ sources:
   check_status: 200 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:40+08:00'
   enabled: false
-  license: full-text-ok
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.4
+  license: url+hash-only
   internal_only: false
   notes: CC BY articles; page only
+  license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: nmpa
   theme: bci
   priority: P0
@@ -614,6 +739,8 @@ sources:
   check_status: 412 (web-only; not auto-collected)
   checked_at: '2026-10-12T00:08:41+08:00'
   enabled: false
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明9.5
   license: url+hash-only
   internal_only: false
   notes: webpage only
