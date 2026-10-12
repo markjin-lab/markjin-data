@@ -734,5 +734,80 @@ class R5Fixes(unittest.TestCase):
         self.assertIn("https://f.org/public/b.json", pub)
 
 
+class R6Fixes(unittest.TestCase):
+    """PR #3 审查 r6：按采集方式校验内容；无厂商标记的验证片段（200 / 3xx）。"""
+
+    def tmpdir(self):
+        return Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    FRAG = b"<div>Check your browser</div>"
+
+    def test_is_challenge_short_body_or_title_only(self):
+        self.assertTrue(collect.is_challenge(self.FRAG))
+        self.assertTrue(collect.is_challenge(b"Checking your browser before accessing"))
+        self.assertTrue(collect.is_challenge(b"<title>Checking your browser</title>" + b"x" * 5000))
+        self.assertFalse(collect.is_challenge(b"<p>" + b"long article " * 400 + b"check your browser settings</p>"))
+
+    def test_content_suspect_rules(self):
+        cs = collect.content_suspect
+        self.assertIsNone(cs("rss", {}, b"\xef\xbb\xbf<?xml version='1.0'?><rss><channel/></rss>"))
+        self.assertIsNone(cs("rss", {}, b"<feed xmlns='http://www.w3.org/2005/Atom'/>"))
+        self.assertIsNone(cs("rss", {}, b"<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'/>"))
+        self.assertEqual(cs("rss", {"Content-Type": "text/plain"}, b"<div>hello</div>"), "html")
+        self.assertEqual(cs("rss", {}, b"<?xml version='1.0'?><error>x</error>"), "xml_root:error")
+        self.assertEqual(cs("rss", {}, b"garbage"), "xml_unparseable")
+        self.assertEqual(cs("rss", {"Content-Type": "text/html"}, b"<rss/>"), "html")
+        self.assertIsNone(cs("api", {}, b'{"a": 1}'))
+        self.assertEqual(cs("api", {}, b"<error/>"), "json_unparseable")
+        self.assertEqual(cs("api", {}, b"oops"), "json_unparseable")
+        self.assertEqual(cs("api", {"Content-Type": "text/plain"}, b"<span>wait</span>"), "html")
+        self.assertIsNone(cs("api", {}, b"<eSearchResult/>", "xml", ["eSearchResult"]))
+        self.assertEqual(cs("api", {}, b"<other/>", "xml", ["eSearchResult"]), "xml_root:other")
+
+    def test_get_200_and_302_vendorless_fragment_disable(self):
+        for resp in (Resp(200, self.FRAG, {"Content-Type": "text/plain"}),
+                     Resp(302, self.FRAG, {"Location": "https://a.org/y", "Content-Type": "text/plain"})):
+            p = self.tmpdir() / "st.json"
+            f, _ = mk({"https://a.org/x": resp, "https://a.org/y": Resp(200, b"ok")}, state=collect.HostState(p))
+            r = f.get("https://a.org/x", sid="s")
+            self.assertEqual(r.error, "challenge", resp.status)
+            self.assertNotIn("https://a.org/y", [u for u, _ in f.opener.calls])
+            self.assertIn("a.org", collect.HostState(p).data["hosts"])
+
+    def _cs(self, src, resp):
+        t = CaptureT("test_auth_key_never_logged"); t.setUp()
+        rc = t.run_cs([src], {src["url"]: resp})
+        day = t.out / "raw/2026-10-12"
+        idx = list(day.rglob("index-*.json")) if day.exists() else []
+        return rc, idx, t
+
+    def test_capture_rss_api_suspect_disables_no_index(self):
+        cases = [(dict(CaptureT.S, url="https://f.org/rss"), Resp(200, b"<div>please wait</div>", {"Content-Type": "text/plain"})),
+                 (dict(CaptureT.S, url="https://f.org/rss"), Resp(200, b"<?xml version='1.0'?><error/>")),
+                 (dict(CaptureT.S, method="api", url="https://f.org/a.json"), Resp(200, b"<root/>")),
+                 (dict(CaptureT.S, method="api", url="https://f.org/a.json"), Resp(200, b"not json"))]
+        for src, resp in cases:
+            import io, contextlib
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                rc, idx, t = self._cs(src, resp)
+            self.assertEqual(rc, 1, src)
+            self.assertEqual(idx, [], src)
+            hs = json.loads((t.priv / "state/collector-hosts.json").read_text())
+            self.assertIn("f.org", hs["hosts"])                                       # 持久停用
+            self.assertIn("suspected_challenge", err.getvalue())
+            fl = next((t.out / "raw/2026-10-12").glob("failures-*.json")).read_text()
+            self.assertIn("suspected_challenge", fl)
+            self.assertTrue(list((t.priv / "raw/2026-10-12").rglob("feed/*")))      # 原字节仍私有存档
+
+    def test_capture_rss_302_vendorless_fragment_disables(self):
+        src = dict(CaptureT.S, url="https://f.org/rss")
+        t = CaptureT("test_auth_key_never_logged"); t.setUp()
+        rc = t.run_cs([src], {"https://f.org/rss": Resp(302, self.FRAG, {"Location": "https://f.org/rss2"}),
+                              "https://f.org/rss2": Resp(200, b"<rss/>")})
+        self.assertEqual(rc, 1)
+        self.assertFalse(list((t.out / "raw/2026-10-12").rglob("index-*.json")))
+        self.assertIn("f.org", json.loads((t.priv / "state/collector-hosts.json").read_text())["hosts"])
+
+
 if __name__ == "__main__":
     unittest.main()

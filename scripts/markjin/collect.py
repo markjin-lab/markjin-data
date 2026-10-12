@@ -49,7 +49,48 @@ CHALLENGE = re.compile(rb"Just a moment\.\.\.|challenges\.cloudflare\.com|/cdn-c
                        rb"Attention Required! \| Cloudflare|<title>\s*Access Denied|Access Denied</title>|"
                        rb"<title>[^<]*captcha|id\s*=\s*[\"']?captcha\b|class\s*=\s*[\"'][^\"']*\bcaptcha\b|"
                        rb"g-recaptcha|hcaptcha|cf-turnstile|id\s*=\s*[\"']?challenge-form\b|_Incapsula_Resource|"
-                       rb"px-captcha|geetest_|<title>[^<]*(?:Verify you are human|Robot Check)", re.I)
+                       rb"px-captcha|geetest_|<title>[^<]*(?:Verify you are human|Robot Check|Check(?:ing)? your browser)", re.I)
+# 无厂商标记的通用验证语句：只在 <title> 里（见上）或很短的正文里才算，避免误伤正文中提到它的长文章
+_SHORT_CHALLENGE = re.compile(rb"Check(?:ing)? your browser", re.I)
+SHORT_BODY = 2048
+
+
+def is_challenge(body):
+    if not body:
+        return False
+    return bool(CHALLENGE.search(body[:20000])) or (len(body.strip()) <= SHORT_BODY and bool(_SHORT_CHALLENGE.search(body)))
+
+
+RSS_ROOTS = frozenset({"rss", "feed", "RDF"})
+
+
+def content_suspect(method, headers, body, fmt=None, xml_roots=None):
+    """按采集方式校验内容（不再逐个加厂商特征）。返回疑似验证页的原因，正常返回 None。
+    任一方式：looks_html 即可疑。rss：XML 根元素必须是 rss / feed / RDF；api：默认应是 JSON，解析不了即可疑；
+    api 源在 sources.yaml 声明 format: xml 时，根元素必须在它的 xml_roots 中。"""
+    import gzip, xml.etree.ElementTree as ET
+    from . import strictjson
+    b = body or b""
+    if b[:2] == b"\x1f\x8b":
+        try:
+            b = gzip.decompress(b)
+        except OSError:
+            return "gzip_undecodable"
+    b = b.lstrip(b"\xef\xbb\xbf \r\n\t")
+    if looks_html(headers, b, xml_ok=True):
+        return "html"
+    if method == "rss" or fmt == "xml":
+        roots = RSS_ROOTS if method == "rss" else frozenset(xml_roots or ())
+        try:
+            root = ET.fromstring(b).tag.rsplit("}", 1)[-1]
+        except ET.ParseError:
+            return "xml_unparseable"
+        return None if root in roots else f"xml_root:{root[:40]}"
+    try:
+        strictjson.loads(b.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return "json_unparseable"
+    return None
 FAKEIP_ENV = "MARKJIN_PROXY_FAKEIP_CIDR"
 APPROVED = "approved"
 
@@ -375,13 +416,27 @@ def suspect_status(st):
 _TAG_START = re.compile(rb"<(?:!|\?|/?[a-z][a-z0-9-]*(?:[\s/>]|$))", re.I)
 
 
-def looks_html(headers, body):
+_HTML_TAGS = frozenset(b"html head body div p span script title meta link form iframe noscript style br a img table "
+                       b"center main section header footer h1 h2 h3 h4 h5 h6 ul li button input".split())
+_PROLOG = re.compile(rb"(?:\s*(?:<\?[^>]*\?>|<!--.*?-->|<!doctype(?!\s+html)[^>]*>))*\s*", re.I | re.S)
+_FIRST_EL = re.compile(rb"<([a-z][a-z0-9:-]*)", re.I)
+
+
+def looks_html(headers, body, xml_ok=False):
     """是否 HTML：Content-Type 含 html，或正文（去 BOM/空白后）以 < 开头的标签片段（含 text/plain 下的
-    <div>…、<!doctype …>、<?xml …>）。robots.txt 正文合法情况下不会以标签开头。"""
+    <div>…、<!doctype …>、<?xml …>）。robots.txt 正文合法情况下不会以标签开头，所以默认任何标签开头都算。
+    xml_ok=True（rss/api 内容校验用）：XML 文档不算 HTML，除非跳过 XML 声明/注释后第一个元素是 HTML 标签
+    或 <!doctype html>；根元素对不对由 content_suspect 另行校验。"""
     ct = ((headers or {}).get("Content-Type") or "").lower()
     head = body[:2048].lstrip(b"\xef\xbb\xbf \r\n\t").lower()
-    return "html" in ct or bool(_TAG_START.match(head)) or b"<html" in head or b"<body" in head \
-        or b"<script" in head
+    if "html" in ct or head.startswith(b"<!doctype html"):
+        return True
+    if xml_ok:
+        m = _FIRST_EL.match(head, _PROLOG.match(head).end())
+        return bool(m) and m.group(1) in _HTML_TAGS
+    return bool(_TAG_START.match(head)) or b"<html" in head or b"<body" in head or b"<script" in head
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
@@ -478,7 +533,7 @@ class Fetcher:
         """html_is_challenge（robots 用）：401/429/5xx 返回 HTML 视为疑似验证页，不重试，直接交回调用方停用。"""
         for attempt in range(MAX_RETRIES + 1):
             st, h, body, ec, det = self._raw(url, accept)
-            challenged = bool(body) and CHALLENGE.search(body[:20000])
+            challenged = is_challenge(body)
             if html_is_challenge and suspect_status(st) and body and looks_html(h, body):
                 challenged = True
             retryable = (ec == "network" or st == 429 or 500 <= st < 600) and not challenged
@@ -522,7 +577,7 @@ class Fetcher:
                 st, ec, body, h = 0, "robots_blocked_address", b"", {}; break
             st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*", html_is_challenge=True)
             h = h or {}
-            if body and CHALLENGE.search(body[:20000]):
+            if is_challenge(body):
                 break                    # 先查验证页（含带验证内容的 3xx），命中即停用，不再跟随 Location
             if st in REDIRECT_CODES:
                 loc = h.get("Location")
@@ -532,7 +587,7 @@ class Fetcher:
                 st, ec = 0, "too_many_redirects"
                 continue
             break
-        challenged = bool(body) and CHALLENGE.search(body[:20000])
+        challenged = is_challenge(body)
         if st == 200 and not ec and not challenged and looks_html(h, body):
             challenged = True     # robots.txt 返回 HTML：一律按验证页处理（不当作空规则）
         if challenged:
@@ -586,7 +641,7 @@ class Fetcher:
                 return Result(False, final_url=cur, hops=hops, error="robots_disallow")
             st, h, body, ec, det = self._with_retry(cur, accept)
             ctype = (h.get("Content-Type") if h else "") or ""
-            if body and CHALLENGE.search(body[:20000]):    # 每一跳先查验证页，再处理 Location
+            if is_challenge(body):    # 每一跳先查验证页，再处理 Location
                 self.state.disable(host, sid, f"bot challenge page (HTTP {st})")
                 return Result(False, st, ctype, b"", cur, hops, "challenge")
             if st in REDIRECT_CODES:

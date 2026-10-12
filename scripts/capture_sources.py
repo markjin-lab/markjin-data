@@ -30,7 +30,7 @@ Exit code: 0 = all ok, 1 = 有失败或拒绝, 2 = 参数/配置错误.
 import argparse, datetime as dt, gzip, json, os, re, sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -192,6 +192,13 @@ def main(argv=None):
                    "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
                    "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
             kind = parse_ok(r.body) if r.ok else None
+            suspect = collect.content_suspect(s["method"], {"Content-Type": r.ctype}, r.body,
+                                              s.get("format"), s.get("xml_roots")) if r.ok else None
+            if suspect:      # 按采集方式校验不通过 → 疑似验证页：持久停用主机，不写成功索引（原字节仍私有存档）
+                fetcher.state.disable(urlsplit(r.final_url or req_url).hostname, sid,
+                                      f"suspected challenge page ({s['method']}: {suspect})")
+                kind = None
+                r.error = f"suspected_challenge:{suspect}"
             if r.ok:   # 每个成功响应的原字节都先私有存档（不论能否解析）
                 ext = collect.ext_for(r.ctype, r.body)
                 rel, sha = raw_ar.put_raw(sub, sid, r.body, ext)
