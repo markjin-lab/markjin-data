@@ -865,5 +865,55 @@ class R7Review(R6Trust):
         self.assertEqual(cb.run_ids("xrun:901"), set())
 
 
+def cb_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cb", Path(__file__).resolve().parents[1] / "scripts/check-branches.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+class R8VoidWarnOnly(R6Trust):
+    """r8：自动排除和 VOID 相关的问题一律只警告，不改退出码，计数 INVALID（main 与 PR 一样）。"""
+
+    def assert_warn(self, p, code):
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertRegex(p.stdout, r"warn line \S+: " + code)
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("stats INVALID", p.stdout)
+
+    def test_void_unverified_main_is_warn(self):
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "in time"); self.push(c, "2026-10-13T00:00:00Z", 11)
+        self.commit(csv_of(r1, r2, v(r1, "x run:11"), v(r2, "x run:11")), "void")
+        self.assert_warn(self.cli(), "E-BR-VOID-UNVERIFIED")
+
+    def test_void_partial_is_warn(self):
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "in time"); self.push(c, "2026-10-13T00:00:00Z", 12)
+        self.commit(csv_of(r1, r2, v(r1, "x run:12")), "single void")
+        self.assert_warn(self.cli(), "E-BR-VOID-PARTIAL")
+
+    def test_void_split_and_after_void_on_pr_is_warn(self):
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "late"); self.push(c, "2026-10-15T00:00:00Z", 13)
+        v1, v2 = v(r1, "x run:13"), v(r2, "x run:13")
+        self.commit(csv_of(r1, r2, v1), "void b1")
+        self.commit(csv_of(r1, r2, v1, v2), "void b2")
+        f = self.d / "runs.json"; f.write_text(json.dumps(self.runs))
+        p = subprocess.run(["python3", str(self.script), "--repo", str(self.d), "--base", "HEAD~2", "--main-ref", "HEAD~2",
+                            "--push-runs", str(f), "--now", "2026-10-15T09:00:00+08:00", "--count-gate", "--stats"],
+                           capture_output=True, text=True)
+        self.assert_warn(p, "E-BR-VOID-SPLIT")
+        self.assertIn("E-BR-AFTER-VOID", cb_module().VOID_CODES)
+
+    def test_void_filled_is_warn(self):
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "late"); self.push(c, "2026-10-15T00:00:00Z", 14)
+        self.commit(csv_of(r1, r2, dict(v(r1, "x run:14"), checked_by="审查与治理"), v(r2, "x run:14")), "void")
+        self.assert_warn(self.cli(), "E-BR-VOID-FILLED")
+
+    def test_non_void_errors_still_fail(self):
+        self.commit(csv_of(row(trigger_condition="x > 100"), sibling(row())), "bad")
+        self.assertEqual(self.cli().returncode, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

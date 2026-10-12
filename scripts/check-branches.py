@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from markjin import branches  # noqa: E402
 
 MAX_SKEW = timedelta(hours=6)
+VOID_CODES = {"E-BR-VOID-PARTIAL", "E-BR-VOID-FILLED", "E-BR-AFTER-VOID", "E-BR-VOID-SPLIT", "E-BR-VOID-UNVERIFIED"}
 
 
 def _dt(ts):
@@ -120,7 +121,7 @@ def trust_check(repo, rows, main_ref, runs):
         if g in unknown or (regs and runs is None):
             warns.append((ln, "W-BR-VOID-UNVERIFIABLE")); valid = False
         elif g not in late or run_ids(r["reason"]) != {late_run[g]}:
-            errs.append((ln, "E-BR-VOID-UNVERIFIED"))
+            warns.append((ln, "E-BR-VOID-UNVERIFIED")); valid = False
     return errs, warns, late, valid
 
 
@@ -220,6 +221,17 @@ def main(argv=None):
         except branches.GitError:
             print(f"E-BR-BASE-UNREADABLE 基线 {a.base} 不存在或无法读取（fail-closed）")
             return 1
+    # 自动排除与 VOID 相关的问题一律只警告（main 和 PR 都一样），不改退出码，但计数输出 INVALID
+    void_lines = {str(ln) for ln, r in rows if r["check_result"] in ("VOID", "VOID_REVOKED")}
+    keep = []
+    for x in out:
+        code = x.rsplit(": ", 1)[-1]
+        ln = x.split("line ", 1)[-1].split(":", 1)[0]
+        if code in VOID_CODES or ln in void_lines:
+            warns.append((ln, code)); valid = False
+        else:
+            keep.append(x)
+    out = keep
     for x in out:
         print(x)
     for ln, code in warns:   # 时间相关问题只作警告输出，不改变退出码

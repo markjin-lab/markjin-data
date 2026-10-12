@@ -79,6 +79,7 @@
    - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。例外是台账还没有任何数据行（只有表头）时，可以调整表头；第一条数据行进入 main 之后，这个例外永久失效。push 时 before 必须是 HEAD 的祖先（否则 E-BR-NOT-FAST-FORWARD），并直接比较 before 与 HEAD 两个版本的台账，确认只是追加；main 已在分支保护里禁止强推和删除；但还没有要求必须通过状态检查、也没有要求必须经 PR 合入，所以 main 上的台账检查目前是推送之后才运行、事后报警，失败的行在作废前可能已经落地。基线提交不存在或读不出时判失败，不放行。
    - **推送时间。** PR 上 CI 用运行时间（`--now`），只对本次 PR 新登记的行和登记更正行核对：与 registered_at 相差不超过 6 小时，并且早于 window_start 当日 00:00（SGT）。
    - **可信合并时间。** 每一条登记行和登记更正行，都用它自己第一次进入 main 的那次 push 的时间核对，必须早于 window_start。这个时间取 head_sha 恰为该行首次出现的 main 提交（按 first-parent 历史）的最早一次 push 运行的 created_at；CI 先单独一步用 GITHUB_TOKEN 只读查询 Actions API（失败重试 3 次，含限速），写成 JSON 交给 `--push-runs`。提交时间（committer date）一律不用。查不到首次运行（一次 push 多个提交、运行记录超过 90 天保留期或超出 1000 条查询上限）时判“时间未知”（W-BR-PUSH-TIME-UNKNOWN），不拿后来的运行顺延；取不到运行列表时报 W-BR-PUSH-TIME-UNAVAILABLE。每次检查都全量复核。
+   - **VOID 相关全部仅警告。** E-BR-VOID-UNVERIFIED、E-BR-VOID-PARTIAL、E-BR-VOID-SPLIT、E-BR-VOID-FILLED、E-BR-AFTER-VOID，以及作废行、撤销作废行上的任何问题，在 main 和 PR 上都只输出 `warn`，不改退出码，但计数输出 INVALID。
    - **时间相关只警告。** 上述时间检查在 main 上只输出 `warn` 行，不让 CI 一直红；但只要有时间未知、缺 `--main-ref` 或缺运行记录，`--count-gate` 和 `--stats` 就输出 INVALID。`--main-ref` 不是可读提交时报 E-BR-MAIN-REF。
    - **晚合并的组自动排除。** 任一登记行或登记更正行的可信时间不早于 window_start，整组自动排除出门禁计数和命中率，`--stats` 列出 excluded_late_groups；在用整组作废行留痕之前持续警告 W-BR-LATE-UNHANDLED。
    - **临时规则（时间凭证落地前）。** 登记 PR 和登记更正 PR 都必须在 window_start 之前合并，由审查与治理 bot 人工核对。脚本算出的门禁数只是预估，是否计入门禁以人工核对为准。时间凭证、凭证写回 main 等见跟进 Issue。
