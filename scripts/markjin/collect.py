@@ -17,9 +17,11 @@
 import datetime as dt
 import email.utils
 import hashlib
+import ipaddress
 import json
 import os
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -114,7 +116,7 @@ def public_url(u):
     """用于一切记录/日志（公开与私有）：去掉 userinfo、片段，查询参数只留 SAFE_PARAMS 白名单。"""
     p = urlsplit(u.strip())
     host = (p.hostname or "").lower()
-    netloc = host + (f":{p.port}" if p.port else "")
+    netloc = (f"[{host}]" if ":" in host else host) + (f":{p.port}" if p.port else "")
     q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k in SAFE_PARAMS]
     return urlunsplit((p.scheme.lower(), netloc, p.path, urlencode(q), ""))
 
@@ -125,19 +127,32 @@ def host_of(u):
 
 # ---------------------------------------------------------------- 逐条目许可
 PUBLIC_LICENSES = {"CC-BY-4.0", "CC0-1.0", "US-Gov-PD"}
-EVIDENCE_FIELDS = ("url", "license", "license_url", "evidence_url", "attribution", "verified_by", "verified_at")
+EVIDENCE_FIELDS = ("url", "sha256", "license", "license_url", "evidence_url", "attribution", "verified_by",
+                   "verified_at")
 
 
-def public_fulltext_ok(evidence, url):
+def full_url_key(u):
+    """许可匹配用的完整条目身份（审查 r2：不能用脱敏 URL）：只规范 scheme/主机大小写、去片段，
+    路径与全部查询参数原样保留。仅在私有侧/内存中使用，不写公开记录。"""
+    p = urlsplit(u.strip())
+    host = (p.hostname or "").lower()
+    netloc = (f"[{host}]" if ":" in host else host) + (f":{p.port}" if p.port else "")
+    return urlunsplit((p.scheme.lower(), netloc, p.path or "/", p.query, ""))
+
+
+def public_fulltext_ok(evidence, url, sha256):
     """逐条目判断全文可否进公开目录。默认 False（url+hash-only）。
-    需要：针对该 URL 的许可证据记录，字段齐全，许可在白名单内；US-Gov-PD 另需 third_party_excluded: true。"""
+    需要：针对该*完整* URL（含全部查询参数）且绑定该响应 sha256 的许可证据，字段齐全，许可在白名单内；
+    US-Gov-PD 另需 third_party_excluded: true。原 URL 与最终 URL 须各自有证据、各自核对。"""
     if not evidence:
         return False, "no license evidence (default url+hash-only)"
     miss = [k for k in EVIDENCE_FIELDS if not str(evidence.get(k) or "").strip()]
     if miss:
         return False, "license evidence incomplete: " + ",".join(miss)
-    if public_url(evidence["url"]) != public_url(url):
+    if full_url_key(evidence["url"]) != full_url_key(url):
         return False, "license evidence is for a different URL"
+    if not sha256 or str(evidence["sha256"]).strip().lower() != sha256.lower():
+        return False, "license evidence sha256 does not match response"
     if evidence["license"] not in PUBLIC_LICENSES:
         return False, f"license {evidence['license']} not publishable"
     if evidence["license"] == "US-Gov-PD" and evidence.get("third_party_excluded") is not True:
@@ -146,7 +161,7 @@ def public_fulltext_ok(evidence, url):
 
 
 def load_license_evidence(path):
-    """JSON Lines，每行一条逐条目证据（字段见 EVIDENCE_FIELDS）。返回 {public_url: evidence}。"""
+    """JSON Lines，每行一条逐条目证据（字段见 EVIDENCE_FIELDS）。返回 {full_url_key: evidence}。"""
     out = {}
     if not path:
         return out
@@ -156,8 +171,62 @@ def load_license_evidence(path):
         e = strictjson.loads(line)
         if not isinstance(e, dict) or "url" not in e:
             raise ConfigError(f"license evidence line {n}: not an object with url")
-        out[public_url(e["url"])] = e
+        out[full_url_key(e["url"])] = e
     return out
+
+
+# ---------------------------------------------------------------- 目标地址策略（防 SSRF）
+BENCHMARK_NET = ipaddress.ip_network("198.18.0.0/15")
+
+
+def _blocked_ip(ip):
+    return (not ip.is_global) or ip.is_multicast or ip.is_loopback or ip.is_link_local or ip.is_private \
+        or ip.is_reserved or ip.is_unspecified
+
+
+class AddressPolicy:
+    """拒绝本机、内网、链路本地、保留、组播地址：初始 URL、DNS 解析结果、每一跳都查（Fetcher 每跳调用）。
+
+    唯一例外（窄）：fakeip_cidr —— 本机出站经透明代理、DNS 返回代理“假 IP”时（本 box 为 198.18.0.1），
+    *主机名*解析到该网段视为“交给已配置的出站代理”。约束：
+      - 只能是 198.18.0.0/15（RFC 2544 基准网段）的子网，其他网段一律拒绝配置；
+      - 只对 DNS 解析结果生效；URL 中直接写 IP 字面量（含 198.18.x.x）一律拒绝；
+      - 同一主机名若还解析出任何其他非公网地址，仍拒绝。
+    该模式下真实目标 IP 由代理在远端解析，本地无法核对，这一层残余风险由代理负责（见 scripts/README.md）。"""
+
+    def __init__(self, fakeip_cidr=None, resolver=None):
+        self.fakeip = None
+        if fakeip_cidr:
+            net = ipaddress.ip_network(fakeip_cidr, strict=False)
+            if net.version != 4 or not net.subnet_of(BENCHMARK_NET):
+                raise ConfigError("fakeip cidr must be inside 198.18.0.0/15")
+            self.fakeip = net
+        self.resolver = resolver or (lambda h: {a[4][0] for a in socket.getaddrinfo(h, None)})
+
+    def __call__(self, url):
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+        if not host:
+            return "no host"
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+        if ip is not None:
+            return f"IP literal not public ({ip})" if _blocked_ip(ip) or ip in BENCHMARK_NET else None
+        if host == "localhost" or host.endswith(".localhost"):
+            return "localhost"
+        try:
+            addrs = {ipaddress.ip_address(a.split("%")[0]) for a in self.resolver(host)}
+        except (OSError, ValueError, UnicodeError) as e:
+            return f"dns error ({type(e).__name__})"
+        if not addrs:
+            return "dns returned no address"
+        for a in addrs:
+            if self.fakeip is not None and a.version == 4 and a in self.fakeip:
+                continue
+            if _blocked_ip(a):
+                return f"resolves to non-public address ({a})"
+        return None
 
 
 # ---------------------------------------------------------------- 只追加档案
@@ -288,7 +357,7 @@ def retry_after(headers):
 
 class Fetcher:
     def __init__(self, state=None, interval=HOST_INTERVAL, timeout=30, opener=None, sleep=time.sleep,
-                 clock=time.monotonic, max_bytes=MAX_BYTES, log=None):
+                 clock=time.monotonic, max_bytes=MAX_BYTES, log=None, addr_policy=None):
         self.state = state or HostState(None)
         interval = max(float(interval), HOST_INTERVAL)   # 每主机间隔下限 2s，不能调低
         self.interval, self.timeout, self.max_bytes = interval, timeout, max_bytes
@@ -296,6 +365,7 @@ class Fetcher:
         self.sleep, self.clock = sleep, clock
         self._last, self._host_interval, self._robots = {}, {}, {}
         self.log = log or (lambda *_: None)
+        self.addr_policy = addr_policy   # 可选：callable(url) -> 拒绝原因或 None；每一跳在任何请求前调用
         self.requests = []     # (host, t) — 供测试/审计
 
     # -- 每主机限速（所有请求都走这里）
@@ -423,6 +493,10 @@ class Fetcher:
             why = self.state.disabled(host, sid)
             if why:
                 return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
+            if self.addr_policy is not None:
+                why = self.addr_policy(cur)
+                if why:
+                    return Result(False, final_url=cur, hops=hops, error="blocked_address", detail=why)
             if not self.allowed(cur, sid):
                 why = self.state.disabled(host, sid)   # robots 403/验证页刚触发的停用
                 if why:

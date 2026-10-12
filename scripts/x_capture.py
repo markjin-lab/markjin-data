@@ -9,13 +9,17 @@ Commands:
   plan    --queries Q.json --state S.json --date YYYY-MM-DD --round 1|2
           按 improve/x-queries.md 自动计算窗口（round1: 当日 05:00 SGT − 48h = D−3 21:00Z；round2: D−1 21:00Z），
           把每个查询的完整参数写入状态，输出首页调用清单（不消耗额度）。
-  reserve --state S.json --tool search_posts_all|get_posts_by_ids [--slug SLUG --page N]
-          -> {"allowed": true, "call_id": ...} 或 {"allowed": false, "reason", "wait_s"}（退出码 3）
+  reserve --state S.json --tool search_posts_all --slug SLUG --page N   （N 必须恰为该 slug 的下一页且 ≤ 页数上限）
+  reserve --state S.json --tool get_posts_by_ids --batch K               （K = hydrate 输出的批次号）
+          [--args JSON] 可选核对实际参数
+          -> {"allowed": true, "call_id", "args"（本次必须使用的完整参数）, "args_digest"} 或
+             {"allowed": false, "reason", "wait_s"}（退出码 3）；未计划 slug、错页码、超页数、错批次 → 退出码 2
   ingest  --state S.json --call-id ID --file RESULT.txt
           -> {"next": {...完整参数（从状态恢复）+ next_token...}} 或 {"next": null, "reason"}
-  hydrate --state S.json                       -> get_posts_by_ids 批次（≤100 id/批；每批调用前同样要 reserve）
+  hydrate --state S.json                       -> get_posts_by_ids 批次（≤100 id/批，带批次号；每批调用前 reserve --batch）
   ingest-hydrate --state S.json --call-id ID --file RESULT.txt
-  leads   --state S.json                       -> 线索 JSON，每条固定 label: 线索, source_role: lead
+  leads   --state S.json                       -> 线索 JSON（按 like≥20 / RT≥5 / 白名单作者过滤；含帖文，只写私有目录），
+                                                  每条固定 label: 线索, source_role: lead
   budget  --state S.json                       -> 今日（UTC 日，00:00Z 重置）已用 / 剩余 / 需等待秒数
 预算：≤400 次 / UTC 日（X 额度 00:00Z 重置，05:00 与 06:00 SGT 两轮在同一额度日），≤25 次 / 滚动 60 秒。
 页数上限（x-queries.md「翻页」节）：账号批次 4 页、主题 2 页（两轮相同）。
@@ -23,7 +27,7 @@ Commands:
 Verified 2026-10-12 06:2x SGT: search_posts_all max_results ≤25；翻页参数 next_token；search 不返回 entities，
 需 get_posts_by_ids（≤100 id）补全 entities.urls[].expanded_url/unwound_url；t.co 永不自行解析。
 """
-import argparse, datetime as dt, json, re, sys, time, uuid
+import argparse, datetime as dt, hashlib, json, re, sys, time, uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -89,9 +93,45 @@ def wait_needed(s, now=None):
     return round(60 - (now - sorted(recent)[-MIN_CAP]) + 0.5, 1)
 
 
-def reserve(s, tool, slug=None, page=None, now=None):
+def args_digest(args):
+    return hashlib.sha256(json.dumps(args, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def expected_call(s, tool, slug=None, page=None, batch=None):
+    """预留前核对：search 必须是已计划的 slug、页码必须恰为下一页且不超页数上限、查询未结束；
+    补全必须是当前 hydrate 批次之一。返回本次调用应使用的完整参数（预留时绑定其摘要）。"""
+    if tool == "search_posts_all":
+        if not slug or slug not in s["queries"]:
+            raise UsageError(f"slug {slug!r} not planned")
+        qs = s["queries"][slug]
+        if qs.get("done"):
+            raise UsageError(f"slug {slug} finished: {qs['done']}")
+        want = qs["pages"] + 1
+        if page != want:
+            raise UsageError(f"page must be the next page {want} for {slug} (got {page})")
+        cap = PAGE_CAP[qs["round"]][qs["kind"]]
+        if page > cap:
+            raise UsageError(f"page cap {cap} (round {qs['round']} {qs['kind']})")
+        args = dict(qs["args"])
+        if page > 1:
+            if not qs.get("next_token"):
+                raise UsageError(f"no next_token recorded for {slug}")
+            args["next_token"] = qs["next_token"]
+        return args, None
+    batches = hydrate_batches(s)
+    if batch is None or not (0 <= batch < len(batches)):
+        raise UsageError(f"--batch must be 0..{len(batches) - 1} (current hydrate batches)")
+    args = batches[batch]["args"]
+    return args, args["ids"].split(",")
+
+
+def reserve(s, tool, slug=None, page=None, now=None, batch=None, args=None):
     if tool not in TOOLS:
         raise UsageError(f"unknown tool {tool}")
+    want, ids = expected_call(s, tool, slug, page, batch)
+    dg = args_digest(want)
+    if args is not None and args_digest(args) != dg:
+        raise UsageError("args do not match the planned call for this slug/page/batch")
     now = now or time.time()
     if used_today(s, now) >= DAY_CAP:
         return {"allowed": False, "reason": f"daily cap {DAY_CAP} (resets 00:00Z)"}
@@ -99,8 +139,9 @@ def reserve(s, tool, slug=None, page=None, now=None):
     if w > 0:
         return {"allowed": False, "reason": f"per-minute cap {MIN_CAP}", "wait_s": w}
     cid = uuid.uuid4().hex[:12]
-    s["calls"].append({"id": cid, "t": now, "tool": tool, "slug": slug, "page": page, "ingested": False})
-    return {"allowed": True, "call_id": cid}
+    s["calls"].append({"id": cid, "t": now, "tool": tool, "slug": slug, "page": page, "ingested": False,
+                       "args_digest": dg, "ids": ids})
+    return {"allowed": True, "call_id": cid, "args": want, "args_digest": dg}
 
 
 def _take_call(s, cid, tool):
@@ -133,7 +174,8 @@ def cmd_plan(a, s):
 
 
 def cmd_reserve(a, s):
-    r = reserve(s, a.tool, a.slug, a.page)
+    args = strictjson.loads(a.args) if a.args else None
+    r = reserve(s, a.tool, a.slug, a.page, batch=a.batch, args=args)
     return r, (0 if r["allowed"] else 3)
 
 
@@ -148,9 +190,12 @@ def cmd_ingest(a, s):
     known = set(s["ids"])
     new = [d["id"] for d in data if d["id"] not in known]
     s["ids"].extend(new)
+    users = {u.get("id"): u.get("username") for u in ((j.get("includes") or {}).get("users") or [])}
     for d in data:
         s["posts"].setdefault(d["id"], {k: d.get(k) for k in ("id", "text", "author_id", "created_at", "public_metrics")})
         s["posts"][d["id"]]["query"] = slug
+        if users.get(d.get("author_id")):
+            s["posts"][d["id"]]["username"] = users[d.get("author_id")]
     qs["pages"] = c["page"] or qs["pages"] + 1
     qs["posts"] += len(data)
     tok = (j.get("meta") or {}).get("next_token")
@@ -167,7 +212,10 @@ def cmd_ingest(a, s):
     elif not new and data:
         reason = "page added no new ids"
     if reason:
+        qs["done"] = reason
+        qs.pop("next_token", None)
         return {"next": None, "reason": reason, "new_ids": len(new)}
+    qs["next_token"] = tok
     args = dict(qs["args"])          # 完整参数从状态恢复，不依赖人工传入
     args.pop("pagination_token", None)
     args["next_token"] = tok
@@ -175,17 +223,27 @@ def cmd_ingest(a, s):
                      "args": args, "wait_s": wait_needed(s)}, "new_ids": len(new)}
 
 
-def cmd_hydrate(a, s):
+def hydrate_batches(s):
     ids = [i for i in s["ids"] if "urls" not in s["posts"].get(i, {})]
-    return [{"tool": "get_posts_by_ids", "args": {"ids": ",".join(ids[i:i + HYDRATE_BATCH]),
-             "post.fields": "entities,created_at,note_tweet"}} for i in range(0, len(ids), HYDRATE_BATCH)]
+    return [{"batch": n, "tool": "get_posts_by_ids", "args": {"ids": ",".join(ids[i:i + HYDRATE_BATCH]),
+             "post.fields": "entities,created_at,note_tweet"}}
+            for n, i in enumerate(range(0, len(ids), HYDRATE_BATCH))]
+
+
+def cmd_hydrate(a, s):
+    return hydrate_batches(s)
 
 
 def cmd_ingest_hydrate(a, s):
-    _take_call(s, a.call_id, "get_posts_by_ids")
+    c = _take_call(s, a.call_id, "get_posts_by_ids")
+    allowed = set(c.get("ids") or [])
     j, _ = parse_result(a.file)
+    data = j.get("data", []) or []
+    extra = [d["id"] for d in data if d["id"] not in allowed]
+    if extra:
+        raise UsageError(f"{len(extra)} ids not in the reserved batch for call {a.call_id}")
     n = 0
-    for d in j.get("data", []) or []:
+    for d in data:
         p = s["posts"].setdefault(d["id"], {"id": d["id"]})
         p["urls"] = [{"expanded_url": u.get("expanded_url"), "unwound_url": u.get("unwound_url")}
                      for u in ((d.get("entities") or {}).get("urls") or [])]
@@ -193,8 +251,38 @@ def cmd_ingest_hydrate(a, s):
     return {"hydrated": n}
 
 
+LIKE_MIN, RT_MIN = 20, 5   # improve/x-queries.md：like_count ≥ 20 或 retweet_count ≥ 5 或作者在白名单
+
+
+def whitelist(s):
+    """白名单 = 状态中全部 account 类（from: 批次）查询里的账号（小写）。"""
+    out = set()
+    for q in s["queries"].values():
+        if q.get("kind") == "account":
+            out |= {m.lower() for m in re.findall(r"from:(\w+)", q["args"].get("query", ""))}
+    return out
+
+
+def lead_reason(p, wl):
+    m = p.get("public_metrics") or {}
+    if (m.get("like_count") or 0) >= LIKE_MIN:
+        return f"like_count>={LIKE_MIN}"
+    if (m.get("retweet_count") or 0) >= RT_MIN:
+        return f"retweet_count>={RT_MIN}"
+    if (p.get("username") or "").lower() in wl:
+        return "whitelisted_author"
+    return None
+
+
 def cmd_leads(a, s):
-    return {"items": [dict(p, label="线索", source_role="lead") for p in s["posts"].values()]}
+    """按文档派生过滤规则导出；输出含帖文，只能写入私有目录（fetch_primary 的公开输出不含帖文）。"""
+    wl, items, dropped = whitelist(s), [], 0
+    for p in s["posts"].values():
+        why = lead_reason(p, wl)
+        if not why:
+            dropped += 1; continue
+        items.append(dict(p, label="线索", source_role="lead", lead_reason=why))
+    return {"items": items, "filtered_out": dropped}
 
 
 def cmd_budget(a, s):
@@ -209,6 +297,7 @@ def main(argv=None):
     p.set_defaults(f=cmd_plan, mut=True)
     p = sp.add_parser("reserve"); p.add_argument("--state", required=True)
     p.add_argument("--tool", choices=TOOLS, required=True); p.add_argument("--slug"); p.add_argument("--page", type=int)
+    p.add_argument("--batch", type=int); p.add_argument("--args", help="可选：本次实际调用参数 JSON，须与计划一致")
     p.set_defaults(f=cmd_reserve, mut=True)
     for n, f in (("ingest", cmd_ingest), ("ingest-hydrate", cmd_ingest_hydrate)):
         p = sp.add_parser(n); p.add_argument("--state", required=True); p.add_argument("--call-id", required=True)

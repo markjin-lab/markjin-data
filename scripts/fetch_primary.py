@@ -10,15 +10,19 @@ Usage:
   - 经 collect.Fetcher：如实 UA、不自动重定向、每一跳查 robots/停用状态/限速、403 与验证页持久停用、
     429/5xx 有上限退避、超过 25 MiB 明确失败（不存半截）。
   - 原字节 → PRIVATE/raw/DATE/primary/<sha256>.<ext>（独占创建 + MANIFEST.sha256）；提取文本 → 私有派生物。
+  - 目标地址：初始 URL、DNS 解析结果、每一跳都经 collect.AddressPolicy，拒绝本机/内网/链路本地/保留地址。
+    出站经透明代理（DNS 返回 198.18.0.0/15 假 IP）时用 --proxy-fakeip-cidr / MARKJIN_PROXY_FAKEIP_CIDR 显式声明，
+    只对主机名解析结果放行该网段；IP 字面量永远拒绝。
   - 许可：默认 url+hash-only。域名（arXiv、NASA、.gov/.mil 等）一律不构成许可。只有 --license-evidence 中
-    针对该 URL（及最终 URL）的逐条目证据通过 collect.public_fulltext_ok，原字节与带署名的 .txt 才写入公开目录；
-    证据随条目记录进公开 index。
+    针对*完整* URL（含全部查询参数）并绑定响应 sha256 的逐条目证据通过 collect.public_fulltext_ok——
+    原 URL 与最终 URL 各自要有证据——原字节与带署名的 .txt 才写入公开目录；证据（URL 脱敏后）随条目进公开 index。
   - 公开目录 OUT/raw/DATE/primary/：本次运行独占创建 index-<run>.json、leads-primary-<run>.json，追加 MANIFEST。
-    公开记录只含脱敏 URL（去凭证型/跟踪参数）与错误类别；原 URL 只在私有 fetch-log。
+    leads-primary 只含帖子 id/URL、帖文 sha256、一手 URL（脱敏）与 sha256、fetch_status、线索身份字段；
+    帖文原文等完整线索只进私有 PRIVATE/raw/DATE/primary/leads-<run>.json。日志（含私有 fetch-log）只写脱敏 URL。
 线索身份：每条线索保持 label: 线索、source_role: lead；抓取结果只写 fetch_status。HTTP 200 不等于核验：
   primary_verification 恒为 unverified，只有人工/独立核验（来源身份、页面内容、原断言一致）后另行改写。
 """
-import argparse, html, json, re, subprocess, sys, tempfile
+import argparse, hashlib, html, json, os, re, subprocess, sys, tempfile
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -81,17 +85,24 @@ def primary_urls(lead):
     return list(dict.fromkeys(out))[:1]   # unwound preferred, one primary per lead
 
 
-def redact_lead_urls(o):
-    """线索里的 URL 字段写出前脱敏（凭证型/跟踪参数），原 URL 只留私有 fetch-log。"""
-    for k in ("unwound_url", "expanded_url", "url"):
-        v = o.get(k)
-        if isinstance(v, str):
-            o[k] = collect.public_url(v)
-        elif isinstance(v, list):
-            o[k] = [collect.public_url(x) if isinstance(x, str) else x for x in v]
-    for u in o.get("urls", []) or []:
-        if isinstance(u, dict):
-            redact_lead_urls(u)
+PUBLIC_LEAD_FIELDS = ("id", "url", "text_sha256", "primary_url", "sha256", "fetch_status", "fetched_at", "license",
+                      "label", "source_role", "primary_verification")
+
+
+def public_lead(lead):
+    """公开 leads-primary 只留：帖子 id、帖子 URL、帖文 hash、一手 URL（脱敏）与其 sha256、fetch_status、线索身份字段。
+    帖文原文、作者、互动数、原始 URL 字段只进私有 leads 档案。"""
+    out = {"id": lead.get("id")}
+    if lead.get("id"):
+        out["url"] = f"https://x.com/i/status/{lead['id']}"
+    if isinstance(lead.get("text"), str):
+        out["text_sha256"] = hashlib.sha256(lead["text"].encode("utf-8")).hexdigest()
+    for k in PUBLIC_LEAD_FIELDS:
+        if k in lead and k not in out:
+            out[k] = lead[k]
+    if out.get("primary_url"):
+        out["primary_url"] = collect.public_url(out["primary_url"])
+    return out
 
 
 def main(argv=None, fetcher=None):
@@ -100,13 +111,18 @@ def main(argv=None, fetcher=None):
     ap.add_argument("--date", required=True)
     ap.add_argument("--private-root"); ap.add_argument("--license-evidence")
     ap.add_argument("--interval", type=float, default=collect.HOST_INTERVAL)
+    ap.add_argument("--proxy-fakeip-cidr", default=os.environ.get("MARKJIN_PROXY_FAKEIP_CIDR"),
+                    help="仅当出站经透明代理且 DNS 返回假 IP 时设置（必须在 198.18.0.0/15 内，见 README）")
     ap.add_argument("--max", type=int, default=50)
     a = ap.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a.date):
         print("bad --date", file=sys.stderr); return 2
+    if a.interval < collect.HOST_INTERVAL:
+        print(f"--interval must be >= {collect.HOST_INTERVAL}", file=sys.stderr); return 2
     try:
         priv_root = collect.resolve_private_root(a.private_root, a.out_root)
         evidence = collect.load_license_evidence(a.license_evidence)
+        policy = collect.AddressPolicy(a.proxy_fakeip_cidr)
     except (collect.ConfigError, ValueError) as e:
         print(f"config: {type(e).__name__}: {e}", file=sys.stderr); return 2
     doc = strictjson.loads(Path(a.leads).read_text(encoding="utf-8"))
@@ -114,7 +130,10 @@ def main(argv=None, fetcher=None):
     run = collect.stamp()
     pub = collect.Archive(Path(a.out_root) / "raw" / a.date)
     priv = collect.Archive(priv_root / "raw" / a.date)
-    f = fetcher or collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"), interval=a.interval)
+    f = fetcher or collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"),
+                                   interval=a.interval, addr_policy=policy)
+    if f.addr_policy is None:      # 外部传入的 Fetcher 也必须带地址策略
+        f.addr_policy = policy
     cache, index, plog, n = {}, [], [], 0
     for lead in items:
         lead["label"] = "线索"
@@ -124,9 +143,10 @@ def main(argv=None, fetcher=None):
         if not urls:
             lead["fetch_status"] = "no_primary_link"; continue
         orig = urls[0]
+        key = collect.full_url_key(orig)          # 缓存/许可均按完整 URL，不按脱敏 URL
         cu = collect.public_url(orig)
         lead["primary_url"] = cu
-        if cu not in cache:
+        if key not in cache:
             if n >= a.max:
                 lead["fetch_status"] = "not_fetched_cap"; continue
             n += 1
@@ -134,37 +154,45 @@ def main(argv=None, fetcher=None):
             r = f.get(orig)
             rec = {"url": cu, "fetched_at": t0, "http_status": r.status, "license": "url+hash-only",
                    "stored": None, "fetch_status": "fetched" if r.ok else r.error}
+            if r.error == "blocked_address":
+                rec["detail"] = "non-public address"
             if r.ok:
-                fu = collect.public_url(r.final_url or orig)
+                final = r.final_url or orig
+                fu = collect.public_url(final)
                 ext = collect.ext_for(r.ctype, r.body)
                 rel, sha = priv.put_raw("", "primary", r.body, ext)
                 title, txt = extract_text(r.body, r.ctype)
                 if txt:
                     priv.put_derived("", "primary", sha, "txt", (txt + "\n").encode())
-                ev = evidence.get(cu) or evidence.get(fu)
-                ok1, why = collect.public_fulltext_ok(ev, cu)
-                ok2, why2 = collect.public_fulltext_ok(ev, fu) if fu != cu else (ok1, why)
+                ev_o = evidence.get(key)
+                ev_f = evidence.get(collect.full_url_key(final))
+                ok1, why = collect.public_fulltext_ok(ev_o, orig, sha)
+                same = collect.full_url_key(final) == key
+                ok2, why2 = (ok1, why) if same else collect.public_fulltext_ok(ev_f, final, sha)
                 rec.update(final_url=fu, sha256=sha, bytes=len(r.body), title=title[:300], stored="private",
-                           license_decision=why or why2 or "per-item evidence verified")
+                           license_decision=why or why2 or "per-item evidence verified (url + sha256)")
                 if ok1 and ok2:
+                    ev = ev_f if not same else ev_o
                     pub.put_raw("", "primary", r.body, ext)
                     if txt:
                         head = f"Source: {fu}\nLicense: {ev['license']} ({ev['license_url']})\nAttribution: {ev['attribution']}\n\n"
                         pub.put(f"primary/{sha}.txt", (head + txt + "\n").encode())
-                    rec.update(stored="public", license=ev["license"],
-                               license_evidence={k: ev.get(k) for k in collect.EVIDENCE_FIELDS + ("third_party_excluded",)})
-                plog.append({"url": orig, "final_url": r.final_url, "hops": r.hops, "raw": rel})
+                    shown = {k: ev.get(k) for k in collect.EVIDENCE_FIELDS + ("third_party_excluded",)}
+                    shown["url"] = collect.public_url(shown["url"])
+                    shown["evidence_url"] = collect.public_url(shown["evidence_url"])
+                    rec.update(stored="public", license=ev["license"], license_evidence=shown)
+                # 私有 fetch-log 也只写脱敏 URL；完整原 URL 只在私有 leads 原始档案里
+                plog.append({"url": cu, "final_url": fu, "hops": r.hops, "raw": rel})
             index.append(rec)
             print(f"{rec['fetch_status']} {r.status} {rec['stored'] or '-'} {cu}", file=sys.stderr)
-            cache[cu] = rec
-        rr = cache[cu]
+            cache[key] = rec
+        rr = cache[key]
         lead.update(fetch_status=rr["fetch_status"], license=rr["license"], sha256=rr.get("sha256"),
                     fetched_at=rr.get("fetched_at"))
-    for lead in items:
-        redact_lead_urls(lead)
+    priv.put_json(f"primary/leads-{run}.json", doc)              # 完整线索（含帖文）只进私有档案
     pub.put_json(f"primary/index-{run}.json", index)
-    if isinstance(doc, dict): doc["items"] = items
-    pub.put_json(f"primary/leads-primary-{run}.json", doc)
+    pub_doc = {"items": [public_lead(x) for x in items]}
+    pub.put_json(f"primary/leads-primary-{run}.json", pub_doc)
     if plog:
         priv.put(f"primary/fetch-log-{run}.jsonl", "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in plog).encode())
     c = {}

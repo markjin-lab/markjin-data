@@ -89,9 +89,10 @@ sources:
   method: rss
   url: https://qwenlm.github.io/blog/index.xml
   check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
-  enabled: true
-  approval_status: approved
-  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.5
+  enabled: false
+  approval_status: pending
+  approval_basis: ''
+  approval_note: '审查 r2 BLOCKER：报告列的是 qwen.ai/research，本源是另一站点的 Qwen blog RSS（且最新条目停在 2025-09）；同组织/同主域不自动继承报告条目号，待对该具体替代来源单独确认后再启用'
   notes: official Qwen blog RSS; WARNING latest item 2025-09-23 (stale, low yield)
   priority: P0
   license: url+hash-only
@@ -116,9 +117,10 @@ sources:
   scraper: nbs_releases
   url: https://www.stats.gov.cn/sj/zxfb/
   check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
-  enabled: true
-  approval_status: approved
-  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.1
+  enabled: false
+  approval_status: pending
+  approval_basis: ''
+  approval_note: '审查 r2 BLOCKER：报告列的是 data.stats.gov.cn 数据库，本源是统计局“最新发布”列表页；同组织/同主域不自动继承报告条目号，待对该具体替代来源单独确认后再启用'
   notes: 国家统计局 最新发布 static list page; robots.txt 404 (no restrictions)
   priority: P0
   license: url+hash-only

@@ -1,5 +1,5 @@
 """PR #6 审查修复：scraper 原件存档、fetch_primary 许可分流/线索身份/脱敏、x_capture 预算与翻页的针对性测试（离线）。"""
-import json, os, tempfile, time, unittest
+import hashlib, json, os, tempfile, time, unittest
 from pathlib import Path
 import helpers  # noqa: F401
 from markjin import collect, strictjson
@@ -52,6 +52,11 @@ class ScraperCapture(unittest.TestCase):
 
 
 class Primary(unittest.TestCase):
+    DNS = {}
+
+    def resolve(self, host):
+        return self.DNS.get(host, {"93.184.216.34"})
+
     def setUp(self):
         self.base = tmp(); self.out = self.base / "pub"; self.priv = self.base / "priv"; self.out.mkdir()
 
@@ -59,6 +64,7 @@ class Primary(unittest.TestCase):
         lp = self.base / "leads.json"
         lp.write_text(json.dumps({"items": leads}), encoding="utf-8")
         f, _ = mk(routes, state=state, max_bytes=max_bytes)
+        f.addr_policy = collect.AddressPolicy(resolver=self.resolve)
         args = ["--leads", str(lp), "--date", "2026-10-12", "--out-root", str(self.out), "--private-root", str(self.priv)]
         if evidence is not None:
             ep = self.base / "ev.jsonl"
@@ -90,7 +96,8 @@ class Primary(unittest.TestCase):
         u = "https://journals.aps.org/prxquantum/abstract/10.1103/X"
         ev = {"url": u, "license": "CC-BY-4.0", "license_url": "https://creativecommons.org/licenses/by/4.0/",
               "evidence_url": "https://journals.aps.org/prxquantum/about", "attribution": "A. Author et al., PRX Quantum",
-              "verified_by": "jw", "verified_at": "2026-10-12"}
+              "verified_by": "jw", "verified_at": "2026-10-12",
+              "sha256": hashlib.sha256(b"<html><p>open article</p>").hexdigest()}
         items, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}],
                                     {u: Resp(200, b"<html><p>open article</p>", {"Content-Type": "text/html"})}, evidence=[ev])
         self.assertEqual(idx[0]["stored"], "public")
@@ -106,7 +113,7 @@ class Primary(unittest.TestCase):
     def test_redirect_to_unlicensed_url_stays_private(self):
         u = "https://journals.aps.org/a"
         ev = {"url": u, "license": "CC-BY-4.0", "license_url": "x", "evidence_url": "x", "attribution": "x",
-              "verified_by": "x", "verified_at": "x"}
+              "verified_by": "x", "verified_at": "x", "sha256": hashlib.sha256(b"<p>x</p>").hexdigest()}
         _, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}],
                                 {u: Resp(302, headers={"Location": "https://journals.aps.org/b"}),
                                  "https://journals.aps.org/b": Resp(200, b"<p>x</p>")}, evidence=[ev])
@@ -204,7 +211,7 @@ class XCapture(unittest.TestCase):
         self.assertEqual(b[0]["args"]["ids"], "9")
         rc, _ = self.x("ingest-hydrate", "--state", str(self.st), "--call-id", r["call_id"], "--file", self.result(["9"]))
         self.assertEqual(rc, 2)                                               # 搜索预留不能冒充补全
-        _, h = self.x("reserve", "--state", str(self.st), "--tool", "get_posts_by_ids")
+        _, h = self.x("reserve", "--state", str(self.st), "--tool", "get_posts_by_ids", "--batch", "0")
         rc, _ = self.x("ingest-hydrate", "--state", str(self.st), "--call-id", h["call_id"], "--file", self.result(["9"]))
         self.assertEqual(rc, 0)
         _, b = self.x("budget", "--state", str(self.st))
@@ -213,24 +220,214 @@ class XCapture(unittest.TestCase):
         self.assertTrue(all(i["source_role"] == "lead" and i["label"] == "线索" for i in leads["items"]))
 
     def test_minute_and_daily_caps_utc(self):
+        self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-12", "--round", "1")
         s = XC.load_state(self.st)
         now = time.time()
         for _ in range(XC.MIN_CAP):
-            self.assertTrue(XC.reserve(s, "search_posts_all", now=now)["allowed"])
-        r = XC.reserve(s, "get_posts_by_ids", now=now)
+            self.assertTrue(XC.reserve(s, "search_posts_all", "ai", 1, now=now)["allowed"])
+        r = XC.reserve(s, "search_posts_all", "accounts-01", 1, now=now)
         self.assertFalse(r["allowed"]); self.assertGreater(r["wait_s"], 0)
         # 每日窗口按 UTC：前一 UTC 日 23:59Z 的调用不计入今天
-        s = XC.load_state(self.d / "none.json")
+        s = XC.load_state(self.st)
         import datetime as dt
         today0 = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         s["calls"] = [{"id": str(i), "t": today0 - 60 - i, "tool": "search_posts_all", "ingested": True} for i in range(XC.DAY_CAP)]
         self.assertEqual(XC.used_today(s, now=today0 + 3600), 0)
         s["calls"] = [{"id": str(i), "t": today0 + i, "tool": "search_posts_all", "ingested": True} for i in range(XC.DAY_CAP)]
-        self.assertFalse(XC.reserve(s, "search_posts_all", now=today0 + 7200)["allowed"])
+        self.assertFalse(XC.reserve(s, "search_posts_all", "ai", 1, now=today0 + 7200)["allowed"])
 
     def test_result_strict_json(self):
         with self.assertRaises(strictjson.DuplicateKeyError):
             XC.parse_result(self.result(["1"], dup=True))
+
+
+class R2Primary(Primary):
+    """PR #6 审查 r2 REJECTED 修复：许可按完整 URL+sha256、公开线索不含帖文、目标地址策略。"""
+
+    def ev(self, url, body):
+        return {"url": url, "license": "CC-BY-4.0", "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                "evidence_url": "https://e.org/about", "attribution": "A", "verified_by": "jw",
+                "verified_at": "2026-10-12", "sha256": hashlib.sha256(body).hexdigest()}
+
+    def test_evidence_for_other_query_value_not_used(self):
+        body = b"<p>private doc</p>"
+        _, idx, _ = self.run_fp([{"id": "1", "expanded_url": "https://e.org/d?code=PRIVATE"}],
+                                {"https://e.org/d?code=PRIVATE": Resp(200, body)},
+                                evidence=[self.ev("https://e.org/d?code=PUBLIC", body)])
+        self.assertEqual(idx[0]["stored"], "private")
+        self.assertFalse(list((self.out / "raw/2026-10-12/primary").glob("*.txt")))
+
+    def test_evidence_sha_mismatch_stays_private(self):
+        _, idx, _ = self.run_fp([{"id": "1", "expanded_url": "https://e.org/a"}],
+                                {"https://e.org/a": Resp(200, b"<p>changed</p>")},
+                                evidence=[self.ev("https://e.org/a", b"<p>original</p>")])
+        self.assertEqual(idx[0]["stored"], "private")
+        self.assertIn("sha256", idx[0]["license_decision"])
+
+    def test_redirect_needs_evidence_for_both_urls(self):
+        body = b"<p>open</p>"
+        routes = {"https://e.org/a": Resp(302, headers={"Location": "https://e.org/b"}), "https://e.org/b": Resp(200, body)}
+        _, idx, _ = self.run_fp([{"id": "1", "expanded_url": "https://e.org/a"}], routes,
+                                evidence=[self.ev("https://e.org/a", body), self.ev("https://e.org/b", body)])
+        self.assertEqual(idx[0]["stored"], "public")
+
+    def test_public_leads_have_no_post_text(self):
+        lead = {"id": "123", "text": "SECRET POST TEXT about things", "author_id": "9", "username": "someone",
+                "public_metrics": {"like_count": 50}, "expanded_url": "https://e.org/a?token=SEKRIT"}
+        items, _, _ = self.run_fp([lead, {"id": "124", "text": "UNFETCHED TEXT"}],
+                                  {"https://e.org/a?token=SEKRIT": Resp(200, b"x")})
+        pub_text = "".join(p.read_text(errors="replace") for p in self.out.rglob("*") if p.is_file())
+        self.assertNotIn("SECRET POST TEXT", pub_text)
+        self.assertNotIn("UNFETCHED TEXT", pub_text)
+        self.assertNotIn("someone", pub_text)
+        self.assertNotIn("SEKRIT", pub_text)
+        for it in items:
+            self.assertLessEqual(set(it), set(FP.PUBLIC_LEAD_FIELDS))
+        self.assertEqual(items[0]["url"], "https://x.com/i/status/123")
+        self.assertEqual(items[0]["text_sha256"], hashlib.sha256(lead["text"].encode()).hexdigest())
+        priv = next((self.priv / "raw/2026-10-12/primary").glob("leads-*.json")).read_text()
+        self.assertIn("SECRET POST TEXT", priv)                        # 原文进私有档案
+        flog = next((self.priv / "raw/2026-10-12/primary").glob("fetch-log-*.jsonl")).read_text()
+        self.assertNotIn("SEKRIT", flog)                               # 私有日志也不写凭证
+
+    def _blocked(self, url, routes=None, dns=None):
+        self.DNS = dns or {}
+        items, idx, f = self.run_fp([{"id": "1", "expanded_url": url}], routes or {url: Resp(200, b"x")})
+        return items[0]["fetch_status"], [u for u, _ in f.opener.calls]
+
+    def test_loopback_private_linklocal_literals_rejected(self):
+        for u in ("http://127.0.0.1:8080/x", "http://10.0.0.5/x", "http://192.168.1.1/", "http://169.254.169.254/latest",
+                  "http://[::1]/x", "http://0.0.0.0/", "http://100.64.0.1/", "http://198.18.0.1/x", "http://240.0.0.1/"):
+            st, calls = self._blocked(u)
+            self.assertEqual(st, "blocked_address", u)
+            self.assertEqual(calls, [], u)                             # 连 robots.txt 都不请求
+
+    def test_hostname_resolving_to_private_rejected(self):
+        st, calls = self._blocked("https://evil.example/x", dns={"evil.example": {"127.0.0.1"}})
+        self.assertEqual((st, calls), ("blocked_address", []))
+        st, _ = self._blocked("https://localhost/x")
+        self.assertEqual(st, "blocked_address")
+
+    def test_redirect_hop_to_private_rejected(self):
+        routes = {"https://e.org/a": Resp(302, headers={"Location": "http://169.254.169.254/meta"}),
+                  "http://169.254.169.254/meta": Resp(200, b"creds")}
+        st, calls = self._blocked("https://e.org/a", routes)
+        self.assertEqual(st, "blocked_address")
+        self.assertFalse(any("169.254" in u for u in calls))
+        routes = {"https://e.org/a": Resp(302, headers={"Location": "https://inner.example/x"}),
+                  "https://inner.example/x": Resp(200, b"x")}
+        st, calls = self._blocked("https://e.org/a", routes, dns={"inner.example": {"10.1.2.3"}})
+        self.assertEqual(st, "blocked_address")
+        self.assertFalse(any("inner.example" in u for u in calls))
+
+
+class AddressPolicyT(unittest.TestCase):
+    def test_fakeip_exception_is_narrow(self):
+        fake = lambda h: {"198.18.0.1"}
+        self.assertIsNotNone(collect.AddressPolicy(resolver=fake)("https://www.nasa.gov/x"))      # 默认不放行
+        p = collect.AddressPolicy("198.18.0.0/15", resolver=fake)
+        self.assertIsNone(p("https://www.nasa.gov/x"))                                          # 显式声明代理假 IP
+        self.assertIsNotNone(p("http://198.18.0.1/x"))                                          # IP 字面量仍拒绝
+        self.assertIsNotNone(collect.AddressPolicy("198.18.0.0/15", resolver=lambda h: {"198.18.0.1", "10.0.0.1"})(
+            "https://mixed.example/"))                                                          # 混入内网仍拒绝
+        self.assertIsNotNone(collect.AddressPolicy("198.18.0.0/15", resolver=lambda h: {"127.0.0.1"})(
+            "https://evil.example/"))
+        for bad in ("10.0.0.0/8", "0.0.0.0/0", "127.0.0.0/8", "198.16.0.0/14"):
+            with self.assertRaises(collect.ConfigError):
+                collect.AddressPolicy(bad)
+        self.assertIsNone(collect.AddressPolicy(resolver=lambda h: {"93.184.216.34"})("https://e.org/"))
+
+    def test_fetch_primary_forces_policy_and_interval_floor(self):
+        base = tmp(); (base / "pub").mkdir()
+        lp = base / "l.json"; lp.write_text(json.dumps({"items": [{"id": "1", "expanded_url": "http://127.0.0.1/x"}]}))
+        f, _ = mk({"http://127.0.0.1/x": Resp(200, b"x")})
+        self.assertIsNone(f.addr_policy)
+        args = ["--leads", str(lp), "--date", "2026-10-12", "--out-root", str(base / "pub"), "--private-root", str(base / "priv")]
+        self.assertEqual(FP.main(args, fetcher=f), 0)
+        self.assertEqual(f.opener.calls, [])                    # 传入的 Fetcher 也被套上地址策略
+        self.assertEqual(FP.main(args + ["--interval", "0"], fetcher=mk({})[0]), 2)
+        self.assertEqual(FP.main(args + ["--proxy-fakeip-cidr", "10.0.0.0/8"], fetcher=mk({})[0]), 2)
+
+
+class R2XCapture(XCapture):
+    def plan(self, rnd="1"):
+        self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-12", "--round", rnd)
+
+    def res(self, *extra):
+        return self.x("reserve", "--state", str(self.st), "--tool", *extra)
+
+    def test_reserve_validates_slug_and_page(self):
+        self.plan()
+        self.assertEqual(self.res("search_posts_all", "--slug", "nope", "--page", "1")[0], 2)
+        self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "99")[0], 2)
+        self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "2")[0], 2)   # 跳页
+        self.assertEqual(self.res("search_posts_all", "--slug", "ai")[0], 2)                  # 缺页码
+        rc, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        self.assertEqual(rc, 0)
+        self.assertEqual(r["args_digest"], XC.args_digest(r["args"]))
+        self.assertEqual(XC.load_state(self.st)["calls"][-1]["args_digest"], r["args_digest"])
+        self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"], "--file", self.result(["1"], "TOK"))
+        rc, r2 = self.res("search_posts_all", "--slug", "ai", "--page", "2")
+        self.assertEqual(r2["args"]["next_token"], "TOK")                                    # 参数摘要绑定下一页 token
+        self.x("ingest", "--state", str(self.st), "--call-id", r2["call_id"], "--file", self.result(["2"], "TOK2"))
+        self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "3")[0], 2)  # 主题页数上限 2
+
+    def test_reserve_args_must_match(self):
+        self.plan()
+        bad = json.dumps({"query": "something else"})
+        self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "1", "--args", bad)[0], 2)
+        st = XC.load_state(self.st)
+        good = json.dumps(XC.expected_call(st, "search_posts_all", "ai", 1)[0])
+        self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "1", "--args", good)[0], 0)
+
+    def test_hydrate_bound_to_batch(self):
+        self.plan()
+        _, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"], "--file", self.result(["9"]))
+        self.assertEqual(self.res("get_posts_by_ids")[0], 2)
+        self.assertEqual(self.res("get_posts_by_ids", "--batch", "5")[0], 2)
+        _, h = self.res("get_posts_by_ids", "--batch", "0")
+        self.assertEqual(h["args"]["ids"], "9")
+        rc, _ = self.x("ingest-hydrate", "--state", str(self.st), "--call-id", h["call_id"], "--file", self.result(["9", "77"]))
+        self.assertEqual(rc, 2)                                                              # 批次外 id 拒绝
+
+    def test_leads_filtered_by_engagement_and_whitelist(self):
+        self.plan()
+        s = XC.load_state(self.st)
+        s["posts"] = {"1": {"id": "1", "text": "a", "public_metrics": {"like_count": 20, "retweet_count": 0}},
+                      "2": {"id": "2", "text": "b", "public_metrics": {"like_count": 3, "retweet_count": 5}},
+                      "3": {"id": "3", "text": "c", "public_metrics": {"like_count": 1}, "username": "A"},
+                      "4": {"id": "4", "text": "d", "public_metrics": {"like_count": 19, "retweet_count": 4},
+                            "username": "nobody"},
+                      "5": {"id": "5", "text": "e"}}
+        XC.save_state(self.st, s)
+        _, out = self.x("leads", "--state", str(self.st))
+        got = {i["id"]: i["lead_reason"] for i in out["items"]}
+        self.assertEqual(got, {"1": "like_count>=20", "2": "retweet_count>=5", "3": "whitelisted_author"})
+        self.assertEqual(out["filtered_out"], 2)
+        self.assertTrue(all(i["source_role"] == "lead" and i["label"] == "线索" for i in out["items"]))
+
+    def test_ingest_records_username_from_includes(self):
+        self.plan()
+        _, r = self.res("search_posts_all", "--slug", "accounts-01", "--page", "1")
+        p = self.d / "u.txt"
+        p.write_text("x\n" + json.dumps({"data": [{"id": "5", "text": "t", "author_id": "u1"}],
+                                          "includes": {"users": [{"id": "u1", "username": "a"}]}, "meta": {}}))
+        self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"], "--file", str(p))
+        self.assertEqual(XC.load_state(self.st)["posts"]["5"]["username"], "a")
+        _, out = self.x("leads", "--state", str(self.st))
+        self.assertEqual([i["id"] for i in out["items"]], ["5"])
+
+
+class R2Sources(unittest.TestCase):
+    def test_borrowed_report_items_are_pending(self):
+        import yaml
+        p = Path(__file__).resolve().parents[1] / "improve" / "sources.yaml"
+        by = {s["id"]: s for s in yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]}
+        for sid in ("qwen-blog-rss", "nbs-releases"):
+            self.assertEqual(by[sid]["approval_status"], "pending", sid)
+            self.assertFalse(by[sid]["enabled"], sid)
+            self.assertFalse(collect.approval_gate(by[sid])[0], sid)
 
 
 if __name__ == "__main__":

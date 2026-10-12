@@ -108,20 +108,31 @@ class License(unittest.TestCase):
     EV = {"url": "https://journals.aps.org/prxquantum/abstract/10.1103/X", "license": "CC-BY-4.0",
           "license_url": "https://creativecommons.org/licenses/by/4.0/", "evidence_url": "https://journals.aps.org/x",
           "attribution": "A. Author, PRX Quantum 7, 1 (2026), DOI 10.1103/X", "verified_by": "jw",
-          "verified_at": "2026-10-12"}
+          "verified_at": "2026-10-12", "sha256": "ab" * 32}
+    SHA = "ab" * 32
 
     def test_default_private(self):
-        self.assertFalse(collect.public_fulltext_ok(None, "https://www.nasa.gov/x")[0])
-        self.assertFalse(collect.public_fulltext_ok(None, "https://www.bls.gov/x")[0])
+        self.assertFalse(collect.public_fulltext_ok(None, "https://www.nasa.gov/x", self.SHA)[0])
+        self.assertFalse(collect.public_fulltext_ok(None, "https://www.bls.gov/x", self.SHA)[0])
 
     def test_per_item_evidence(self):
-        self.assertTrue(collect.public_fulltext_ok(self.EV, self.EV["url"])[0])
-        self.assertFalse(collect.public_fulltext_ok(self.EV, "https://journals.aps.org/other")[0])
-        self.assertFalse(collect.public_fulltext_ok(dict(self.EV, attribution=""), self.EV["url"])[0])
-        self.assertFalse(collect.public_fulltext_ok(dict(self.EV, license="CC-BY-NC-4.0"), self.EV["url"])[0])
+        ok = collect.public_fulltext_ok
+        self.assertTrue(ok(self.EV, self.EV["url"], self.SHA)[0])
+        self.assertFalse(ok(self.EV, "https://journals.aps.org/other", self.SHA)[0])
+        self.assertFalse(ok(dict(self.EV, attribution=""), self.EV["url"], self.SHA)[0])
+        self.assertFalse(ok(dict(self.EV, license="CC-BY-NC-4.0"), self.EV["url"], self.SHA)[0])
         pd = dict(self.EV, license="US-Gov-PD")
-        self.assertFalse(collect.public_fulltext_ok(pd, self.EV["url"])[0])
-        self.assertTrue(collect.public_fulltext_ok(dict(pd, third_party_excluded=True), self.EV["url"])[0])
+        self.assertFalse(ok(pd, self.EV["url"], self.SHA)[0])
+        self.assertTrue(ok(dict(pd, third_party_excluded=True), self.EV["url"], self.SHA)[0])
+
+    def test_r2_full_url_and_sha_binding(self):
+        ok = collect.public_fulltext_ok
+        ev = dict(self.EV, url="https://e.org/doc?code=PUBLIC")
+        self.assertTrue(ok(ev, "https://e.org/doc?code=PUBLIC", self.SHA)[0])
+        self.assertFalse(ok(ev, "https://e.org/doc?code=PRIVATE", self.SHA)[0])    # 脱敏后相同也不行
+        self.assertFalse(ok(ev, "https://e.org/doc?code=PUBLIC", "cd" * 32)[0])     # 响应内容变了
+        self.assertFalse(ok(ev, "https://e.org/doc?code=PUBLIC", None)[0])
+        self.assertFalse(ok(dict(ev, sha256=""), "https://e.org/doc?code=PUBLIC", self.SHA)[0])
 
     def test_evidence_file_strict(self):
         p = Path(tempfile.mkdtemp()) / "ev.jsonl"
