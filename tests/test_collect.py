@@ -595,10 +595,11 @@ class R4Fixes(unittest.TestCase):
 
     def test_challenge_new_markers(self):
         for b in (b'<div class="cf-turnstile" data-sitekey=x>', b'<form id="challenge-form" action=/x>',
-                  b"<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'>"):
+                  b"<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'>",
+                  b"<script src='/_Incapsula_Resource?x'>", b'<div id="px-captcha">'):       # r10 加回
             self.assertTrue(collect.CHALLENGE.search(b), b)
-        for b in (b"<script src='/_Incapsula_Resource?x'>", b'<div id="px-captcha">', b'<div class="geetest_panel">'):
-            self.assertIsNone(collect.CHALLENGE.search(b), b)                    # r9：清单外不算
+        for b in (b'<div class="geetest_panel">',):
+            self.assertIsNone(collect.CHALLENGE.search(b), b)                    # 清单外不算
         for b in (b"<html><title>Verify you are human</title></html>", b"<html><title>Robot Check</title></html>"):
             self.assertEqual(collect.classify_page("text/html", b), "phrase", b)
         self.assertFalse(collect.CHALLENGE.search(b"<p>How to verify you are human: a survey</p>"))
@@ -956,14 +957,18 @@ class R7Fixes(unittest.TestCase):
             slept = []
             f, _ = mk({"https://data.sec.gov/robots.txt": Resp(200, b""), "https://www.sec.gov/robots.txt": Resp(200, b""),
                        "https://data.sec.gov/a": Resp(200, b"{}"), "https://www.sec.gov/b": Resp(200, b"{}")})
-            f.clock = lambda: t[0]
-            f.sleep = lambda w: (slept.append(round(w, 3)), t.__setitem__(0, t[0] + w))
-            self.assertTrue(f.get("https://data.sec.gov/a").ok)
-            self.assertTrue(f.get("https://www.sec.gov/b").ok)
+            r = f.get("https://data.sec.gov/a")
+            self.assertEqual(r.error, "not_configured")                   # r10：没有 lock_dir → 不发请求
+            self.assertEqual(f.opener.calls, [])
+            from unittest import mock
+            d = tempfile.TemporaryDirectory(dir="/workspace"); self.addCleanup(d.cleanup)
+            f.lock_dir = Path(d.name)
+            waits = []
+            with mock.patch("time.sleep", side_effect=lambda w: waits.append(w)):
+                self.assertTrue(f.get("https://data.sec.gov/a").ok)
+                self.assertTrue(f.get("https://www.sec.gov/b").ok)
             self.assertTrue(all(ua == os.environ[collect.SEC_UA_ENV] for _, ua in f.opener.calls))
-            ts = [x for h, x in f.requests]
-            gaps = [b - a for a, b in zip(ts, ts[1:])]
-            self.assertTrue(all(g >= 0.2 - 1e-9 for g in gaps), gaps)   # SEC 各主机合计 ≤5 次/秒
+            self.assertTrue(waits)                                        # 间隔在锁内按锁文件时间执行
             self.assertEqual(collect.RATE_GROUPS["sec.gov"], 0.2)
             self.assertLessEqual(1 / collect.RATE_GROUPS["sec.gov"], 10)
         finally:
@@ -1232,6 +1237,132 @@ class R9Fixes(unittest.TestCase):
                 waits.clear()
                 mk_f().get("https://data.sec.gov/y")            # 进程 B：内存里没有 _last，靠锁文件里的单主机时间戳
             self.assertTrue(waits and max(waits) >= collect.HOST_INTERVAL - 0.5, waits)
+        finally:
+            if old is None:
+                os.environ.pop(collect.SEC_UA_ENV, None)
+            else:
+                os.environ[collect.SEC_UA_ENV] = old
+
+
+def _hs_disable_proc(path, host):          # 子进程：独立 HostState 实例停用一台主机
+    hs = collect.HostState(path)
+    time.sleep(0.2)                         # 两个进程都先读到空状态，再各自写回
+    hs.disable(host, None, "http_403")
+
+
+class R10Fixes(unittest.TestCase):
+    """PR #3 审查 r10 REJECTED 修复的针对性测试。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(dir="/workspace"); self.addCleanup(d.cleanup); return Path(d.name)
+
+    CF = (b"<!DOCTYPE html><html lang='en-US'><head><title>Just a moment...</title><meta http-equiv='refresh' content='390'>"
+          b"</head><body><div class='main-wrapper' role='main'><div class='main-content'><h1 class='zone-name-title h1'>a.org</h1>"
+          b"<h2 class='h2'>Checking if the site connection is secure</h2><noscript><div class='h2'>Enable JavaScript and cookies to "
+          b"continue</div></noscript></div></div><script>(function(){window._cf_chl_opt={cvId:'3',cZone:'a.org',cType:'managed',"
+          b"cRay:'8',cH:'x'};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1"
+          b"?ray=8';document.getElementsByTagName('head')[0].appendChild(a);}());</script></body></html>")
+    INCAP = (b'<html style="height:100%"><head><META NAME="ROBOTS" CONTENT="NOINDEX, NOFOLLOW"><meta name="format-detection" '
+             b'content="telephone=no"><meta name="viewport" content="initial-scale=1.0"><meta http-equiv="X-UA-Compatible" '
+             b'content="IE=edge,chrome=1"><script type="text/javascript" src="/_Incapsula_Resource?SWJIYLWA=719d34d31c8e3a6e6fffd425f7e032f3">'
+             b'</script></head><body style="margin:0px;height:100%"><iframe id="main-iframe" src="/_Incapsula_Resource?CWUDNSAI=9&xinfo=1" '
+             b'frameborder=0 width="100%" height="100%">Request unsuccessful. Incapsula incident ID: 0-0</iframe></body></html>')
+    PX = (b'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Access to this page has been denied</title>'
+          b'<script>window._pxAppId="PXabc";window._pxJsClientSrc="/abc/init.js";window._pxHostUrl="/abc/xhr";</script></head>'
+          b'<body><div class="px-container"><div class="page-title-wrapper"><h1>Please verify you are a human</h1></div>'
+          b'<div class="content-wrapper"><p>Press &amp; Hold to confirm you are a human (and not a bot).</p><div id="px-captcha">'
+          b'</div></div></div><script src="/abc/captcha/captcha.js?a=c&m=0"></script></body></html>')
+
+    def test_real_vendor_pages_disable_content_and_robots_at_200_429_503(self):
+        for lab, body in (("cloudflare", self.CF), ("incapsula", self.INCAP), ("perimeterx", self.PX)):
+            self.assertEqual(collect.classify_page("text/html", body), "vendor", lab)
+            for st in (200, 429, 503):
+                for where in ("content", "robots", "hop"):
+                    p = self.tmpdir() / "st.json"
+                    routes = {"https://a.org/p": Resp(200, b"ok")}
+                    if where == "robots":
+                        routes["https://a.org/robots.txt"] = Resp(st, body)
+                    elif where == "content":
+                        routes["https://a.org/p"] = Resp(st, body)
+                    else:
+                        routes["https://a.org/p"] = Resp(302, b"", {"Location": "https://a.org/q"})
+                        routes["https://a.org/q"] = Resp(st, body)
+                    f, _ = mk(routes, state=collect.HostState(p))
+                    r = f.get("https://a.org/p", sid="s")
+                    self.assertFalse(r.ok)
+                    self.assertEqual(r.error, "disabled" if where == "robots" else "challenge", (lab, st, where))
+                    self.assertIn("a.org", collect.HostState(p).data["hosts"], (lab, st, where))
+                    calls = [u for u, _ in f.opener.calls]
+                    self.assertEqual(len(calls), len(set(calls)), (lab, st, where))     # 不重试
+
+    def test_cf_mitigated_header_is_vendor(self):
+        for st in (200, 403, 503):
+            self.assertEqual(collect.classify_page("text/plain", b"", {"cf-mitigated": "challenge"}), "vendor")
+        for where in ("content", "robots"):
+            p = self.tmpdir() / "st.json"
+            resp = Resp(200, b"<html><body>wait</body></html>", {"Content-Type": "text/html", "CF-Mitigated": "challenge"})
+            routes = {"https://a.org/p": Resp(200, b"ok")}
+            routes["https://a.org/robots.txt" if where == "robots" else "https://a.org/p"] = resp
+            f, _ = mk(routes, state=collect.HostState(p))
+            f.get("https://a.org/p", sid="s")
+            self.assertIn("a.org", collect.HostState(p).data["hosts"], where)
+        self.assertNotEqual(collect.classify_page("text/html", b"<p>x</p>", {"cf-mitigated": "none"}), "vendor")
+
+    def test_parser_only_exact_attributes_and_skips_script_text(self):
+        fake = [b'<div data-class="cf-turnstile">x</div>', b'<img data-src="https://www.google.com/recaptcha/api.js">',
+                b"<script>var t='<div class=\"g-recaptcha\"></div>';</script>",
+                b"<script>var t='<div id=\"px-captcha\"></div>';</script>",
+                b'<div data-id="px-captcha"></div>', b'<div class="not-cf-turnstile-x"></div>',
+                b'<script src="https://evil.example.org/recaptcha/api.js"></script>',
+                b'<script src="https://www.google.com/search?q=/recaptcha/api.js"></script>',
+                b'<a href="/cdn-cgi/challenge-platform/x">doc</a>', b"<p>window._cf_chl_opt = {}</p>",
+                b'<pre><div class="g-recaptcha"></div></pre>', b'<code><div id="px-captcha"></div></code>',
+                b"<!-- <div class='cf-turnstile'></div> -->", b'<p>/_Incapsula_Resource?x in a support article</p>']
+        for b in fake:
+            body = b"<html><body>" + b + b"<p>a</p>" * 100 + b"</body></html>"
+            self.assertNotEqual(collect.classify_page("text/html", body), "vendor", b)
+        real = [b'<div class="x cf-turnstile y"></div>', b'<div class="g-recaptcha"></div>', b'<div id="px-captcha"></div>',
+                b'<form id="challenge-form"></form>', b'<script src="//challenges.cloudflare.com/turnstile/v0/api.js"></script>',
+                b'<script src="https://www.recaptcha.net/recaptcha/api.js"></script>',
+                b'<script src="https://js.hcaptcha.com/1/api.js"></script>',
+                b'<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script>',
+                b'<iframe src="/_Incapsula_Resource?CWUDNSAI=1"></iframe>',
+                b"<script>window._cf_chl_opt={cType:'managed'}</script>",
+                b"<script>var a=document.createElement('script');a.src = '/cdn-cgi/challenge-platform/h/g/x';</script>"]
+        for b in real:
+            self.assertEqual(collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>"), "vendor", b)
+
+    def test_two_processes_disable_different_hosts_both_kept(self):
+        import multiprocessing as mp
+        d = self.tmpdir() / "state"
+        p = d / "collector-hosts.json"
+        ctx = mp.get_context("fork")
+        ps = [ctx.Process(target=_hs_disable_proc, args=(str(p), h)) for h in ("a.org", "b.org")]
+        [x.start() for x in ps]; [x.join() for x in ps]
+        self.assertEqual([x.exitcode for x in ps], [0, 0])
+        self.assertEqual(sorted(collect.HostState(p).data["hosts"]), ["a.org", "b.org"])
+        self.assertTrue((d / "locks" / "collector-hosts.json.lock").exists())
+        self.assertEqual([x.name for x in d.iterdir() if x.suffix == ".tmp"], [])          # 临时文件不残留
+
+    def test_disabled_rereads_file_before_each_request(self):
+        p = self.tmpdir() / "st.json"
+        hs = collect.HostState(p)
+        f, _ = mk({"https://a.org/p": Resp(200, b"ok"), "https://a.org/q": Resp(200, b"ok")}, state=hs)
+        self.assertTrue(f.get("https://a.org/p").ok)
+        collect.HostState(p).disable("a.org", None, "http_403")                              # 另一个“进程”停用
+        r = f.get("https://a.org/q")
+        self.assertEqual(r.error, "disabled")
+
+    def test_sec_without_lock_dir_not_configured_no_request(self):
+        import os
+        old = os.environ.get(collect.SEC_UA_ENV)
+        os.environ[collect.SEC_UA_ENV] = "markjin research (+https://example.org/contact)"
+        try:
+            f, _ = mk({"https://data.sec.gov/robots.txt": Resp(200, b""), "https://data.sec.gov/a": Resp(200, b"{}")})
+            r = f.get("https://data.sec.gov/a")
+            self.assertEqual(r.error, "not_configured")
+            self.assertEqual(f.opener.calls, [])
+            self.assertEqual(f.state.data["hosts"], {})                                       # 不停用
         finally:
             if old is None:
                 os.environ.pop(collect.SEC_UA_ENV, None)
