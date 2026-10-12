@@ -2145,6 +2145,37 @@ class FinalR5(FinalR1):
         sc, d = self._go([NOW, NOW, NOW])["daily/" + self.draft.name]
         self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
 
+    def _route_daily(self, t):
+        self.write("state/publish-state.json", json.dumps(state())); self.commit("st"); self.git("tag", "-f", "base")
+        self.draft.write_text(t, encoding="utf-8")
+        dr = {"content_sha256": hashlib.sha256(t.encode()).hexdigest(), "draft_id": "daily-2026-01-05-d1"}
+        self.write(f"approvals/codex/{dr['content_sha256']}.json", json.dumps(codex(dr))); self.commit("d")
+        return self._go([NOW, NOW, NOW])["daily/" + self.draft.name]
+
+    def test_same_number_other_metric_not_publishable_via_route_pr(self):
+        # #32 反例一：同一个数字（90%），但对象/指标不同（原文是 MMLU，断言写 GSM8K）；有效 Codex APPROVED 也不可发布
+        from helpers import ARXIV_LOC
+        sc, d = self._route_daily(TITLE + arxiv_line("模型在 GSM8K 上达到 90% 准确率。", locator=ARXIV_LOC) + DISC)
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"])
+
+    def test_locator_missing_not_publishable_via_route_pr(self):
+        sc, d = self._route_daily(TITLE + arxiv_line(locator=None) + DISC)
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISSING", sc["error_codes"])
+
+    def test_x_plus_unsupporting_nonx_not_publishable_via_route_pr(self):
+        # #32 反例二（迁移自旧库 #51）：X 来源 + 一条并不支撑断言的非 X 来源；有效 Codex APPROVED 也不可发布
+        from helpers import x_line, ARXIV_LOC, ARXIV_ID
+        line = x_line() + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕"
+        sc, d = self._route_daily(TITLE + line + DISC)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_x_plus_supporting_nonx_publishable_via_route_pr(self):
+        # 对照：X + 经原文支持位置核对确实支撑的非 X 来源 → 可发布
+        from helpers import x_line, ARXIV_LOC, ARXIV_ID
+        line = x_line("模型在 MMLU 上达到 90% 准确率。") + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕"
+        sc, d = self._route_daily(TITLE + line + DISC)
+        self.assertNotIn("E-X-ONLY", sc["error_codes"]); self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
+
     def test_pair_one_link_fails_both_unpublishable(self):
         self.write("state/publish-state.json", json.dumps(state())); self.commit("st"); self.git("tag", "-f", "base")
         zh = INFER + "\n" + DISC

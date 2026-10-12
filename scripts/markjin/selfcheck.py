@@ -43,9 +43,22 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 RAW_RE = re.compile(r"`(raw/[^`\s]+)`")
 URL_RE = re.compile(r"https?://[^\s)）`<>\]]+")
 SRC_PAIR = r"`(raw/[^`\s]+)` · (https?://[^\s`;]+)"
+# 原文支持位置（#32，迁移自旧库 #51）：结构化断言里每个来源对后面可跟 〔原文：<所引条目中支持该断言的原文片段>〕；
+# 日报中，非 X 来源必须带它（缺了 E-SUPPORT-LOCATOR-MISSING），片段须是所引条目原文的连续子串，且断言里的数字
+# 与拉丁字母术语（指标名、对象名、代号）都要出现在片段里（否则 E-SUPPORT-LOCATOR-MISMATCH）。
+LOCATOR = r"(?: 〔原文[:：](?P<loc>[^〔〕]+)〕)?"
+LOC_PAIR = SRC_PAIR + r"(?: 〔原文[:：][^〔〕]+〕)?"
 STRICT_ASSERT_RE = re.compile(
-    r"^(?:[-*+]|\d{1,3}[.)]) (?P<claim>[^`]+?) ?— (?P<srcs>" + SRC_PAIR + r"(?: ; " + SRC_PAIR + r")*)$")
+    r"^(?:[-*+]|\d{1,3}[.)]) (?P<claim>[^`]+?) ?— (?P<srcs>" + LOC_PAIR + r"(?: ; " + LOC_PAIR + r")*)$")
 PAIR_RE = re.compile(SRC_PAIR)
+LOC_PAIR_RE = re.compile(r"`(raw/[^`\s]+)` · (https?://[^\s`;]+)" + LOCATOR)
+LOCATOR_ANY_RE = re.compile(r"〔原文[:：]")
+TERM_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9.\-]*[A-Za-z0-9](?![A-Za-z0-9])")
+
+
+def claim_terms(s):
+    """指标/对象代号：含两个以上大写字母或含数字的拉丁词（MMLU、GSM8K、UNRATE、GPT-4、CPI-U）；普通英文词不算。"""
+    return [t for t in TERM_RE.findall(s) if sum(ch.isupper() for ch in t) >= 2 or any(ch.isdigit() for ch in t)]
 # —— 低风险结构白名单（王总 10-11 定）：正文每个块只能是 标题 / 原文直引 / 来源链接
 # 原文直引：> 「<原文>」 — `raw/…` · <URL>（也接受 ASCII 双引号）。引文规范化后必须是该来源条目原文的连续子串。
 QUOTE_LINE_RE = re.compile(r"^> ?(?:「(?P<q1>[^「」]+)」|\"(?P<q2>[^\"]+)\") — (?P<srcs>" + SRC_PAIR + r")$")
@@ -751,21 +764,35 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
             counts["assertions"] += 1; counts["structured"] += 1
             if is_macro_doc:
                 counts["macro"] += 1
-            pairs = PAIR_RE.findall(sm.group("srcs"))
-            line_err, kinds, supported = None, [], True
-            for raw_rel, url in pairs:
-                e, kind, sup = ctx.check_pair(raw_rel, url, claim=sm.group("claim"))
+            claim = sm.group("claim")
+            line_err, kinds, supported, nonx_ok, loc_err = None, [], True, False, None
+            for m in LOC_PAIR_RE.finditer(sm.group("srcs")):
+                raw_rel, url, loc = m.group(1), m.group(2), m.group("loc")
+                e, kind, sup = ctx.check_pair(raw_rel, url, claim=claim)
                 kinds.append(kind)
                 supported = supported and sup
                 if e:
                     line_err = line_err or e
+                    continue
+                if kind == "x":
+                    continue          # X 只作线索：带不带位置都不能支撑断言
+                if loc is None:
+                    if card_type == "daily":
+                        loc_err = loc_err or "E-SUPPORT-LOCATOR-MISSING"
+                    continue
+                if support_at(ctx.last_scopes, kind, claim, loc):
+                    nonx_ok = True
+                elif card_type == "daily":
+                    loc_err = loc_err or "E-SUPPORT-LOCATOR-MISMATCH"
             if line_err:
                 err(line_err, i)
             else:
                 counts["replayable"] += 1
                 if not supported:
                     flags["unsupported"] = True
-            _x_flags(kinds, counts, flags, err, i, card_type)
+                if loc_err:
+                    err(loc_err, i)
+            _x_flags(kinds, counts, flags, err, i, card_type, nonx_supported=nonx_ok if not line_err else None)
             continue
         is_list = bool(LIST_RE.match(s) or QUOTE_RE.match(s) or TABLE_RE.match(s))
         is_table_header = (TABLE_RE.match(s) and i < len(lines) and TABLE_SEP_RE.match(lines[i] or "x"))
@@ -853,19 +880,44 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     return _result(errors, flags, counts, meta)
 
 
-def _x_flags(kinds, counts, flags, err, line, card_type, assertion=True):
+def support_at(scopes, kind, claim, loc):
+    """原文支持位置是否成立（#32）：片段是所引条目原文的连续子串；断言中的数字全部出现在片段里；
+    断言中的拉丁字母术语（指标、对象、代号，如 MMLU、GSM8K、UNRATE）全部出现在片段里。
+    只能排除“同一个数字、对象或指标不同”这类机器可核的错配；片段在语义上是否支持断言仍由 Codex 逐条审查。"""
+    if not quote_in_source(scopes, loc):
+        return False
+    c = norm(claim)
+    if kind == "fred":
+        c = _CLAIM_DATE_RE.sub(" ", _VINTAGE_RE.sub(" ", c))
+    # 宏观算式稿（“由原始数据计算；算式：…”且算式验算通过）：结果值是推导出来的，不要求出现在原文片段里，
+    # 算式本身由 E-FORMULA-MISMATCH 把关；其余断言的数字必须全部出现在片段里
+    fms = list(FORMULA_RE.finditer(c))
+    derived = bool(_FORMULA_MARK_RE.search(c) and fms and all(verify_formula(fm.group(0)) for fm in fms))
+    if not derived and not numbers(c) <= numbers(loc):
+        return False
+    lt = norm(loc).lower()
+    return all(t.lower() in lt for t in claim_terms(c))
+
+
+_FORMULA_MARK_RE = re.compile(r"由原始数据计算|按原始数据计算")
+
+
+def _x_flags(kinds, counts, flags, err, line, card_type, assertion=True, nonx_supported=None):
     """唯一的 X-only 判定（r7：所有取来源的入口都必须调用本函数，err/line/card_type 为必填参数）。
     取来源的入口：原文直引行、纯来源链接行、结构化断言行、带来源的非结构化行（_check_loose_sources）、
     段落/标题/HTML 注释里的来源（_check_free_text_sources）。
     来源全部为 X → R-X-ONLY；card_type == "daily" 且该行是断言（assertion=True）→ 另判 E-X-ONLY 硬拦。
-    只有纯来源链接行（“来源：…”，不含任何断言文字）传 assertion=False，仍只标 R-X-ONLY。"""
+    只有纯来源链接行（“来源：…”，不含任何断言文字）传 assertion=False，仍只标 R-X-ONLY。
+    #32（迁移自旧库 #51）：nonx_supported 为 False 时（有 X 来源，但没有任何非 X 来源经核对实际支撑该断言），
+    日报断言同样判 E-X-ONLY；不再只看来源种类。None 表示调用方未做支撑核对（来源本身已报错）。"""
     if "x" in kinds:
         counts["x_sourced"] += 1
-        if all(k == "x" for k in kinds):
+        x_only = all(k == "x" for k in kinds)
+        if x_only:
             flags["x_only"] = True   # X 只是线索，不能单独成为低风险来源
-            if assertion and card_type == "daily":
-                # r6（协调方 Grok Bot 定）：日报里的断言只有 X 来源支撑 → 硬拦。X 只作线索。
-                err("E-X-ONLY", line)
+        if assertion and card_type == "daily" and (x_only or nonx_supported is False):
+            # r6（协调方 Grok Bot 定）：日报里的断言只有 X 来源支撑 → 硬拦。X 只作线索。
+            err("E-X-ONLY", line)
 
 
 SELF_LINK_RE = re.compile(r"^https://github\.com/markjin-lab/[A-Za-z0-9._/#-]+$")
@@ -980,7 +1032,7 @@ def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
         return
     if len(raws) != len(src_urls):
         err("E-REPLAY-006", i); return
-    kinds = []
+    kinds, nonx_ok = [], False
     claim = _claim_of(s)
     for raw_rel, url in zip(raws, src_urls):
         e, kind, sup = ctx.check_pair(raw_rel, url, claim=claim)   # r13：带上断言原文
@@ -989,7 +1041,9 @@ def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
         kinds.append(kind)
         if numbers(claim) and not sup:
             flags["unsupported"] = True
-    _x_flags(kinds, counts, flags, err, i, card_type)   # r7（r6 BLOCKER 2）：段落/标题/注释里的来源同样过 X-only 判定
+        if kind != "x" and (sup or not numbers(claim)):
+            nonx_ok = True
+    _x_flags(kinds, counts, flags, err, i, card_type, nonx_supported=nonx_ok)   # r7 + #32
 
 
 def _check_loose_sources(ctx, s, i, err, counts, flags, count_replay=False, card_type=None):
@@ -998,7 +1052,7 @@ def _check_loose_sources(ctx, s, i, err, counts, flags, count_replay=False, card
     if len(raws) != len(urls) or not raws:
         err("E-REPLAY-006", i)
         return
-    line_err, kinds = None, []
+    line_err, kinds, nonx_ok = None, [], False
     claim = _claim_of(s)
     for raw_rel, url in zip(raws, urls):
         e, kind, sup = ctx.check_pair(raw_rel, url, claim=claim)   # r13：带上断言原文
@@ -1006,11 +1060,16 @@ def _check_loose_sources(ctx, s, i, err, counts, flags, count_replay=False, card
         line_err = line_err or e
         if not e and numbers(claim) and not sup:
             flags["unsupported"] = True
+        if not e and kind != "x" and (sup or not numbers(claim)):
+            nonx_ok = True
     if line_err:
         err(line_err, i)
     elif count_replay:
         counts["replayable"] += 1
-    _x_flags(kinds, counts, flags, err, i, card_type)
+        if card_type == "daily" and any(k != "x" for k in kinds):
+            # #32：日报断言必须写明原文支持位置；非结构化行无法写，改用结构化断言格式
+            err("E-SUPPORT-LOCATOR-MISSING", i)
+    _x_flags(kinds, counts, flags, err, i, card_type, nonx_supported=None if line_err else nonx_ok)
 
 
 SOFT = {
