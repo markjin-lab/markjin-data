@@ -65,26 +65,32 @@ REDIRECT_CODES = {301, 302, 303, 307, 308}
 # 验证页识别（collector 与 scrapers 共用这一份）。总原则：只有 403 和高置信的验证页（命中厂商标记）才持久停用；
 # 格式不对、只命中泛用短语，只记本轮失败/可疑，不停用。
 # 高置信厂商标记：用 html.parser 逐个标签解析，只看精确属性（class、src、id），不用字节正则：
-#  - script（及任何元素）的 src：urlsplit 核对——主机 challenges.cloudflare.com；hcaptcha.com 下的 …/api.js；
-#    google.com / recaptcha.net 下的 /recaptcha/…api.js；路径以 /cdn-cgi/challenge-platform/ 开头；路径含 _Incapsula_Resource
-#  - form#challenge-form；元素 id 为 px-captcha；元素 class（按空白切分）含 cf-turnstile 或 g-recaptcha
-#  - script 内容只认两种 Cloudflare 写法：window._cf_chl_opt 赋值、X.src = '…' 赋值（src 同上核对）；script 里的其他文字
-#    （如 JS 字符串 '<div class="g-recaptcha">'）不解析为标签
-#  - <pre>/<code>/<textarea>/<xmp> 内、注释内、可见文本里的出现一律不算；data-class / data-src 等不是 class / src
+#  - <script src>（只认 script 元素）：urlsplit 核对——主机 challenges.cloudflare.com；hcaptcha.com 下的 …/api.js；
+#    google.com / recaptcha.net 下的 /recaptcha/…api.js；相对地址（无主机）且路径以 /cdn-cgi/challenge-platform/ 开头，
+#    或路径含 _Incapsula_Resource（这两种只认 script，且不认别的主机）
+#  - form#challenge-form；元素 class（按空白切分）含 cf-turnstile 或 g-recaptcha
+#  - div#px-captcha，且整页可见文本很短（≤ PX_TEXT_MAX 字符）
+#  - script 内容：先去掉 JS 字符串字面量和注释，只认不在引号里的 window._cf_chl_opt 赋值语句、X.src = '…' 赋值
+#    （src 按 script src 规则核对）；script 里的其他文字（如 JS 字符串 '<div class="g-recaptcha">'）不解析为标签
+#  - 免检：<textarea>/<xmp>/<plaintext>/<title> 内（按 HTML 规范这些是纯文本）；注释、可见文本。<pre>/<code> 照常检查
+#    （其中的 script 一样执行）。data-class / data-src 等不是 class / src
 #  - 响应头 cf-mitigated: challenge（见 classify_page）
-_LITERAL_TAGS = frozenset({"pre", "code", "textarea", "xmp", "plaintext"})
-_CF_CHL_OPT = re.compile(r"\bwindow\._cf_chl_opt\s*=")
-_JS_SRC = re.compile(r"""\.src\s*=\s*(['"])([^'"]{1,2048})\1""")
+_LITERAL_TAGS = frozenset({"textarea", "xmp", "plaintext", "title"})
+PX_TEXT_MAX = 1000
+_CF_CHL_OPT = re.compile(r"(?:^|[;{}()\s,])window\s*\.\s*_cf_chl_opt\s*=(?!=)")
+_JS_SRC = re.compile(r"""\.\s*src\s*=\s*(['"])""")
 
 
-def vendor_src(src):
-    """src 是否指向已知验证组件（urlsplit 核对主机与路径）。"""
+def vendor_src(src, script=True):
+    """<script src> 是否指向已知验证组件（urlsplit 核对主机与路径）。script=False（非 script 元素）一律不算。"""
+    if not script:
+        return False
     try:
         u = urlsplit((src or "").strip())
     except ValueError:
         return False
     host, path = (u.hostname or "").lower(), u.path or ""
-    if path.startswith("/cdn-cgi/challenge-platform/") or "_Incapsula_Resource" in path:
+    if not u.netloc and (path.startswith("/cdn-cgi/challenge-platform/") or "_Incapsula_Resource" in path):
         return True
     if host == "challenges.cloudflare.com":
         return True
@@ -96,56 +102,106 @@ def vendor_src(src):
     return False
 
 
+def _js_mask(js):
+    """把 JS 字符串字面量（'…' "…" `…`）内容和注释替换成空格（保留引号字符与长度），用于只在代码里找赋值语句。"""
+    out, i, n = list(js), 0, len(js)
+    while i < n:
+        c = js[i]
+        if c in "'\"`":
+            j = i + 1
+            while j < n and js[j] != c:
+                j += 2 if js[j] == "\\" else 1
+            for k in range(i + 1, min(j, n)):
+                out[k] = " "
+            i = j + 1
+        elif js.startswith("//", i):
+            j = js.find("\n", i); j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = " "
+            i = j
+        elif js.startswith("/*", i):
+            j = js.find("*/", i + 2); j = n if j < 0 else j + 2
+            for k in range(i, j):
+                out[k] = " "
+            i = j
+        else:
+            i += 1
+    return "".join(out)
+
+
+def _script_hit(js):
+    m = _js_mask(js)
+    if _CF_CHL_OPT.search(m):
+        return True
+    for x in _JS_SRC.finditer(m):          # 赋值本身在代码里；值是紧随其后的字符串字面量
+        q, start = x.group(1), x.end()
+        end = js.find(q, start)
+        if end > start and vendor_src(js[start:end]):
+            return True
+    return False
+
+
 def _vendor_scan(text):
     from html.parser import HTMLParser
 
     class Scan(HTMLParser):
         def __init__(self):
             super().__init__(convert_charrefs=True)
-            self.hit, self.lit, self.in_script = False, 0, False
+            self.hit, self.px, self.lit, self.in_script, self.visible = False, False, 0, 0, 0
+            self.sbuf = []
 
         def handle_starttag(self, tag, attrs):
             if tag in _LITERAL_TAGS:
                 self.lit += 1
                 return
-            if tag == "script":
-                self.in_script = True
-            if self.lit or self.hit:
+            if self.lit:
+                return
+            if tag in ("script", "style"):
+                self.in_script = tag
+                self.sbuf = []
+            if self.hit:
                 return
             a = {}
             for k, v in attrs:                 # 精确属性名；同名重复取第一个
                 a.setdefault(k, v or "")
-            if "src" in a and vendor_src(a["src"]):
+            if tag == "script" and "src" in a and vendor_src(a["src"]):
                 self.hit = True
             elif tag == "form" and a.get("id", "").strip() == "challenge-form":
                 self.hit = True
-            elif a.get("id", "").strip() == "px-captcha":
-                self.hit = True
+            elif tag == "div" and a.get("id", "").strip() == "px-captcha":
+                self.px = True                 # 还要整页可见文本很短（见末尾）
             elif {"cf-turnstile", "g-recaptcha"} & set(a.get("class", "").split()):
                 self.hit = True
 
         def handle_startendtag(self, tag, attrs):
             self.handle_starttag(tag, attrs)
-            if tag == "script":
-                self.in_script = False
+            if tag in ("script", "style") and self.in_script == tag:
+                self.in_script = 0
 
         def handle_endtag(self, tag):
             if tag in _LITERAL_TAGS and self.lit:
                 self.lit -= 1
-            elif tag == "script":
-                self.in_script = False
+            elif tag in ("script", "style") and self.in_script == tag:
+                if tag == "script" and not self.hit and _script_hit("".join(self.sbuf)):
+                    self.hit = True
+                self.in_script = 0
 
         def handle_data(self, data):
-            if self.in_script and not self.lit and not self.hit:
-                if _CF_CHL_OPT.search(data) or any(vendor_src(m.group(2)) for m in _JS_SRC.finditer(data)):
-                    self.hit = True
+            if self.lit:
+                return
+            if self.in_script:
+                self.sbuf.append(data)
+            else:
+                self.visible += len(" ".join(data.split()))
     sc = Scan()
     try:
         sc.feed(text)
         sc.close()
     except Exception:        # 解析异常不当作高置信证据
-        return sc.hit
-    return sc.hit
+        pass
+    if sc.in_script == "script" and not sc.hit and _script_hit("".join(sc.sbuf)):
+        sc.hit = True        # 未闭合的 script 也照样检查
+    return sc.hit or (sc.px and sc.visible <= PX_TEXT_MAX)
 
 
 class _VendorMatcher:
@@ -563,9 +619,10 @@ def ext_for(ctype, body):
 
 # ---------------------------------------------------------------- 持久停用状态
 class HostState:
-    """{"hosts": {host: {...}}, "sources": {sid: {...}}}。只由采集器写入停用；恢复须人工删除对应条目。
-    写回在 fcntl 排他锁（状态文件同目录下 locks/<name>.lock，即私有 state/locks/）内完成：锁内先重读文件并合并，
-    再写唯一命名的临时文件，最后 os.replace；并行进程各自的停用都会保留。disabled() 每次都重读文件。"""
+    """{"hosts": {host: {...}}, "sources": {sid: {...}}}。只由采集器写入停用；恢复须人工（enable() 或 enable-host 命令）。
+    磁盘为准：refresh() 用磁盘快照直接替换缓存（人工删掉的条目立即生效）；disable()/enable() 在 fcntl 排他锁
+    （状态文件同目录 locks/<name>.lock，即私有 state/locks/）内重读磁盘，只合并/删除本次这一条，再写唯一命名的临时文件，
+    最后 os.replace。旧进程不会把人工恢复的主机写回。disabled() 每次请求前都 refresh()。"""
 
     def __init__(self, path):
         self.path = Path(path) if path else None
@@ -575,30 +632,23 @@ class HostState:
     def _read(self):
         if self.path and self.path.exists():
             d = strictjson.loads(self.path.read_text(encoding="utf-8"))
-            return (d.get("hosts") or {}), (d.get("sources") or {})
+            return dict(d.get("hosts") or {}), dict(d.get("sources") or {})
         return {}, {}
 
     def refresh(self):
-        h, src = self._read()
-        self.data["hosts"].update(h)
-        self.data["sources"].update(src)
+        if self.path:
+            h, src = self._read()
+            self.data = {"hosts": h, "sources": src}
 
     def disabled(self, host, sid=None):
-        self.refresh()                 # 每次请求前重读：别的进程刚停用的主机也立即生效
+        self.refresh()                 # 每次请求前重读：别的进程停用、人工恢复都立即生效
         if sid and sid in self.data["sources"]:
             return f"source disabled: {self.data['sources'][sid]['reason']}"
         if host in self.data["hosts"]:
             return f"host disabled: {self.data['hosts'][host]['reason']}"
         return None
 
-    def disable(self, host, sid, reason):
-        rec = {"reason": reason, "at": now(), "needs": "manual review before re-enable"}
-        if host:
-            self.data["hosts"][host] = rec
-        if sid:
-            self.data["sources"][sid] = dict(rec, host=host)
-        if not self.path:
-            return
+    def _locked_update(self, fn):
         import fcntl
         import tempfile
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -607,21 +657,50 @@ class HostState:
         with open(locks / f"{self.path.name}.lock", "a+") as lk:
             fcntl.flock(lk, fcntl.LOCK_EX)
             try:
-                h, src = self._read()                  # 锁内重读 → 合并（文件里已有的 + 本进程的）
-                h.update(self.data["hosts"]); src.update(self.data["sources"])
-                self.data["hosts"], self.data["sources"] = h, src
+                h, src = self._read()                  # 锁内以磁盘为准，只改本次这一条
+                fn(h, src)
+                data = {"hosts": h, "sources": src}
                 fd, tmp = tempfile.mkstemp(prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent)
                 try:
                     with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        f.write(json.dumps(self.data, ensure_ascii=False, indent=1) + "\n")
+                        f.write(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
                         f.flush(); os.fsync(f.fileno())
                     os.replace(tmp, self.path)
                 except BaseException:
                     if os.path.exists(tmp):
                         os.unlink(tmp)
                     raise
+                self.data = data
             finally:
                 fcntl.flock(lk, fcntl.LOCK_UN)
+
+    def disable(self, host, sid, reason):
+        rec = {"reason": reason, "at": now(), "needs": "manual review before re-enable"}
+
+        def add(h, src):
+            if host:
+                h[host] = rec
+            if sid:
+                src[sid] = dict(rec, host=host)
+        if not self.path:
+            add(self.data["hosts"], self.data["sources"])
+            return
+        self._locked_update(add)
+
+    def enable(self, host=None, sid=None):
+        """人工恢复（同一把锁）：删掉主机条目及因该主机停用的源；或按 sid 删源条目。返回删掉的条目数。"""
+        n = [0]
+
+        def rm(h, src):
+            if host and h.pop(host, None) is not None:
+                n[0] += 1
+            for k in [k for k, v in src.items() if (sid and k == sid) or (host and v.get("host") == host)]:
+                src.pop(k); n[0] += 1
+        if not self.path:
+            rm(self.data["hosts"], self.data["sources"])
+        else:
+            self._locked_update(rm)
+        return n[0]
 
 
 # ---------------------------------------------------------------- 抓取层
@@ -734,6 +813,11 @@ class Fetcher:
 
     def _raw(self, url, accept):
         host = host_of(url)
+        if in_group(host, SEC_SUFFIX):     # 所有出站入口（get、robots、直接调用）统一门禁：缺 UA 或跨进程锁 → 不发请求
+            if not self.sec_ua:
+                return 0, {}, b"", "not_configured", f"{SEC_UA_ENV} not set (must include contact info)"
+            if not self.lock_dir:
+                return 0, {}, b"", "not_configured", "lock_dir not set (SEC requests need the cross-process rate lock)"
         g = next((x for x in RATE_GROUPS if in_group(host, x)), None)
         if g and self.lock_dir:
             import fcntl

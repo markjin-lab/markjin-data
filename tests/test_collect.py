@@ -1168,7 +1168,7 @@ class R9Fixes(unittest.TestCase):
         for b in real:
             self.assertEqual(collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>"), "vendor", b)
         fake = [b"<p>Use the g-recaptcha class and cf-turnstile widget.</p>",
-                b'<pre><div class="g-recaptcha"></div></pre>', b'<code><form id="challenge-form"></code>',
+                b'<textarea><div class="g-recaptcha"></div></textarea>', b'<xmp><form id="challenge-form"></xmp>',
                 b'<pre>&lt;div class="g-recaptcha"&gt;</pre>', b'<!-- <div class="cf-turnstile"></div> -->',
                 b"<p>see https://challenges.cloudflare.com/turnstile/v0/api.js</p>",
                 b'<script src="/static/recaptcha-helper.min.js"></script>']
@@ -1305,7 +1305,7 @@ class R10Fixes(unittest.TestCase):
                 b'<script src="https://evil.example.org/recaptcha/api.js"></script>',
                 b'<script src="https://www.google.com/search?q=/recaptcha/api.js"></script>',
                 b'<a href="/cdn-cgi/challenge-platform/x">doc</a>', b"<p>window._cf_chl_opt = {}</p>",
-                b'<pre><div class="g-recaptcha"></div></pre>', b'<code><div id="px-captcha"></div></code>',
+                b'<textarea><div class="g-recaptcha"></div></textarea>', b'<title><div id="px-captcha"></div></title>',
                 b"<!-- <div class='cf-turnstile'></div> -->", b'<p>/_Incapsula_Resource?x in a support article</p>']
         for b in fake:
             body = b"<html><body>" + b + b"<p>a</p>" * 100 + b"</body></html>"
@@ -1315,7 +1315,7 @@ class R10Fixes(unittest.TestCase):
                 b'<script src="https://www.recaptcha.net/recaptcha/api.js"></script>',
                 b'<script src="https://js.hcaptcha.com/1/api.js"></script>',
                 b'<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script>',
-                b'<iframe src="/_Incapsula_Resource?CWUDNSAI=1"></iframe>',
+                b'<script src="/_Incapsula_Resource?SWJIYLWA=1"></script>',          # r11：只认 script src
                 b"<script>window._cf_chl_opt={cType:'managed'}</script>",
                 b"<script>var a=document.createElement('script');a.src = '/cdn-cgi/challenge-platform/h/g/x';</script>"]
         for b in real:
@@ -1352,6 +1352,95 @@ class R10Fixes(unittest.TestCase):
             self.assertEqual(r.error, "not_configured")
             self.assertEqual(f.opener.calls, [])
             self.assertEqual(f.state.data["hosts"], {})                                       # 不停用
+        finally:
+            if old is None:
+                os.environ.pop(collect.SEC_UA_ENV, None)
+            else:
+                os.environ[collect.SEC_UA_ENV] = old
+
+
+class R11Fixes(unittest.TestCase):
+    """PR #3 审查 r11 REJECTED 修复的针对性测试。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(dir="/workspace"); self.addCleanup(d.cleanup); return Path(d.name)
+
+    CFS = (b"<script>(function(){window._cf_chl_opt={cType:'managed'};var a=document.createElement('script');"
+           b"a.src='/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1';}());</script>")
+
+    def cls(self, b):
+        return collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>", {})
+
+    def test_pre_code_checked_closed_unclosed_selfclosed(self):
+        for wrap in (b"pre", b"code"):
+            for comp in (self.CFS, b"<div class='cf-turnstile'></div>", b"<script src='/_Incapsula_Resource?SWJ=1'></script>"):
+                for b in (b"<%s>x%s</%s>" % (wrap, comp, wrap),          # 闭合
+                          b"<%s>x%s" % (wrap, comp),                     # 没闭合
+                          b"<%s/>%s" % (wrap, comp)):                    # <pre/>
+                    self.assertEqual(self.cls(b), "vendor", b)
+
+    def test_only_textarea_xmp_plaintext_title_exempt(self):
+        self.assertEqual(collect._LITERAL_TAGS, frozenset({"textarea", "xmp", "plaintext", "title"}))
+        for tag in (b"textarea", b"xmp", b"title"):
+            self.assertIsNone(self.cls(b"<%s>x<div class='cf-turnstile'></div></%s>" % (tag, tag)), tag)
+        self.assertIsNone(self.cls(b"<plaintext>x<div class='g-recaptcha'></div>"))
+
+    def test_tightened_markers_no_false_positive(self):
+        fake = [b'<img src="/cdn-cgi/challenge-platform/x.png">', b'<img src="/img/_Incapsula_Resource_diagram.png">',
+                b'<iframe src="/_Incapsula_Resource?CWUDNSAI=1"></iframe>',
+                b"<script src='https://evil.example.org/cdn-cgi/challenge-platform/x'></script>",
+                b'<h2 id="px-captcha">PerimeterX captcha explained</h2>', b'<a id="px-captcha">x</a>',
+                b"<pre>window._cf_chl_opt = {}</pre>", b"<code>window._cf_chl_opt = {}</code>",
+                b"<script>console.log('see window._cf_chl_opt = {} docs');</script>",
+                b'<script>var s = "window._cf_chl_opt = {}";</script>',
+                b"<script>// window._cf_chl_opt = {}\n/* window._cf_chl_opt={} */ var x = 1;</script>",
+                b"<script>var t = 'a.src=\"/cdn-cgi/challenge-platform/x\"';</script>",
+                b"<script>if (window._cf_chl_opt == null) {}</script>"]
+        for b in fake:
+            self.assertIsNone(self.cls(b + b"<p>a</p>" * 100), b)
+        # px-captcha：div 且整页可见文本很短才算
+        self.assertEqual(self.cls(b"<div id='px-captcha'></div><p>Press &amp; Hold to confirm you are a human</p>"), "vendor")
+        self.assertIsNone(self.cls(b"<div id='px-captcha'></div>" + b"<p>long article text here</p>" * 100))
+        for b in (b"<script>window._cf_chl_opt={cType:'managed'}</script>", b"<script>;window._cf_chl_opt = {a: 1};</script>",
+                  b"<script src='/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1'></script>",
+                  b"<script>var a=document.createElement('script');a.src = \"/cdn-cgi/challenge-platform/h/g/x\";</script>"):
+            self.assertEqual(self.cls(b + b"<p>a</p>" * 100), "vendor", b)
+
+    def test_stale_process_does_not_rewrite_manually_enabled_host(self):
+        p = self.tmpdir() / "state" / "collector-hosts.json"
+        old = collect.HostState(p)                      # 已在跑的旧进程
+        old.disable("a.org", "s1", "http_403")
+        self.assertEqual(collect.HostState(p).enable("a.org"), 2)   # 人工恢复（主机 + 因它停用的源），同一把锁
+        self.assertIsNone(old.disabled("a.org", "s1"))  # refresh 用磁盘快照替换缓存
+        old.disable("b.org", "s2", "http_403")          # 旧进程再停用别的主机：只合并这一条
+        d = collect.HostState(p).data
+        self.assertEqual(sorted(d["hosts"]), ["b.org"])
+        self.assertEqual(sorted(d["sources"]), ["s2"])
+
+    def test_stale_cache_without_refresh_still_not_written_back(self):
+        p = self.tmpdir() / "state" / "collector-hosts.json"
+        old = collect.HostState(p)
+        old.disable("a.org", None, "http_403")
+        collect.HostState(p).enable("a.org")
+        old.disable("b.org", None, "http_403")          # 未调用 disabled()/refresh() 也不写回 a.org
+        self.assertEqual(sorted(collect.HostState(p).data["hosts"]), ["b.org"])
+
+    def test_sec_gate_in_raw_covers_direct_robots(self):
+        import os
+        old = os.environ.get(collect.SEC_UA_ENV)
+        try:
+            for ua, lock in ((None, True), ("markjin research (+https://example.org/contact)", False)):
+                if ua is None:
+                    os.environ.pop(collect.SEC_UA_ENV, None)
+                else:
+                    os.environ[collect.SEC_UA_ENV] = ua
+                f, _ = mk({"https://www.sec.gov/robots.txt": Resp(200, b"")},
+                          lock_dir=(self.tmpdir() if lock else None))
+                rp = f.robots("https://www.sec.gov/x")
+                self.assertEqual(f.opener.calls, [], (ua, lock))           # 直接调用 robots() 也不发请求
+                self.assertFalse(rp.can_fetch(collect.UA_TOKEN, "https://www.sec.gov/x"))
+                self.assertEqual(f.state.data["hosts"], {})               # 不停用
+                self.assertEqual(f._raw("https://www.sec.gov/x", "*/*")[3], "not_configured")
         finally:
             if old is None:
                 os.environ.pop(collect.SEC_UA_ENV, None)
