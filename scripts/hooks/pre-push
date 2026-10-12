@@ -13,7 +13,7 @@ if [ -z "$input" ]; then
   echo "pre-push: stdin 为空（E-CHECK-STDIN），推送已拒绝" >&2; exit 1
 fi
 # 第一步：不可变 ref 与推送目标守卫（逐条 ref，任何 git 调用失败即 exit 1，fail-closed）。
-# 不可变 ref 清单：refs/heads/main 与 refs/tags/*。禁止删除；已有 tag 不得改指（含子孙提交）；main 只能快进（由 verify-raw 祖先检查保证）。
+# 不可变 ref 清单：refs/heads/main 与 refs/tags/*。禁止删除；已有 tag 不得改指（含子孙提交）；新 tag 须指向 main 的祖先；main 只能快进（由 verify-raw 祖先检查保证）。
 printf '%s\n' "$input" | while read -r lref lsha rref rsha; do
   [ -n "$lref" ] || continue
   immutable=
@@ -37,6 +37,18 @@ printf '%s\n' "$input" | while read -r lref lsha rref rsha; do
   case "$rsha" in 0000000000000000000000000000000000000000) rsha= ;; esac
   if [ -n "$rsha" ]; then git cat-file -e "$rsha^{commit}" 2>/dev/null || { echo "pre-push: 本地缺少远端提交 $rsha，请先 fetch" >&2; exit 1; }; fi
   target=$(git rev-parse -q --verify "$lsha^{commit}") || { echo "pre-push: git rev-parse 失败（$lref），推送已拒绝" >&2; exit 1; }
+  case "$rref" in refs/tags/*)
+    if [ -z "$rsha" ]; then
+      # 新 tag：只要求所指提交是 main（origin/main）的祖先，不要求指向 main 当前提交；main 的历史已在推 main 时校验
+      om=$(git for-each-ref --format='%(objectname)' refs/remotes/origin/main) || { echo "pre-push: git for-each-ref 失败，推送已拒绝" >&2; exit 1; }
+      [ -n "$om" ] || { echo "pre-push: 本地没有 origin/main，无法确认新 tag $rref 在 main 上，推送已拒绝" >&2; exit 1; }
+      git merge-base --is-ancestor "$target" "$om"; rc=$?
+      case $rc in
+        0) continue ;;
+        1) echo "pre-push: 新 tag $rref 指向的提交不是 main 的祖先，推送已拒绝" >&2; exit 1 ;;
+        *) echo "pre-push: git merge-base --is-ancestor 失败，推送已拒绝" >&2; exit 1 ;;
+      esac
+    fi ;; esac
   base=$rsha
   if [ -z "$base" ]; then
     om=$(git for-each-ref --format='%(objectname)' refs/remotes/origin/main) || { echo "pre-push: git for-each-ref 失败，推送已拒绝" >&2; exit 1; }

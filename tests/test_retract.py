@@ -300,6 +300,78 @@ class VerifyRawRetractions(Base):
         self.commit("register later")
         r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("未登记: raw/2026-10-12/src/late.txt", r.stdout)
 
+    # ---- r4：撤回登记必须由本提交新追加的行逐条对应（224fd88 nasa-news 场景）----
+    NASA = "nasa-news/20261011T210721Z.xml"
+    NASA_BYTES = b"<rss>nasa 2026-10-11T21:07:21Z</rss>\n"     # 合成字节，不复制已撤回的原文
+
+    def nasa_retracted(self):
+        """224fd88：文件已登记；6959ccf：删除并在 RETRACTIONS.md 登记。返回撤回后的提交。"""
+        self.add_listed(self.NASA, self.NASA_BYTES); self.commit("224fd88-like")
+        (self.d / self.NASA).unlink()
+        self.write_retractions([(f"raw/2026-10-12/{self.NASA}", sha(self.NASA_BYTES))])
+        return self.commit("6959ccf-like retract")
+
+    def readd_nasa(self):
+        self.add_listed(self.NASA, self.NASA_BYTES)
+        return self.commit("re-add with original bytes")
+
+    def append_row(self, path, digest):
+        f = self.d / "RETRACTIONS.md"
+        with open(f, "ab") as w:
+            w.write(f"| {path} | https://e.x/ | {digest} | t | r |\n".encode())
+        with open(self.d / "MANIFEST.sha256", "a") as m:
+            m.write(f"{sha(f.read_bytes())}  ./RETRACTIONS.md\n")
+
+    def test_retracted_path_readded_fails(self):
+        self.base = self.nasa_retracted()
+        r = self.verify(); self.assertEqual(r.returncode, 0, r.stdout)
+        self.readd_nasa()
+        r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"不得重新加回）: raw/2026-10-12/{self.NASA}", r.stdout)
+
+    def test_readded_then_deleted_without_new_row_fails(self):
+        self.nasa_retracted(); self.base = self.readd_nasa()      # 只检查再删除这一步：旧登记不能授权新的删除
+        (self.d / self.NASA).unlink(); self.commit("delete again, no new row")
+        r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"没有新追加对应的撤回登记: raw/2026-10-12/{self.NASA}", r.stdout)
+        self.assertNotIn("RETRACTED", r.stdout)
+
+    def test_readded_then_deleted_with_duplicate_row_counts_as_new(self):
+        self.nasa_retracted(); self.base = self.readd_nasa()
+        (self.d / self.NASA).unlink()
+        self.append_row(f"raw/2026-10-12/{self.NASA}", sha(self.NASA_BYTES))   # 与旧行完全相同的重复行也算新追加
+        self.commit("delete again with new row")
+        r = self.verify(); self.assertEqual(r.returncode, 0, r.stdout); self.assertIn("RETRACTED", r.stdout)
+
+    def test_full_readd_delete_cycle_fails(self):
+        self.base = self.nasa_retracted(); self.readd_nasa()
+        (self.d / self.NASA).unlink(); self.commit("delete again")
+        r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("不得重新加回", r.stdout); self.assertIn("没有新追加对应的撤回登记", r.stdout)
+
+    def test_new_row_without_deletion_fails(self):
+        self.base = self.nasa_retracted()
+        self.append_row("raw/2026-10-12/src/keep.txt", sha(self.keep)); self.commit("row only")
+        r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("在本提交中仍存在", r.stdout)
+
+    def test_merge_inherits_validated_deletion(self):
+        self.add_listed(self.NASA, self.NASA_BYTES); self.base = self.commit("224fd88-like")
+        self.git("checkout", "-q", "-b", "side")
+        (self.d / self.NASA).unlink()
+        self.write_retractions([(f"raw/2026-10-12/{self.NASA}", sha(self.NASA_BYTES))]); self.commit("retract on side")
+        self.git("checkout", "-q", "-")
+        (self.repo / "m.txt").write_text("m\n"); self.commit("main work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@e", "merge", "-q", "--no-edit", "side")
+        r = self.verify(); self.assertEqual(r.returncode, 0, r.stdout); self.assertIn("继承自另一父提交", r.stdout)
+
+    def test_merge_deletion_not_on_other_parent_fails(self):
+        self.git("checkout", "-q", "-b", "side"); (self.repo / "s.txt").write_text("s\n"); self.commit("side")
+        self.git("checkout", "-q", "-")
+        self.git("-c", "user.name=t", "-c", "user.email=t@e", "merge", "-q", "--no-commit", "side")
+        (self.d / "src/gone.txt").unlink(); self.git("add", "-A")
+        self.git("-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "evil merge")
+        r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("没有新追加对应的撤回登记", r.stdout)
+
     def test_default_base_is_merge_base_for_new_branch(self):
         subprocess.run(["git", "update-ref", "refs/remotes/origin/main", self.base], cwd=self.repo, check=True)
         self.git("checkout", "-q", "-b", "feat")
@@ -334,6 +406,7 @@ class VerifyRawRetractions(Base):
 
     def test_hook_multi_ref_all_good_passes(self):
         (self.repo / "n.txt").write_text("n\n"); ok = self.commit("ok")
+        subprocess.run(["git", "update-ref", "refs/remotes/origin/main", ok], cwd=self.repo, check=True)
         r = self.hook(f"refs/heads/a {ok} refs/heads/a {self.base}\nrefs/heads/b {ok} refs/heads/b {'0' * 40}\n"
                       f"refs/tags/v1 {ok} refs/tags/v1 {'0' * 40}\n(delete) {'0' * 40} refs/heads/tmp {self.base}\n")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -350,6 +423,25 @@ class VerifyRawRetractions(Base):
         (self.repo / "n.txt").write_text("n\n"); ok = self.commit("ok")   # 子孙提交，快进也不行
         r = self.hook(f"refs/tags/v1 {ok} refs/tags/v1 {self.base}\n")
         self.assertEqual(r.returncode, 1); self.assertIn("禁止改指已有 tag", r.stderr)
+
+    def test_hook_new_tag_on_main_ancestor_passes(self):
+        (self.repo / "n.txt").write_text("n\n"); ok = self.commit("ok")
+        (self.repo / "n2.txt").write_text("n\n"); tip = self.commit("ok2")
+        subprocess.run(["git", "update-ref", "refs/remotes/origin/main", tip], cwd=self.repo, check=True)
+        for c in (self.base, ok, tip):          # 旧提交、中间提交、当前提交都可以打 tag
+            with self.subTest(c=c):
+                r = self.hook(f"refs/tags/v-{c[:7]} {c} refs/tags/v-{c[:7]} {'0' * 40}\n"); self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_hook_new_tag_off_main_fails(self):
+        self.git("checkout", "-q", "-b", "side"); (self.repo / "s.txt").write_text("s\n"); side = self.commit("side")
+        self.git("checkout", "-q", "-")
+        subprocess.run(["git", "update-ref", "refs/remotes/origin/main", self.base], cwd=self.repo, check=True)
+        r = self.hook(f"refs/tags/vs {side} refs/tags/vs {'0' * 40}\n")
+        self.assertEqual(r.returncode, 1); self.assertIn("不是 main 的祖先", r.stderr)
+
+    def test_hook_new_tag_without_origin_main_fails(self):
+        r = self.hook(f"refs/tags/v0 {self.base} refs/tags/v0 {'0' * 40}\n")
+        self.assertEqual(r.returncode, 1); self.assertIn("没有 origin/main", r.stderr)
 
     def test_hook_non_commit_target_rejected(self):
         tree = self.git("rev-parse", "HEAD^{tree}")
@@ -438,7 +530,7 @@ class PublicLocalPath(Base):
     def test_file_uri_variants_flagged(self):
         for body in ['{"p": "file://localhost/workspace/a"}\n', '{"p": "file:/workspace/a"}\n',
                      '{"p": "FILE:///workspace/a"}\n', '{"p": "file:\\/\\/\\/workspace\\/a"}\n',
-                     'see File:///home/x\n', '{"p": "file:///tmp/a"}\n', '{"p": "file:\\u002f\\u002f\\u002fworkspace"}\n',
+                     'see File:///home/x\n', '{"p": "file:\\u002f\\u002f\\u002fworkspace"}\n',
                      'not json file:\\/\\/\\/workspace\\/a\n', '{"p": "x", "p": "file:/home/x"}\n', '{"a": 1}\n{"p": "file://localhost/home/b"}\n']:
             with self.subTest(body=body):
                 self.add_raw(body); self.expect(self.public(), False, "E-PUBLIC-LOCAL-PATH")
@@ -453,6 +545,24 @@ class PublicLocalPath(Base):
         for body in ['{"u": "https://x/?p=/workspace/a"}\n', '{"u": "http://x.org/a?p=/home/b&q=/workspace"}\n',
                      '{"u": "https:\\/\\/x\\/?p=\\/workspace\\/a"}\n', 'see https://x/#/workspace/a now\n',
                      '{"u": "HTTPS://Sam.gov/home/x"}\n', 'profile:/workspace-not\n']:
+            with self.subTest(body=body):
+                self.add_raw(body); self.expect(self.public(), True)
+
+    def test_file_uri_outside_local_dirs_not_flagged(self):
+        for body in ['{"p": "file:///etc/hosts"}\n', '{"p": "file:///tmp/a"}\n', 'FILE://localhost/etc/x\n',
+                     '{"p": "file:\\/\\/\\/etc\\/hosts"}\n', '{"p": "file:///homework/a"}\n', '{"p": "file:%2F%2F%2Fetc%2Fhosts"}\n']:
+            with self.subTest(body=body):
+                self.add_raw(body); self.expect(self.public(), True)
+
+    def test_percent_encoded_flagged(self):
+        for body in ['{"p": "%2Fworkspace%2Fa"}\n', '{"p": "%2fhome%2fbox"}\n', '{"p": "file:%2F%2F%2Fworkspace%2Fa"}\n',
+                     '{"p": "file://localhost%2Fhome%2Fx"}\n', 'raw text dir=%2Fworkspace%2Fa\n', '{"p": "file:%2Fhome%2Fx"}\n',
+                     '{"p": "\\u0025\\u0032Fworkspace"}\n']:
+            with self.subTest(body=body):
+                self.add_raw(body); self.expect(self.public(), False, "E-PUBLIC-LOCAL-PATH")
+
+    def test_percent_encoded_in_http_url_not_flagged(self):
+        for body in ['{"u": "https://x/?p=%2Fworkspace%2Fa"}\n', '{"u": "https://x/a%2Fhome%2Fb"}\n']:
             with self.subTest(body=body):
                 self.add_raw(body); self.expect(self.public(), True)
 

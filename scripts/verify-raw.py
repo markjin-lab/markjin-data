@@ -14,6 +14,7 @@
 任何 git 命令失败 → 失败（fail-closed）。
 """
 import argparse, hashlib, os, re, subprocess, sys
+from collections import Counter
 
 ZERO = "0" * 40
 fail = 0
@@ -65,24 +66,21 @@ def is_day_file(path, name):
 
 
 def retraction_rows(commit, day, files):
-    """返回 (合法行集合 {(sha, path)}, 格式错误行列表)。"""
+    """按文件顺序返回全部登记行 [(sha 或 None, path)]，保留重复；sha 格式错误的行记为 None。"""
     r = f"raw/{day}/RETRACTIONS.md"
     if r not in files:
-        return set(), []
-    out, badrows = set(), []
+        return []
+    out = []
     for line in blob(commit, r).decode("utf-8", "replace").splitlines():
         cols = line.split("|")
         if len(cols) > 4 and cols[1].strip().startswith("raw/"):
             p, h = cols[1].replace(" ", ""), cols[3].replace(" ", "")
-            if re.fullmatch(r"[0-9a-f]{64}", h):
-                out.add((h, p))
-            else:
-                badrows.append(p)
-    return out, badrows
+            out.append((h if re.fullmatch(r"[0-9a-f]{64}", h) else None, p))
+    return out
 
 
 def retracted(commit, day, files):
-    return retraction_rows(commit, day, files)[0]
+    return {x for x in retraction_rows(commit, day, files) if x[0]}
 
 
 def snapshot(commit):
@@ -133,13 +131,15 @@ def is_prefix(parent, commit, path):
 
 
 def history(parent, commit, others=()):
+    """对比一个父提交。删除须由本提交（相对该父提交）新追加的撤回登记逐条对应；
+    合并提交里，另一父提交中已不存在的文件视为该父提交历史中已校验过的删除（继承），其登记行同样视为继承。"""
     out = git("diff", "--name-status", "--no-renames", "-z", parent, commit, "--", "raw", ":(exclude)raw/README.md")
     toks = [t.decode("utf-8", "surrogateescape") for t in out.split(b"\0") if t]
-    files = None
+    added, deleted = [], []
     for st, path in zip(toks[0::2], toks[1::2]):
         if st == "A":
-            continue
-        if st == "M":
+            added.append(path)
+        elif st == "M":
             if is_day_file(path, "RETRACTIONS.md"):
                 if not is_prefix(parent, commit, path):
                     bad(f"RETRACTIONS.md 非追加式修改: {path} @ {commit[:7]}")
@@ -154,40 +154,53 @@ def history(parent, commit, others=()):
             elif is_day_file(path, "MANIFEST.sha256"):
                 bad(f"MANIFEST 被删除（基线行必须保留）: {path} @ {commit[:7]}")
             else:
-                if files is None:
-                    files = tree(commit)
-                day = path.split("/")[1]
-                h = hashlib.sha256(blob(parent, path)).hexdigest()
-                if (h, path) in retracted(commit, day, files):
-                    print(f"RETRACTED {path}（见 RETRACTIONS.md）")
-                else:
-                    bad(f"已提交 raw 文件被删除/改名({st}): {path} @ {commit[:7]}")
+                deleted.append(path)
         else:
             bad(f"已提交 raw 文件被删除/改名({st}): {path} @ {commit[:7]}")
-    check_new_retractions(parent, commit, toks, others)
-
-
-def check_new_retractions(parent, commit, toks, others):
-    """本提交（相对 parent）新增的每条撤回登记：路径须在 parent 中存在、在本提交中已删除，且 sha256 等于 parent 中那份 blob。
-    合并提交中已存在于另一父提交的登记视为继承（在其引入的提交里已校验）。"""
-    days = {p.split("/")[1] for p in toks[1::2] if is_day_file(p, "RETRACTIONS.md")}
+    days = {p.split("/")[1] for p in added + deleted if len(p.split("/")) >= 3}
+    days |= {p.split("/")[1] for p in toks[1::2] if is_day_file(p, "RETRACTIONS.md")}
     if not days:
         return
     cfiles, pfiles = tree(commit), tree(parent)
+    ofiles = {q: tree(q) for q in others}
     for day in sorted(days):
-        rows, badrows = retraction_rows(commit, day, cfiles)
-        for p in badrows:
-            bad(f"RETRACTIONS.md 登记行 sha256 格式错误: {p} @ {commit[:7]}")
-        new = rows - retraction_rows(parent, day, pfiles)[0]
-        for h, p in sorted(new):
-            if any((h, p) in retraction_rows(q, day, tree(q))[0] for q in others):
+        crows, prows = retraction_rows(commit, day, cfiles), retraction_rows(parent, day, pfiles)
+        new = crows[len(prows):] if crows[:len(prows)] == prows else crows   # 只校验新追加的一段（保留顺序与重复）
+        inherit = Counter()
+        for q in others:
+            qc = Counter(retraction_rows(q, day, ofiles[q])) - Counter(prows)
+            inherit |= qc
+        pending = []
+        for row in new:
+            if inherit[row] > 0:
+                inherit[row] -= 1; continue
+            if row[0] is None:
+                bad(f"RETRACTIONS.md 登记行 sha256 格式错误: {row[1]} @ {commit[:7]}"); continue
+            pending.append(row)
+        retracted_paths = {p for _, p in crows}
+        for path in added:
+            if path.split("/")[1] == day and path in retracted_paths:
+                bad(f"新增文件的路径已在 RETRACTIONS.md 中登记撤回（不得重新加回）: {path} @ {commit[:7]}")
+        for path in deleted:
+            if path.split("/")[1] != day:
                 continue
+            if any(path not in ofiles[q] for q in others):
+                print(f"RETRACTED {path}（继承自另一父提交）"); continue
+            h = hashlib.sha256(blob(parent, path)).hexdigest()
+            if (h, path) in pending:
+                pending.remove((h, path)); print(f"RETRACTED {path}（见 RETRACTIONS.md）")
+            elif any(p == path for _, p in pending):
+                bad(f"撤回登记 sha256 与父提交中被删除文件不符: {path} @ {commit[:7]}")
+                pending = [x for x in pending if x[1] != path]
+            else:
+                bad(f"已提交 raw 文件被删除，且本提交没有新追加对应的撤回登记: {path} @ {commit[:7]}")
+        for h, p in pending:
             if p not in pfiles or pfiles[p][1] != "blob":
-                bad(f"撤回登记的文件在父提交中不存在: {p} @ {commit[:7]}"); continue
-            if p in cfiles:
-                bad(f"撤回登记的文件在本提交中仍存在: {p} @ {commit[:7]}"); continue
-            if hashlib.sha256(blob(parent, p)).hexdigest() != h:
-                bad(f"撤回登记 sha256 与父提交中被删除文件不符: {p} @ {commit[:7]}")
+                bad(f"撤回登记的文件在父提交中不存在: {p} @ {commit[:7]}")
+            elif p in cfiles:
+                bad(f"撤回登记的文件在本提交中仍存在: {p} @ {commit[:7]}")
+            else:
+                bad(f"撤回登记没有对应本提交的删除: {p} @ {commit[:7]}")
 
 
 def main():

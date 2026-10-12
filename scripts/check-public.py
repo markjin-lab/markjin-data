@@ -14,7 +14,7 @@
 3) 每个推送目标提交的树中必须有 review/ledger/；每个被扫描提交中，review/ledger/ 下只允许 .gitkeep 与 YYYY-MM-DD.jsonl，
    台账非空、无重复键，每行通过字段白名单、真实日历日期、与文件名日期一致、card_id 有对应公开稿件锚点的校验。
 解码失败（E-CHECK-DECODE）、stdin 为空或格式异常（E-CHECK-STDIN）、git 失败（E-CHECK-GIT）一律拒绝。
-4) 新增 raw/ 文件不得含 /workspace/、/home/ 本机绝对路径或任何 file: URI（只豁免 http(s)://主机 开头的网址；JSON 先解码）（E-PUBLIC-LOCAL-PATH；本规则引入前已提交的文件豁免）。
+4) 新增 raw/ 文件不得含 /workspace/、/home/ 本机绝对路径或指向它们的 file: URI（先网址解码；只豁免 http(s)://主机 开头的网址；JSON 先解码）（E-PUBLIC-LOCAL-PATH；本规则引入前已提交的文件豁免）。
 内部主题词检查不在这里（见 check-internal.py，仅本机 pre-push）。输出已脱敏：只给提交短 SHA、文件序号、行号。"""
 import argparse, re, sys
 from pathlib import Path
@@ -31,10 +31,10 @@ def internal_path(p):
 # 2026-10-12 合规撤回：新增 raw/ 文件不得含本机绝对路径（'/workspace/'）。
 # 豁免：本规则引入前已提交的文件（基线 main@224fd88 树中已有的 raw 路径），以及该提交父提交中已存在的同一路径。
 # 按 URI 判断（r3）：
-#  - 任何 file: URI（file:/、file://localhost/、file:///、大小写不敏感）一律命中；
+#  - file: URI 指向 /workspace 或 /home 时命中（file:/、file://localhost/、file:///、大小写不敏感）；file:///etc/hosts 等不算；
 #  - 裸 /workspace、/home 路径命中，除非它所在的词以 http:// 或 https:// 加主机开头（路径段、?p=/workspace 查询、#/… 片段都属于该网址）；
-#  - 先解码：整份或逐行 JSON 解析后检查每个字符串（键与值），另把 JSON 转义 \/ 还原为 / 再检查原文。
-FILE_URI_RE = re.compile(r"(?i)(?<![A-Za-z0-9+.\-])file:[/\\]")
+#  - 先解码：每个候选串再做一次网址解码（%2Fworkspace 等）；整份或逐行 JSON 解析后检查每个字符串（键与值），另把 JSON 转义 \/ 还原为 / 再检查原文。
+FILE_URI_RE = re.compile(r"(?i)(?<![A-Za-z0-9+.\-])file:(?://[^/\s\"'<>]*)?/+(?:workspace|home)(?![A-Za-z0-9_.\-])")
 BARE_LOCAL_RE = re.compile(r"(?<![A-Za-z0-9._~%\\\-])/(?:workspace|home)(?![A-Za-z0-9_.\-])")
 HTTP_URL_RE = re.compile(r"(?i)https?://[A-Za-z0-9\[]")
 TOKEN_DELIM = set(" \t\r\n\"'<>()[]{},`|")
@@ -87,7 +87,8 @@ def _hits(s):
 
 
 def has_local_path(text):
-    return any(_hits(c) for c in _candidates(text))
+    from urllib.parse import unquote
+    return any(_hits(c) or _hits(unquote(c)) for c in _candidates(text))
 
 
 LOCAL_PATH_BASELINE = "224fd88fd0321652a184679664fb5bb5e6a1c730"

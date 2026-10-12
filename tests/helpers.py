@@ -1,5 +1,13 @@
-import hashlib, sys, tempfile
+import atexit, hashlib, os, sys, tempfile
 from pathlib import Path
+
+# 测试临时目录：整个测试进程共用一个 TemporaryDirectory（本机放在 /workspace 下，可用 MARKJIN_TEST_TMP 覆盖；
+# 其他环境如 CI 用系统默认临时目录），所有 mkdtemp / 子进程 TMPDIR 都落在它里面，进程退出时整体清理。
+_root = os.environ.get("MARKJIN_TEST_TMP") or ("/workspace" if os.path.isdir("/workspace") and os.access("/workspace", os.W_OK) else None)
+_TMP = tempfile.TemporaryDirectory(prefix="markjin-tests-", dir=_root)
+tempfile.tempdir = _TMP.name
+os.environ["TMPDIR"] = _TMP.name
+atexit.register(_TMP.cleanup)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 DATE = "2026-01-05"
