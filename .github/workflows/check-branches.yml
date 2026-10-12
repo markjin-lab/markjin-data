@@ -1,5 +1,5 @@
 name: check-branches
-# 分支台账 ledger/macro-branches.csv：格式、登记规则、只追加。只用 Python 标准库。
+# 分支台账 ledger/branches.csv：格式、登记规则、只追加、门禁计数。只用 Python 标准库。
 on:
   push:
   pull_request:
@@ -18,9 +18,23 @@ jobs:
       - name: unit tests
         run: cd tests && python3 -m unittest test_branches
       - name: check ledger
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            python3 scripts/check-branches.py --repo . --ref "${{ github.event.pull_request.head.sha }}" --base "${{ github.event.pull_request.base.sha }}"
+          set -eu
+          if [ "$EVENT" = pull_request ]; then
+            # PR：基线取 base 与 head 的 merge-base（main 前进后仍为 head 的祖先）
+            BASE=$(git merge-base "$PR_BASE" "$PR_HEAD"); REF=$PR_HEAD
           else
-            python3 scripts/check-branches.py --repo . --ref HEAD
+            # push：基线取 before；新分支（全零）时退回 origin/main 与 HEAD 的 merge-base
+            REF=HEAD
+            if [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ]; then
+              BASE=$PUSH_BEFORE
+            else
+              BASE=$(git merge-base origin/main HEAD)
+            fi
           fi
+          python3 scripts/check-branches.py --repo . --ref "$REF" --base "$BASE" --count-gate
