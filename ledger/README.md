@@ -19,10 +19,11 @@
 
 | 字段 | 含义 |
 |---|---|
-| row_id | 行标识，生成规则：`<draft_id>-b<branch_order>-r<n>`，n 是这个分支在文件中的第几行（从 1 起，按文件顺序）。脚本按此规则复算 |
+| row_id | 行标识，生成规则：`<draft_id>-<classification_id>-b<branch_order>-r<n>`，n 是这个分支在文件中的第几行（从 1 起，按文件顺序）。脚本按此规则复算 |
 | corrects_row_id | 更正行填被更正行的 row_id（必须是同一分支、已经存在的行）；其他行留空 |
 | reason | 更正理由，更正行必填；其他行留空 |
 | draft_id | 稿件编号（小写字母、数字和连字符） |
+| classification_id | 稿件内完成分类的条目编号，写 `c1`、`c2`……。一篇日报可以有多个条目，每个条目一个；一个分支由 draft_id + classification_id + branch_order 确定 |
 | slug | 稿件的网址短名 |
 | publish_date | 发布日期 |
 | domain | 领域：`macro`（宏观）、`ai`、`energy`（能源）、`space`（太空）、`bio`（生物）、`other`（其他） |
@@ -62,6 +63,8 @@
 对内核整库清单算 sha256，并记录内核提交号：framework_sha256 是登记时内核已提交版本的整库清单的 sha256，framework_commit 是对应的内核提交号。具体算法写在内核自己的文档里，内核不公开；经王总同意，才向指定审阅人出示内核，由审阅人按同一算法复核。
 
 ## 登记和对账的规则
+
+**判定分组**：HIT 与互斥判定按 (draft_id, classification_id) 分组，组内只看各分支当前的最终结论：恰有一支 HIT、其余 MISS；全部 NONE_HIT；两支以上 MULTI_HIT、其余 MISS；或全部 TRIGGER_UNOBSERVABLE。组内结论尚未出齐时只查是否矛盾；error_source 在组内必须一致。
 
 行分四种：**登记行**（每个分支的第一行）、**对账行**、**登记更正行**、**结论更正行**。
 

@@ -10,8 +10,8 @@ LEDGER_PATH = "ledger/branches.csv"
 
 HEADER = [
     "row_id", "corrects_row_id", "reason",
-    "draft_id", "slug", "publish_date", "domain", "framework_version", "framework_sha256", "framework_commit",
-    "observed_variable", "unit", "data_source", "data_vintage", "window_start", "window_end",
+    "draft_id", "classification_id", "slug", "publish_date", "domain", "framework_version", "framework_sha256",
+    "framework_commit", "observed_variable", "unit", "data_source", "data_vintage", "window_start", "window_end",
     "branch_order", "interval_low", "interval_low_closed", "interval_high", "interval_high_closed",
     "trigger_condition", "n_quarters", "lu_basis_date", "registered_by", "registered_at",
     "actual_value", "actual_branch", "check_result", "error_source", "window_quarters",
@@ -21,8 +21,8 @@ DOMAINS = {"macro", "ai", "energy", "space", "bio", "other"}
 # 不可改字段：事先登记字段 + registered_at。对账行、结论更正行必须与“当前登记”完全一致；
 # 只有观测开始前的登记更正行可以改（registered_at 写更正行自己的时间）。
 FROZEN = [
-    "draft_id", "slug", "publish_date", "domain", "framework_version", "framework_sha256", "framework_commit",
-    "observed_variable", "unit", "data_source", "data_vintage", "window_start", "window_end",
+    "draft_id", "classification_id", "slug", "publish_date", "domain", "framework_version", "framework_sha256",
+    "framework_commit", "observed_variable", "unit", "data_source", "data_vintage", "window_start", "window_end",
     "branch_order", "interval_low", "interval_low_closed", "interval_high", "interval_high_closed",
     "trigger_condition", "n_quarters", "window_quarters", "lu_basis_date", "l_value", "u_value",
     "lu_evidence", "registered_by", "registered_at",
@@ -41,6 +41,7 @@ TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):[0-5]\d:[0-5]\d\+08:00
 Q_RE = re.compile(r"^(\d{4})Q([1-4])$")
 NUM_RE = re.compile(r"^-?\d+(\.\d+)?$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+CID_RE = re.compile(r"^c[1-9]\d{0,2}$")  # classification_id：c1、c2…，同一稿件内每个完成分类的条目一个
 # raw 路径：raw/YYYY-MM-DD/<相对路径>，段内只允许常规字符，禁止 . 与 .. 段
 RAW_RE = re.compile(r"^raw/(\d{4}-\d{2}-\d{2})/((?:[A-Za-z0-9_\-][A-Za-z0-9._\-]*/)*[A-Za-z0-9_\-][A-Za-z0-9._\-]*)$")
 # 读数绑定：季度:读数@vintage#raw 路径:sha256；lu_evidence 另加 |来源链接
@@ -54,9 +55,19 @@ def blank(v):
     return v in ("", "NA")
 
 
-def expected_row_id(draft_id, branch_order, seq):
-    """row_id 生成规则：<draft_id>-b<branch_order>-r<seq>，seq 为同一分支在文件中的第几行（从 1 起）。"""
-    return f"{draft_id}-b{branch_order}-r{seq}"
+def expected_row_id(draft_id, classification_id, branch_order, seq):
+    """row_id 生成规则：<draft_id>-<classification_id>-b<branch_order>-r<seq>，
+    seq 为同一分支（draft_id + classification_id + branch_order）在文件中的第几行（从 1 起）。"""
+    return f"{draft_id}-{classification_id}-b{branch_order}-r{seq}"
+
+
+def branch_key(row):
+    return (row["draft_id"], row["classification_id"], row["branch_order"])
+
+
+def group_key(row):
+    """判定分组：同一稿件中同一个完成分类的条目。HIT 与互斥判定在组内进行。"""
+    return (row["draft_id"], row["classification_id"])
 
 
 def _date(s):
@@ -128,13 +139,15 @@ def is_interval(row):
 def check_row(row, manifest=None):
     """单行规则（不看其他行）。manifest(path)->sha256 或 None，用于核对 raw 绑定；None 表示不核对 MANIFEST。"""
     e = []
-    for f in ("draft_id", "slug", "domain", "framework_version", "framework_sha256", "framework_commit",
+    for f in ("draft_id", "classification_id", "slug", "domain", "framework_version", "framework_sha256", "framework_commit",
               "observed_variable", "unit", "data_source", "data_vintage", "trigger_condition",
               "registered_by", "registered_at"):
         if not row[f].strip():
             e.append(f"E-BR-EMPTY:{f}")
     if row["draft_id"] and not ID_RE.match(row["draft_id"]):
         e.append("E-BR-DRAFT-ID")
+    if row["classification_id"] and not CID_RE.match(row["classification_id"]):
+        e.append("E-BR-CLASSIFICATION-ID")
     if row["domain"] and row["domain"] not in DOMAINS:
         e.append("E-BR-DOMAIN")
     if row["framework_sha256"] and not SHA_RE.match(row["framework_sha256"]):
@@ -317,9 +330,9 @@ def parse(text, manifest=None):
     # 行间规则
     seq, ids, reg, final, last_readings, seen = {}, {}, {}, {}, {}, set()
     for i, row in rows:
-        key = (row["draft_id"], row["branch_order"])
+        key = branch_key(row)
         seq[key] = seq.get(key, 0) + 1
-        if row["row_id"] != expected_row_id(row["draft_id"], row["branch_order"], seq[key]):
+        if row["row_id"] != expected_row_id(row["draft_id"], row["classification_id"], row["branch_order"], seq[key]):
             errs.append((i, "E-BR-ROW-ID"))
         if row["row_id"] in ids:
             errs.append((i, "E-BR-ROW-ID-DUP"))
@@ -346,7 +359,7 @@ def parse(text, manifest=None):
                     errs.append((i, "E-BR-CORRECTS-TARGET"))
                 if not (row["registered_at"] > cur["registered_at"]):
                     errs.append((i, "E-BR-CORRECTION-TIME"))
-                if any(row[f] != cur[f] for f in ("draft_id", "branch_order", "publish_date")):
+                if any(row[f] != cur[f] for f in ("draft_id", "classification_id", "branch_order", "publish_date")):
                     errs.append((i, "E-BR-CORRECTS-KEY"))
                 if final[key] is not None or last_readings[key] or _readings(row) \
                         or row["registered_at"][:10] >= cur["window_start"]:
@@ -376,13 +389,41 @@ def parse(text, manifest=None):
             if cur_r:
                 last_readings[key] = cur_r
         ids[row["row_id"]] = row
+    errs += _group_errors(rows, final)
     return rows, errs
+
+
+def _group_errors(rows, final):
+    """组内互斥判定（按 (draft_id, classification_id) 分组，只看各分支当前最终结论）：
+    恰一支 HIT 其余 MISS；全部 NONE_HIT；≥2 支 MULTI_HIT 其余 MISS；全部 TRIGGER_UNOBSERVABLE。
+    组内未全部出结论时只查不矛盾；全部出结论后查完整；error_source 组内一致。"""
+    errs, members, line = [], {}, {}
+    for i, row in rows:
+        members.setdefault(group_key(row), set()).add(branch_key(row))
+        if final.get(branch_key(row)) is row:
+            line[branch_key(row)] = i
+    for g, keys in members.items():
+        fs = {k: final[k] for k in keys if final.get(k) is not None}
+        if not fs:
+            continue
+        res = [r["check_result"] for r in fs.values()]
+        n_hit, n_multi = res.count("HIT"), res.count("MULTI_HIT")
+        kinds = set(res) - {"MISS"}
+        bad = (n_hit > 1 or (n_hit and n_multi) or len(kinds) > 1
+               or ("NONE_HIT" in kinds and "MISS" in res) or ("TRIGGER_UNOBSERVABLE" in kinds and "MISS" in res))
+        if not bad and len(fs) == len(keys):
+            bad = (kinds == set() or (n_multi == 1 and len(keys) > 1))
+        if not bad and len({r["error_source"] for r in fs.values()}) > 1:
+            bad = True
+        if bad:
+            errs.append((max(line[k] for k in fs), "E-BR-GROUP-RESULT"))
+    return errs
 
 
 def first_rows(rows):
     first = {}
     for _, row in rows:
-        first.setdefault((row["draft_id"], row["branch_order"]), row)
+        first.setdefault(branch_key(row), row)
     return first
 
 
@@ -391,12 +432,12 @@ def conclusion_changes(rows):
     out = {}
     for _, row in rows:
         if row["corrects_row_id"] and row["check_result"] in FINAL:
-            k = (row["draft_id"], row["branch_order"]); out[k] = out.get(k, 0) + 1
+            k = branch_key(row); out[k] = out.get(k, 0) + 1
     return out
 
 
 def gate_count(rows, cutoff="2026-12-31", domain=None):
-    """门禁计数：每个分支（draft_id + branch_order）只按第一行算：
+    """门禁计数：每个分支（draft_id + classification_id + branch_order）只按第一行算：
     第一行 window_end 不晚于 cutoff 且 check_result 为 PENDING 的计 1。"""
     return sum(1 for r in first_rows(rows).values()
                if r["check_result"] == "PENDING" and r["window_end"] <= cutoff and (domain is None or r["domain"] == domain))

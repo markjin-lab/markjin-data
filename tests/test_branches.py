@@ -12,12 +12,12 @@ QR2 = QR1 + f";2026Q4:1.3@2027-01-20#raw/2027-01-20/fred/X.csv:{RSHA}"
 EVID = f"{RAWP}:{RSHA}|scripts/calc.py@{'e' * 40}|2027-01-05T09:00:00+08:00"
 DONE = dict(checked_by="审查与治理", checked_at="2027-01-05T10:00:00+08:00")
 HDR = ",".join(B.HEADER) + "\n"
-FIRST = "2026-10-13-macro-b1-r1"
+FIRST = "2026-10-13-macro-c1-b1-r1"
 
 
 def row(**kw):
     base = dict.fromkeys(B.HEADER, "")
-    base.update(row_id=FIRST, domain="macro", framework_commit="b" * 40, draft_id="2026-10-13-macro",
+    base.update(row_id=FIRST, classification_id="c1", domain="macro", framework_commit="b" * 40, draft_id="2026-10-13-macro",
                 slug="gdp-q3", publish_date="2026-10-13", framework_version="v2.4",
                 framework_sha256=SHA, observed_variable="GDP", unit="%", data_source="FRED:X",
                 data_vintage="每季取到期核对日（SGT）最新发布的版本", window_start="2026-10-14", window_end="2026-12-31",
@@ -45,14 +45,14 @@ def miss(**kw):
 
 
 def rid(r, seq):
-    r = dict(r); r["row_id"] = B.expected_row_id(r["draft_id"], r["branch_order"], seq); return r
+    r = dict(r); r["row_id"] = B.expected_row_id(r["draft_id"], r["classification_id"], r["branch_order"], seq); return r
 
 
 def chain(*rows):
     """按出现顺序自动编 row_id。"""
     seq, out = {}, []
     for r in rows:
-        k = (r["draft_id"], r["branch_order"]); seq[k] = seq.get(k, 0) + 1
+        k = B.branch_key(r); seq[k] = seq.get(k, 0) + 1
         out.append(rid(r, seq[k]))
     return out
 
@@ -154,7 +154,7 @@ class R1Corrections(unittest.TestCase):
     """r2 BLOCKER 1：更正行不能在结果出来后改写预测。"""
 
     def test_C1_correct_after_hit_change_interval_then_miss(self):  # 反例 C1 / C1'
-        corr = row(corrects_row_id="2026-10-13-macro-b1-r2", reason="改区间", interval_high="7",
+        corr = row(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="改区间", interval_high="7",
                    trigger_condition="x < 7", registered_at="2027-01-06T07:00:00+08:00")
         c = ccodes(row(), hit(), corr, miss(interval_high="7", trigger_condition="x < 7",
                                             registered_at="2027-01-06T07:00:00+08:00"))
@@ -185,14 +185,14 @@ class R1Corrections(unittest.TestCase):
 
     def test_C6_points_to_reconciliation_row(self):  # 反例 C6：登记更正指向对账行
         du = row(check_result="DATA_UNAVAILABLE", evidence="", **DONE)
-        corr = row(corrects_row_id="2026-10-13-macro-b1-r2", reason="x", registered_at="2026-10-13T08:00:00+08:00")
+        corr = row(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="x", registered_at="2026-10-13T08:00:00+08:00")
         self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), du, corr))
 
     def test_C7_conclusion_correction_needs_final_target(self):  # 反例 C7：没有最终结论时不能做结论更正
         self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), hit(corrects_row_id=FIRST, reason="x")))
 
     def test_C8_sha_change_post_hoc(self):  # 反例 C8
-        corr = row(corrects_row_id="2026-10-13-macro-b1-r2", reason="改校验码", framework_sha256="f" * 64,
+        corr = row(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="改校验码", framework_sha256="f" * 64,
                    check_result="MISS", actual_branch="否", actual_value="6", evidence=EVID, **DONE)
         self.assertIn("E-BR-PREREG-CHANGED", ccodes(row(), hit(), corr))
 
@@ -212,14 +212,15 @@ class R1Corrections(unittest.TestCase):
                                                  registered_at="2026-10-13T09:00:00+08:00")), [])
 
     def test_ok_conclusion_correction_and_count(self):
-        corr = miss(corrects_row_id="2026-10-13-macro-b1-r2", reason="对账取错数据")
+        corr = miss(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="对账取错数据",
+                    check_result="NONE_HIT", error_source="采集")
         rows, errs = B.parse(csv_of(*chain(row(), hit(), corr)))
         self.assertEqual(errs, [])
-        self.assertEqual(B.conclusion_changes(rows), {("2026-10-13-macro", "1"): 1})
+        self.assertEqual(B.conclusion_changes(rows), {("2026-10-13-macro", "c1", "1"): 1})
         # 第二次结论更正必须指向当前最终结论（第 3 行），指向第 2 行失败
-        bad = hit(corrects_row_id="2026-10-13-macro-b1-r2", reason="再改")
+        bad = hit(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="再改")
         self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), hit(), corr, bad))
-        good = hit(corrects_row_id="2026-10-13-macro-b1-r3", reason="再改")
+        good = hit(corrects_row_id="2026-10-13-macro-c1-b1-r3", reason="再改")
         self.assertEqual(ccodes(row(), hit(), corr, good), [])
 
     def test_hit_then_miss_without_correction(self):
@@ -333,6 +334,38 @@ class R7Public(unittest.TestCase):
         script = Path(__file__).resolve().parents[1] / "scripts/check-public.py"
         p = subprocess.run(["python3", str(script)], cwd=d, capture_output=True, text=True)
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr); self.assertIn("E-PUBLIC-LOCAL-PATH", p.stdout)
+
+
+class Groups(unittest.TestCase):
+    """site38-r2 HIGH：一篇日报多个完成分类的条目，按 (draft_id, classification_id) 分组判定。"""
+
+    def b(self, cid, order, **kw):
+        return row(classification_id=cid, branch_order=order, **kw)
+
+    def test_two_items_each_one_hit(self):
+        rows = [self.b("c1", "1"), self.b("c1", "2"), self.b("c2", "1"), self.b("c2", "2"),
+                hit(classification_id="c1", branch_order="1"), miss(classification_id="c1", branch_order="2"),
+                hit(classification_id="c2", branch_order="1"), miss(classification_id="c2", branch_order="2")]
+        self.assertEqual(ccodes(*rows), [])
+
+    def test_two_hits_in_one_group(self):
+        rows = [self.b("c1", "1"), self.b("c1", "2"),
+                hit(classification_id="c1", branch_order="1"), hit(classification_id="c1", branch_order="2")]
+        self.assertIn("E-BR-GROUP-RESULT", ccodes(*rows))
+
+    def test_none_hit_mixed_with_miss(self):
+        nh = dict(check_result="NONE_HIT", actual_branch="否", error_source="框架")
+        rows = [self.b("c1", "1"), self.b("c1", "2"), miss(branch_order="1", **nh), miss(branch_order="2")]
+        self.assertIn("E-BR-GROUP-RESULT", ccodes(*rows))
+
+    def test_all_miss_incomplete_result(self):
+        rows = [self.b("c1", "1"), self.b("c1", "2"), miss(branch_order="1"), miss(branch_order="2")]
+        self.assertIn("E-BR-GROUP-RESULT", ccodes(*rows))
+
+    def test_row_id_includes_classification(self):
+        self.assertIn("E-BR-ROW-ID", codes(row(classification_id="c2")))
+        self.assertIn("E-BR-CLASSIFICATION-ID", codes(row(classification_id="X1")))
+        self.assertIn("E-BR-EMPTY:classification_id", codes(row(classification_id="")))
 
 
 if __name__ == "__main__":
