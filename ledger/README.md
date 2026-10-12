@@ -109,6 +109,6 @@ python3 scripts/check-branches.py --repo . --ref HEAD --count-gate [--domain ai]
 
 ## follow-up（尚未实现）
 
-- 从 raw 原件复算读数和 actual_value，并核对 evidence 引用的来源与 data_source 一致；核实之前，结论仍以人工复核为准。
-- 推送时间以 CI 运行时间为准，仍可能受重跑影响；更可信的接收时间记录留待后续。
-- 按季读数的写入时间（checked_at）目前是自报，可信记录留待后续。
+- 从 raw 原件复算读数和 actual_value，并核对 evidence 引用的来源与 data_source 一致；核实之前，结论仍以人工复核为准。（#34）
+- 推送时间以 CI 运行时间为准，仍可能受重跑影响；更可信的接收时间记录留待后续。（#35）
+- 按季读数的写入时间（checked_at）目前是自报，可信记录留待后续。（#36）
