@@ -86,10 +86,14 @@ def request_url(s, url):
 def run_scraper(fetcher, raw_ar, sub, sid, s, url):
     """返回 (Result, raw_records)。Result.body = 条目 JSON（派生物），raw_records = 每个原始响应的存档记录。"""
     import scrapers
-    raws = []
+    raws, hop_raws = [], []
+
+    def sink(body, st, ctype):            # 每一跳原字节先私有存档（含跳转、验证页、失败响应）
+        rel_h, sha_h = raw_ar.put_raw(sub, sid, body, collect.ext_for(ctype, body))
+        hop_raws.append({"raw": rel_h, "sha256": sha_h, "status": st})
 
     def fetch(u):
-        r = fetcher.get(u, sid=sid)
+        r = fetcher.get(u, sid=sid, raw_sink=sink)
         if r.ok:
             rel, sha = raw_ar.put_raw(sub, sid, r.body, collect.ext_for(r.ctype, r.body))
             raws.append({"url": collect.public_url(u, s.get("public_params") or ()), "query_param_count": collect.query_count(u),
@@ -98,7 +102,9 @@ def run_scraper(fetcher, raw_ar, sub, sid, s, url):
     try:
         items = scrapers.get(s["scraper"]).scrape(fetch, url, None, **(s.get("scraper_args") or {}))
     except Exception as e:
-        return collect.Result(False, error=f"scraper:{type(e).__name__}", detail=str(e)[:160]), raws
+        r = collect.Result(False, error=f"scraper:{type(e).__name__}", detail=str(e)[:160])
+        r.hop_raws = hop_raws
+        return r, raws
     if not items:
         return collect.Result(False, error="scraper:no_items"), raws
     return collect.Result(True, 200, "application/json",
@@ -183,6 +189,8 @@ def main(argv=None):
             if raws:
                 rec["stored"] = "internal" if internal else "private"
                 raw_logs[where].append({"id": sid, "run": run, "raws": raws, "url": purl})
+            if getattr(r, "hop_raws", None):
+                raw_logs[where].append({"id": sid, "run": run, "url": purl, "error": r.error, "hop_raws": r.hop_raws})
             if r.ok:
                 raw_ar.put_derived(sub, sid, sha, f"items-{run}.json", r.body,
                                    sources=[x["sha256"] for x in raws])   # 登记全部原件

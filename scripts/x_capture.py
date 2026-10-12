@@ -23,7 +23,7 @@ Commands:
   ingest-hydrate --state S.json --call-id ID --file RESULT.txt
   leads   --state S.json --private-root DIR    -> 线索（按 like≥20 / RT≥5 / 白名单作者过滤，每条固定 label: 线索,
                                                   source_role: lead）写入 DIR/raw/DATE/x/leads-<run>.json（只追加私有档案，
-                                                  登记 MANIFEST）；只导出当天（最近一次 plan 的日期）首次达到门槛的帖子（lead_date）；
+                                                  登记 MANIFEST）；导出 lead_date ≤ 当天且尚未导出（私有状态记 exported_at）的帖子；
                                                   DIR 须与 --out-root 不重叠且不在任何 git 工作树内；
                                                   stdout 只输出 {"path"（相对 DIR）, "count", "filtered_out"}
 进度按「日期 + 轮次 + slug」分开存（queries["DATE/rN/slug"]）；ids / posts / calls 两轮共用同一状态文件，
@@ -285,7 +285,7 @@ def cmd_ingest(a, s):
 def hydrate_batches(s):
     ids = [i for i in s["ids"] if "urls" not in s["posts"].get(i, {})]
     return [{"batch": n, "tool": "get_posts_by_ids", "args": {"ids": ",".join(ids[i:i + HYDRATE_BATCH]),
-             "post.fields": "entities,created_at,note_tweet"}}
+             "post.fields": "entities,created_at,note_tweet,public_metrics"}}
             for n, i in enumerate(range(0, len(ids), HYDRATE_BATCH))]
 
 
@@ -378,17 +378,20 @@ def cmd_leads(a, s):
     if not date:
         raise UsageError("no plan yet (run plan --date --round first)")
     wl, items, dropped = whitelist(s, date), [], 0
+    ts = collect.now()
     for pid, p in s["posts"].items():    # posts 以 id 为键 → 按 id 去重
-        why = None
-        if p.get("lead_date"):
-            why = p.get("lead_reason") if p["lead_date"] == date else None   # 只导出当天首次达到门槛的帖子
-        elif (p.get("last_seen") or {}).get("date", p.get("date")) == date:
-            why = lead_reason(p, wl)       # 当天采到、入账后白名单才补进来的情况
-        if not why:
-            if (p.get("last_seen") or {}).get("date", p.get("date")) == date:
-                dropped += 1
+        if p.get("exported_at"):          # 已导出过的不再导出（重复运行幂等）
             continue
-        items.append(dict(p, label="线索", source_role="lead", lead_reason=why))
+        if not p.get("lead_date"):        # 入账后白名单才补进来的：当天补判达标即记 lead_date
+            seen = (p.get("last_seen") or {}).get("date", p.get("date"))
+            why = lead_reason(p, wl) if seen == date else None
+            if why:
+                p["lead_date"], p["lead_round"], p["lead_reason"] = date, (s.get("current") or {}).get("round"), why
+        if p.get("lead_date") and p["lead_date"] <= date:   # 达标日不晚于当天、且还没导出过（补上漏跑的日子）
+            items.append(dict(p, label="线索", source_role="lead"))
+            p["exported_at"] = ts
+        elif (p.get("last_seen") or {}).get("date", p.get("date")) == date:
+            dropped += 1
     ar = collect.Archive(root / "raw" / date)
     rel = f"x/leads-{collect.stamp()}.json"
     ar.put_json(rel, {"items": items})
@@ -417,7 +420,7 @@ def main(argv=None):
     p = sp.add_parser("leads"); p.add_argument("--state", required=True)
     p.add_argument("--private-root", required=True, help="私有输出根目录（必须显式给出，不能在 git 工作树内）")
     p.add_argument("--out-root", default=".", help="公开仓库根目录（与私有根目录互不包含）")
-    p.set_defaults(f=cmd_leads, mut=False)
+    p.set_defaults(f=cmd_leads, mut=True)   # 记 exported_at / 补判 lead_date
     for n, f in (("hydrate", cmd_hydrate), ("budget", cmd_budget)):
         p = sp.add_parser(n); p.add_argument("--state", required=True); p.set_defaults(f=f, mut=False)
     a = ap.parse_args(argv)

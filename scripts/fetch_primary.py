@@ -163,7 +163,12 @@ def main(argv=None, fetcher=None):
                 g["fetch_status"] = lead["fetch_status"] = "not_fetched_cap"; continue
             n += 1
             t0 = collect.now()
-            r = f.get(orig)
+            hop_raws = []
+
+            def sink(body, st, ctype, _acc=hop_raws):     # 每一跳原字节先私有存档，再决定丢弃/跳转
+                rel_h, sha_h = priv.put_raw("", "primary", body, collect.ext_for(ctype, body))
+                _acc.append({"raw": rel_h, "sha256": sha_h, "status": st})
+            r = f.get(orig, raw_sink=sink)
             rec = {"url": cu, "fetched_at": t0, "http_status": r.status, "license": "url+hash-only",
                    "stored": None, "fetch_status": "fetched" if r.ok else r.error}
             if r.error == "blocked_address":
@@ -199,7 +204,10 @@ def main(argv=None, fetcher=None):
                     # 正文派生字段（title）只在逐条许可通过、stored=public 时才进公开 index
                     rec.update(stored="public", license=ev["license"], license_evidence=shown, title=title[:300])
                 # 私有 fetch-log 也只写脱敏 URL；完整原 URL 只在私有 leads 原始档案里
-                plog.append({"url": cu, "final_url": fu, "hops": r.hops, "raw": rel, "title": title[:300]})
+                plog.append({"url": cu, "final_url": fu, "hops": r.hops, "raw": rel, "title": title[:300],
+                             "hop_raws": hop_raws})
+            elif hop_raws:
+                plog.append({"url": cu, "error": r.error, "hops": r.hops, "hop_raws": hop_raws})
             index.append(rec)
             print(f"{rec['fetch_status']} {r.status} {rec['stored'] or '-'} {cu}", file=sys.stderr)
             cache[key] = rec

@@ -17,12 +17,12 @@ class ScraperCapture(unittest.TestCase):
     def test_sitemap_raw_archived_and_subsitemap_robots(self):
         import yaml
         base = tmp(); out, priv = base / "pub", base / "priv"; out.mkdir()
-        idx = b"<?xml version='1.0'?><sitemapindex><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>" \
+        idx = b"<?xml version='1.0'?><sitemapindex xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>" \
               b"<sitemap><loc>https://other.org/s2.xml</loc></sitemap></sitemapindex>"
-        s1 = b"<urlset><url><loc>https://www.anthropic.com/news/foo</loc><lastmod>2026-10-10</lastmod></url></urlset>"
+        s1 = b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://www.anthropic.com/news/foo</loc><lastmod>2026-10-10</lastmod></url></urlset>"
         routes = {"https://www.anthropic.com/sitemap.xml": Resp(200, idx), "https://www.anthropic.com/s1.xml": Resp(200, s1),
                   "https://other.org/robots.txt": Resp(200, b"User-agent: *\nDisallow: /\n"),
-                  "https://other.org/s2.xml": Resp(200, b"<urlset/>")}
+                  "https://other.org/s2.xml": Resp(200, b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'/>")}
         src = base / "s.yaml"
         src.write_text(yaml.safe_dump({"sources": [{"id": "anthropic-news", "method": "scraper", "scraper": "anthropic_sitemap",
                        "url": "https://www.anthropic.com/sitemap.xml", "enabled": True, "approval_status": "approved",
@@ -499,8 +499,8 @@ class R3Scraper(unittest.TestCase):
     def test_subsitemap_to_private_address_blocked(self):
         import yaml
         base = tmp(); out, priv = base / "pub", base / "priv"; out.mkdir()
-        idx = b"<?xml version='1.0'?><sitemapindex><sitemap><loc>http://10.0.0.8/s1.xml</loc></sitemap></sitemapindex>"
-        routes = {"https://www.anthropic.com/sitemap.xml": Resp(200, idx), "http://10.0.0.8/s1.xml": Resp(200, b"<urlset/>")}
+        idx = b"<?xml version='1.0'?><sitemapindex xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><sitemap><loc>http://10.0.0.8/s1.xml</loc></sitemap></sitemapindex>"
+        routes = {"https://www.anthropic.com/sitemap.xml": Resp(200, idx), "http://10.0.0.8/s1.xml": Resp(200, b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'/>")}
         src = base / "s.yaml"
         src.write_text(yaml.safe_dump({"sources": [{"id": "anthropic-news", "method": "scraper", "scraper": "anthropic_sitemap",
                        "url": "https://www.anthropic.com/sitemap.xml", "enabled": True, "approval_status": "approved",
@@ -671,10 +671,10 @@ class R4Scraper(unittest.TestCase):
     def test_multi_sitemap_derived_registers_all_raws(self):
         import yaml
         base = tmp(); out, priv = base / "pub", base / "priv"; out.mkdir()
-        idx = (b"<?xml version='1.0'?><sitemapindex><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>"
+        idx = (b"<?xml version='1.0'?><sitemapindex xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>"
                b"<sitemap><loc>https://www.anthropic.com/s2.xml</loc></sitemap></sitemapindex>")
-        s1 = b"<urlset><url><loc>https://www.anthropic.com/news/a</loc><lastmod>2026-10-10</lastmod></url></urlset>"
-        s2 = b"<urlset><url><loc>https://www.anthropic.com/news/b</loc><lastmod>2026-10-11</lastmod></url></urlset>"
+        s1 = b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://www.anthropic.com/news/a</loc><lastmod>2026-10-10</lastmod></url></urlset>"
+        s2 = b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://www.anthropic.com/news/b</loc><lastmod>2026-10-11</lastmod></url></urlset>"
         routes = {"https://www.anthropic.com/sitemap.xml": Resp(200, idx), "https://www.anthropic.com/s1.xml": Resp(200, s1),
                   "https://www.anthropic.com/s2.xml": Resp(200, s2)}
         src = base / "s.yaml"
@@ -758,9 +758,9 @@ class R5Scraper(unittest.TestCase):
             collect.Fetcher.__init__ = orig
         return rc, out, op
 
-    IDX = (b"<?xml version='1.0'?><sitemapindex><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>"
+    IDX = (b"<?xml version='1.0'?><sitemapindex xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>"
            b"<sitemap><loc>https://www.anthropic.com/s2.xml</loc></sitemap></sitemapindex>")
-    S1 = b"<urlset><url><loc>https://www.anthropic.com/news/a</loc><lastmod>2026-10-10</lastmod></url></urlset>"
+    S1 = b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://www.anthropic.com/news/a</loc><lastmod>2026-10-10</lastmod></url></urlset>"
 
     def _check_failed(self, s2resp):
         rc, out, op = self.run_cs({"https://www.anthropic.com/sitemap.xml": Resp(200, self.IDX),
@@ -831,8 +831,8 @@ class R5XCapture(R4XCapture):
         st = XC.load_state(self.st)
         self.assertEqual((st["posts"]["1"]["date"], st["posts"]["1"]["round"]), ("2026-10-12", 1))
         self.assertEqual(st["posts"]["2"]["date"], "2026-10-13")
-        out = self.leads()
-        self.assertEqual([i["id"] for i in out["items"]], ["2"])
+        out = self.leads()      # r7：lead_date ≤ 当天且未导出过 → 10-12 达标但当天漏跑的 1 号也补导出
+        self.assertEqual(sorted(i["id"] for i in out["items"]), ["1", "2"])
         self.assertIn("raw/2026-10-13/x/leads-", out_path := self.x("leads", "--state", str(self.st),
                       "--private-root", str(self.d / "priv"))[1]["path"])
         self.assertFalse(out_path.startswith("/"))
@@ -911,6 +911,107 @@ class R6Scraper(R5Scraper):
         for bad in (b"garbage", b"<rss/>", b"<html><body>x</body></html>"):
             with self.assertRaises(ScrapeError):
                 sitemap_filter.scrape(lambda u: (200, "", bad, None), "https://a.org/s.xml", None)
+
+
+class R7XCapture(R6XCapture):
+    """PR #6 审查 r7：exported_at 幂等导出；lead_date ≤ 当天；回填按实际预留参数带 public_metrics。"""
+
+    def test_same_day_two_rounds_export_once(self):
+        self.plan("1")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 80}}])
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])
+        self.assertTrue(XC.load_state(self.st)["posts"]["7"]["exported_at"])
+        self.assertEqual(self.leads()["items"], [])                                   # 重复运行幂等
+        self.plan("2")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 90}}])
+        self.assertEqual(self.leads()["items"], [])                                   # round2 不再导出
+
+    def test_missed_day_still_exported_later(self):
+        self.plan("1")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 80}}])   # 10-12 达标但没跑 leads
+        self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-13", "--round", "1")
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])
+        self.assertEqual(self.leads()["items"], [])
+
+    def test_whitelist_late_branch_records_lead_date_once(self):
+        self.plan("1")
+        st = XC.load_state(self.st)
+        st["posts"]["9"] = {"id": "9", "text": "t", "username": "a", "date": "2026-10-12",
+                            "last_seen": {"date": "2026-10-12", "round": 1}, "public_metrics": {"like_count": 0}}
+        XC.save_state(self.st, st)
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["9"])
+        p = XC.load_state(self.st)["posts"]["9"]
+        self.assertEqual(p["lead_date"], "2026-10-12")
+        self.assertTrue(p["exported_at"])
+        self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-13", "--round", "1")
+        self.assertEqual(self.leads()["items"], [])
+
+    def test_hydrate_full_flow_requests_and_applies_public_metrics(self):
+        self.plan("1")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 1}}])
+        rc, h = self.res("get_posts_by_ids", "--batch", "0")
+        self.assertEqual(rc, 0)
+        self.assertIn("public_metrics", h["args"]["post.fields"].split(","))          # 计划参数真的请求了该字段
+        self.assertEqual(h["args"]["ids"], "7")
+        f = self.d / "hyd.txt"
+        f.write_text("x\n" + json.dumps({"data": [{"id": "7", "public_metrics": {"like_count": 80},
+                                                    "entities": {"urls": [{"expanded_url": "https://e.org/p"}]}}]}) +
+                     "\nX reads left: 20 of 25 this minute, 300 of 400 today\n")
+        rc, n = self.x("ingest-hydrate", "--state", str(self.st), "--call-id", h["call_id"], "--file", str(f))
+        self.assertEqual((rc, n), (0, {"hydrated": 1}))
+        p = XC.load_state(self.st)["posts"]["7"]
+        self.assertEqual(p["public_metrics"]["like_count"], 80)
+        self.assertEqual(p["lead_date"], "2026-10-12")
+        self.assertEqual(p["urls"][0]["expanded_url"], "https://e.org/p")
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])
+
+
+class R7Scraper(R6Scraper):
+    def test_wrong_namespace_urlset_fails(self):
+        self._check_failed(Resp(200, b"<urlset xmlns='http://example.org/x'><url><loc>https://www.anthropic.com/n/b</loc></url></urlset>"))
+
+    def test_no_namespace_urlset_fails(self):
+        self._check_failed(Resp(200, b"<urlset><url><loc>https://www.anthropic.com/n/b</loc></url></urlset>"))
+
+    def test_nested_index_depth_error(self):
+        self._check_failed(Resp(200, self.IDX))
+
+    def test_doctype_sitemap_fails(self):
+        self._check_failed(Resp(200, b"<!DOCTYPE x [<!ENTITY a 'b'>]><urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'/>"))
+
+    def test_scraper_hop_raws_archived(self):
+        rc, out, op = self.run_cs({"https://www.anthropic.com/sitemap.xml": Resp(200, self.IDX),
+                                   "https://www.anthropic.com/s1.xml": Resp(200, self.S1),
+                                   "https://www.anthropic.com/s2.xml": Resp(302, b"<title>Just a moment...</title>",
+                                                                        {"Location": "https://www.anthropic.com/s3.xml"})})
+        self.assertEqual(rc, 1)
+        priv = out.parent / "priv"
+        sha = hashlib.sha256(b"<title>Just a moment...</title>").hexdigest()
+        self.assertTrue(list(priv.rglob(f"{sha}.*")))                                     # 302 验证页原字节已私存
+        self.assertIn(sha, "".join(p.read_text() for p in priv.rglob("fetch-log-*.jsonl")))
+
+
+class R7Primary(R6Primary):
+    def test_text_plain_challenge_disables_and_raw_archived(self):
+        u = "https://e.org/page"
+        body = b"<div>Please verify that you are human to continue</div>"
+        st = collect.HostState(self.base / "hs.json")
+        items, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}],
+                                    {u: Resp(200, body, {"Content-Type": "text/plain"})}, state=st)
+        self.assertEqual(idx[0]["fetch_status"], "challenge")
+        self.assertIn("e.org", collect.HostState(self.base / "hs.json").data["hosts"])
+        self.assertTrue(list(self.priv.rglob(hashlib.sha256(body).hexdigest() + ".*")))
+
+    def test_long_challenge_302_disables(self):
+        u = "https://e.org/page"
+        body = b"<html><head><title>x</title></head><body><p>Please enable JavaScript and cookies to continue</p>" + \
+               b"<p>pad</p>" * 400 + b"</body></html>"
+        st = collect.HostState(self.base / "hs.json")
+        _, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}],
+                                {u: Resp(302, body, {"Location": "https://e.org/next"}), "https://e.org/next": Resp(200, b"ok")},
+                                state=st)
+        self.assertEqual(idx[0]["fetch_status"], "challenge")
+        self.assertIn("e.org", collect.HostState(self.base / "hs.json").data["hosts"])
 
 
 if __name__ == "__main__":
