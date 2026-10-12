@@ -23,7 +23,7 @@ Commands:
   ingest-hydrate --state S.json --call-id ID --file RESULT.txt
   leads   --state S.json --private-root DIR    -> 线索（按 like≥20 / RT≥5 / 白名单作者过滤，每条固定 label: 线索,
                                                   source_role: lead）写入 DIR/raw/DATE/x/leads-<run>.json（只追加私有档案，
-                                                  登记 MANIFEST）；只导出当天（最近一次 plan 的日期）采集的帖子；
+                                                  登记 MANIFEST）；只导出当天（最近一次 plan 的日期）首次达到门槛的帖子（lead_date）；
                                                   DIR 须与 --out-root 不重叠且不在任何 git 工作树内；
                                                   stdout 只输出 {"path"（相对 DIR）, "count", "filtered_out"}
 进度按「日期 + 轮次 + slug」分开存（queries["DATE/rN/slug"]）；ids / posts / calls 两轮共用同一状态文件，
@@ -246,13 +246,15 @@ def cmd_ingest(a, s):
     new = [d["id"] for d in data if d["id"] not in known]
     s["ids"].extend(new)
     users = {u.get("id"): u.get("username") for u in ((j.get("includes") or {}).get("users") or [])}
+    wl = whitelist(s, qs["date"])
     for d in data:
-        s["posts"].setdefault(d["id"], {k: d.get(k) for k in ("id", "text", "author_id", "created_at", "public_metrics")})
-        s["posts"][d["id"]]["query"] = slug
-        s["posts"][d["id"]].setdefault("date", qs["date"])      # 帖子首次采集所属的日期与轮次
-        s["posts"][d["id"]].setdefault("round", qs["round"])
+        p = s["posts"].setdefault(d["id"], {k: d.get(k) for k in ("id", "text", "author_id", "created_at", "public_metrics")})
+        p["query"] = slug
+        p.setdefault("date", qs["date"])      # 首次采集的日期与轮次：保留不变
+        p.setdefault("round", qs["round"])
         if users.get(d.get("author_id")):
-            s["posts"][d["id"]]["username"] = users[d.get("author_id")]
+            p["username"] = users[d.get("author_id")]
+        touch_post(p, d, qs["date"], qs["round"], wl)
     qs["pages"] = c["page"] or qs["pages"] + 1
     qs["posts"] += len(data)
     tok = (j.get("meta") or {}).get("next_token")
@@ -302,6 +304,9 @@ def cmd_ingest_hydrate(a, s):
     n = 0
     for d in data:
         p = s["posts"].setdefault(d["id"], {"id": d["id"]})
+        if d.get("public_metrics") is not None:    # 回填调用也带互动数：同样更新并检查门槛（日期取当前计划）
+            cur = s.get("current") or {}
+            touch_post(p, d, cur.get("date"), cur.get("round"), whitelist(s, cur.get("date")))
         p["urls"] = [{"expanded_url": u.get("expanded_url"), "unwound_url": u.get("unwound_url")}
                      for u in ((d.get("entities") or {}).get("urls") or [])]
         n += 1
@@ -318,6 +323,18 @@ def whitelist(s, date=None):
         if q.get("kind") == "account" and (date is None or q.get("date") == date):
             out |= {m.lower() for m in re.findall(r"from:(\w+)", q["args"].get("query", ""))}
     return out
+
+
+def touch_post(p, d, date, rnd, wl):
+    """再次采到同一帖子：更新 public_metrics 与最近采到的日期/轮次；首次达到线索门槛时记 lead_date/lead_round
+    （之后不再改，导出按 lead_date，跨天/跨轮按 id 只导出一次）。"""
+    if d.get("public_metrics") is not None:
+        p["public_metrics"] = d["public_metrics"]
+    p["last_seen"] = {"date": date, "round": rnd}
+    if not p.get("lead_date"):
+        why = lead_reason(p, wl)
+        if why:
+            p["lead_date"], p["lead_round"], p["lead_reason"] = date, rnd, why
 
 
 def lead_reason(p, wl):
@@ -361,12 +378,16 @@ def cmd_leads(a, s):
     if not date:
         raise UsageError("no plan yet (run plan --date --round first)")
     wl, items, dropped = whitelist(s, date), [], 0
-    for p in s["posts"].values():
-        if p.get("date") != date:          # 只导出当天采集的帖子；ids/calls 仍两轮共用做去重与额度
-            continue
-        why = lead_reason(p, wl)
+    for pid, p in s["posts"].items():    # posts 以 id 为键 → 按 id 去重
+        why = None
+        if p.get("lead_date"):
+            why = p.get("lead_reason") if p["lead_date"] == date else None   # 只导出当天首次达到门槛的帖子
+        elif (p.get("last_seen") or {}).get("date", p.get("date")) == date:
+            why = lead_reason(p, wl)       # 当天采到、入账后白名单才补进来的情况
         if not why:
-            dropped += 1; continue
+            if (p.get("last_seen") or {}).get("date", p.get("date")) == date:
+                dropped += 1
+            continue
         items.append(dict(p, label="线索", source_role="lead", lead_reason=why))
     ar = collect.Archive(root / "raw" / date)
     rel = f"x/leads-{collect.stamp()}.json"

@@ -12,7 +12,7 @@ import importlib, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from markjin.collect import CHALLENGE  # noqa: E402,F401  验证页识别只维护 collect.CHALLENGE 这一份
+from markjin.collect import CHALLENGE, is_challenge  # noqa: E402,F401  验证页识别只维护 collect 里这一份
 
 
 class ScrapeError(Exception):
@@ -24,7 +24,7 @@ class ScrapeError(Exception):
 def check_body(st, body, err):
     if err or st != 200:
         raise ScrapeError(err or f"HTTP {st}")
-    if CHALLENGE.search(body[:20000]):
+    if is_challenge(body):
         raise ScrapeError("bot-challenge/interstitial page (not bypassed)")
     return body
 

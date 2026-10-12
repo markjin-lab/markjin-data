@@ -3,14 +3,29 @@ scraper_args: {pattern: <regex on loc>, index: true|false}. Follows one sitemap-
 or 404/410 sub-sitemaps are skipped; challenge / 403 / disabled / blocked address abort the whole run (marked failed).
 Returns entries matching pattern, newest lastmod first (entries without lastmod keep sitemap order)."""
 import re
+import xml.etree.ElementTree as ET
 from . import check_body, ScrapeError
+
+SITEMAP_ROOTS = {"urlset", "sitemapindex"}
+
+
+def _check_root(body):
+    """200 的 sitemap 必须是合法 XML，根元素为 urlset 或 sitemapindex；否则 ScrapeError（本轮失败）。"""
+    try:
+        root = ET.fromstring(body.lstrip(b"\xef\xbb\xbf \r\n\t")).tag.rsplit("}", 1)[-1]
+    except ET.ParseError:
+        raise ScrapeError("not a sitemap (XML unparseable)")
+    if root not in SITEMAP_ROOTS:
+        raise ScrapeError(f"not a sitemap (root {root[:40]})")
 
 SKIPPABLE = {"robots_disallow", "http_404", "http_410"}
 
 
 def _entries(fetch, url, depth=0):
     st, ct, body, err = fetch(url)
-    s = check_body(st, body, err).decode("utf-8", "replace")
+    b = check_body(st, body, err)
+    _check_root(b)
+    s = b.decode("utf-8", "replace")
     if "<sitemapindex" in s[:500] and depth == 0:
         out = []
         for loc in re.findall(r"<sitemap>\s*<loc>([^<]+)</loc>", s)[:5]:

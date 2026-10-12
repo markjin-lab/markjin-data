@@ -844,5 +844,74 @@ class R5XCapture(R4XCapture):
         self.assertEqual(XC.whitelist(s, "2026-10-13"), set())
 
 
+class R6XCapture(R5XCapture):
+    """PR #6 审查 r6：再次采到时更新互动数；按首次达到门槛的日期导出、按 id 去重。"""
+
+    def ingest(self, posts, slug="ai"):
+        _, r = self.res("search_posts_all", "--slug", slug, "--page", "1")
+        rc, n = self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"], "--file", self.write_result(posts))
+        self.assertEqual(rc, 0, n)
+        return n
+
+    def test_same_day_round2_crosses_threshold(self):
+        self.plan("1")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 1}}])
+        self.assertEqual(self.leads()["items"], [])
+        self.plan("2")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 80}}])
+        p = XC.load_state(self.st)["posts"]["7"]
+        self.assertEqual((p["date"], p["round"]), ("2026-10-12", 1))                  # 首次采集信息不变
+        self.assertEqual(p["public_metrics"]["like_count"], 80)                         # 互动数已更新
+        self.assertEqual((p["lead_date"], p["lead_round"]), ("2026-10-12", 2))
+        out = self.leads()
+        self.assertEqual([i["id"] for i in out["items"]], ["7"])                        # 只一条（按 id 去重）
+
+    def test_cross_day_crosses_threshold(self):
+        self.plan("1")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 1}}])
+        self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-13", "--round", "1")
+        n = self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 80}}])
+        self.assertEqual(n["new_ids"], 0)                                                # ids 跨日去重
+        p = XC.load_state(self.st)["posts"]["7"]
+        self.assertEqual((p["date"], p["lead_date"]), ("2026-10-12", "2026-10-13"))
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])               # 在达标当天导出
+        self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-14", "--round", "1")
+        self.ingest([{"id": "7", "text": "t", "public_metrics": {"like_count": 99}}])
+        self.assertEqual(self.leads()["items"], [])                                     # 已导出过的不再导出
+        self.assertEqual(XC.load_state(self.st)["posts"]["7"]["lead_date"], "2026-10-13")
+
+
+class R6Primary(R5Primary):
+    def test_public_lead_built_only_from_generated_fields(self):
+        evil = {"id": "1", "primary_url": "https://evil.org/TOKENPATH?k=TOKENQUERY", "sha256": "f" * 64,
+                "fetch_status": "fetched", "license": "CC0", "primary_verification": "verified", "fetched_at": "x"}
+        items, _, _ = self.run_fp([evil], {})                                           # 无可抓链接
+        pub = "".join(p.read_text(errors="replace") for p in self.out.rglob("*") if p.is_file())
+        self.assertNotIn("TOKENPATH", pub)
+        self.assertNotIn("evil.org", pub)
+        self.assertEqual(items[0]["fetch_status"], "no_primary_link")
+        self.assertEqual(items[0]["primary_verification"], "unverified")
+        for k in ("primary_url", "sha256", "license", "fetched_at"):
+            self.assertNotIn(k, items[0])
+        self.assertEqual(FP.public_lead({"id": "2", "primary_url": "https://evil.org/T"}, {}),
+                         {"id": "2", "url": "https://x.com/i/status/2"})
+
+
+class R6Scraper(R5Scraper):
+    def test_subsitemap_200_garbage_fails(self):
+        self._check_failed(Resp(200, b"garbage"))
+
+    def test_subsitemap_200_wrong_root_fails(self):
+        self._check_failed(Resp(200, b"<?xml version='1.0'?><error>nope</error>"))
+
+    def test_sitemap_root_check_unit(self):
+        from scrapers import sitemap_filter, ScrapeError
+        ok = (b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://a.org/x</loc></url></urlset>")
+        self.assertEqual(len(sitemap_filter.scrape(lambda u: (200, "", ok, None), "https://a.org/s.xml", None)), 1)
+        for bad in (b"garbage", b"<rss/>", b"<html><body>x</body></html>"):
+            with self.assertRaises(ScrapeError):
+                sitemap_filter.scrape(lambda u: (200, "", bad, None), "https://a.org/s.xml", None)
+
+
 if __name__ == "__main__":
     unittest.main()

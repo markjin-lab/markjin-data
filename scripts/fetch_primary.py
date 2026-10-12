@@ -89,22 +89,24 @@ PUBLIC_LEAD_FIELDS = ("id", "url", "text_sha256", "primary_url", "sha256", "fetc
                       "label", "source_role", "primary_verification")
 
 
-def public_lead(lead):
-    """公开 leads-primary 只留：帖子 id、帖子 URL、帖文 hash、一手 URL（脱敏）与其 sha256、fetch_status、线索身份字段。
-    帖文原文、作者、互动数、原始 URL 字段只进私有 leads 档案。"""
+GENERATED_FIELDS = ("primary_url", "sha256", "fetch_status", "fetched_at", "license", "label", "source_role",
+                    "primary_verification")
+
+
+def public_lead(lead, gen):
+    """公开 leads-primary 只用本轮生成的字段构造，不从输入复制任何字段：
+    id / url 由校验过的帖子 id 生成，text_sha256 由帖文计算，其余只取本轮生成的 gen（一手 URL 的
+    public_url 形式与其 sha256、fetch_status、线索身份字段）。帖文原文、作者、互动数、原始 URL 只进私有档案。"""
     pid = lead.get("id")
     out = {}
-    if isinstance(pid, (str, int)) and re.fullmatch(r"[1-9][0-9]{0,19}", str(pid)):   # 只有合法帖子 id 才写 id / url
+    if isinstance(pid, (str, int)) and re.fullmatch(r"[1-9][0-9]{0,19}", str(pid)):   # 只有规范正整数 id 才写 id / url
         out["id"] = str(pid)
         out["url"] = f"https://x.com/i/status/{pid}"
     if isinstance(lead.get("text"), str):
         out["text_sha256"] = hashlib.sha256(lead["text"].encode("utf-8")).hexdigest()
-    for k in PUBLIC_LEAD_FIELDS:
-        if k in ("id", "url"):        # 输入里的 id / url 不原样复制
-            continue
-        if k in lead and k not in out:
-            out[k] = lead[k]
-    # primary_url 在主循环里已是 public_url 形式（主机 + 完整 URL sha256），不再二次处理
+    for k in GENERATED_FIELDS:
+        if k in gen:
+            out[k] = gen[k]
     return out
 
 
@@ -141,21 +143,24 @@ def main(argv=None, fetcher=None):
     # （强制策略沿用该 Fetcher 的解析器，保证检查的是它实际会连接的解析结果）
     policy = collect.AddressPolicy(a.proxy_fakeip_cidr, resolver=f.resolver)
     f.addr_policy = collect.AllOf(policy, f.addr_policy)
-    cache, index, plog, n = {}, [], [], 0
+    cache, index, plog, n, gens = {}, [], [], 0, []
     for lead in items:
-        lead["label"] = "线索"
-        lead["source_role"] = "lead"
-        lead["primary_verification"] = "unverified"
+        g = {"label": "线索", "source_role": "lead", "primary_verification": "unverified"}   # 本轮生成的字段
+        gens.append(g)
+        for k in GENERATED_FIELDS:      # 输入里预填的同名字段不保留（私有档案里另存为 input_*）
+            if k in lead:
+                lead[f"input_{k}"] = lead.pop(k)
+        lead.update(g)
         urls = primary_urls(lead)
         if not urls:
-            lead["fetch_status"] = "no_primary_link"; continue
+            g["fetch_status"] = lead["fetch_status"] = "no_primary_link"; continue
         orig = urls[0]
         key = collect.full_url_key(orig)          # 缓存/许可均按完整 URL，不按脱敏 URL
         cu = collect.public_url(orig)
-        lead["primary_url"] = cu
+        g["primary_url"] = lead["primary_url"] = cu
         if key not in cache:
             if n >= a.max:
-                lead["fetch_status"] = "not_fetched_cap"; continue
+                g["fetch_status"] = lead["fetch_status"] = "not_fetched_cap"; continue
             n += 1
             t0 = collect.now()
             r = f.get(orig)
@@ -199,11 +204,12 @@ def main(argv=None, fetcher=None):
             print(f"{rec['fetch_status']} {r.status} {rec['stored'] or '-'} {cu}", file=sys.stderr)
             cache[key] = rec
         rr = cache[key]
-        lead.update(fetch_status=rr["fetch_status"], license=rr["license"], sha256=rr.get("sha256"),
-                    fetched_at=rr.get("fetched_at"))
+        g.update(fetch_status=rr["fetch_status"], license=rr["license"], sha256=rr.get("sha256"),
+                 fetched_at=rr.get("fetched_at"))
+        lead.update(g)
     priv.put_json(f"primary/leads-{run}.json", doc)              # 完整线索（含帖文）只进私有档案
     pub.put_json(f"primary/index-{run}.json", index)
-    pub_doc = {"items": [public_lead(x) for x in items]}
+    pub_doc = {"items": [public_lead(x, g) for x, g in zip(items, gens)]}
     pub.put_json(f"primary/leads-primary-{run}.json", pub_doc)
     if plog:
         priv.put(f"primary/fetch-log-{run}.jsonl", "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in plog).encode())
