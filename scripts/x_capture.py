@@ -35,7 +35,7 @@ round2 直接沿用 round1 的状态文件：跨轮按 id 去重，每日 400 �
 Verified 2026-10-12 06:2x SGT: search_posts_all max_results ≤25；翻页参数 next_token；search 不返回 entities，
 需 get_posts_by_ids（≤100 id）补全 entities.urls[].expanded_url/unwound_url；t.co 永不自行解析。
 """
-import argparse, datetime as dt, hashlib, json, re, subprocess, sys, time, uuid
+import argparse, contextlib, datetime as dt, hashlib, json, re, subprocess, sys, time, uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -374,15 +374,27 @@ def cmd_leads(a, s):
         raise UsageError("no plan yet (run plan --date --round first)")
     pend = s.pop("pending_export", None)
     if pend:
-        f = root / pend["path"]
+        day_rel = pend["path"].split("/", 2)                # raw / DATE / x/leads-….json
+        day = check_target(a, root / day_rel[0] / day_rel[1], "leads output dir")
+        f = check_target(a, root / pend["path"], "leads output file")
         if f.is_file():
+            data = f.read_bytes()
+            sha = hashlib.sha256(data).hexdigest()
             try:
-                done = {str(x.get("id")) for x in strictjson.loads(f.read_text(encoding="utf-8")).get("items", [])}
+                done = {str(x.get("id")) for x in strictjson.loads(data.decode("utf-8")).get("items", [])}
             except ValueError:
                 done = set()
-            for pid in pend["ids"]:
-                if pid in done and pid in s["posts"]:
-                    s["posts"][pid]["exported_at"] = pend["at"]
+            if pend.get("sha256") and sha != pend["sha256"]:
+                done = set()                                 # 档案内容与待导出记录不符 → 不认，照常重导
+            if done:
+                line = f"{sha}  ./{day_rel[2]}"
+                man = day / "MANIFEST.sha256"
+                listed = man.is_file() and line in man.read_text(encoding="utf-8").splitlines()
+                if not listed:                               # 档案已建但 MANIFEST 没登记 → 先补登
+                    collect.Archive(day)._append("MANIFEST.sha256", line)
+                for pid in pend["ids"]:
+                    if pid in done and pid in s["posts"]:
+                        s["posts"][pid]["exported_at"] = pend["at"]
     wl, items, ids, dropped = whitelist(s, date), [], [], 0
     ts = collect.now()
     for pid, p in s["posts"].items():    # posts 以 id 为键 → 按 id 去重
@@ -399,9 +411,12 @@ def cmd_leads(a, s):
         elif (p.get("last_seen") or {}).get("date", p.get("date")) == date:
             dropped += 1
     rel = f"x/leads-{collect.stamp()}.json"
-    s["pending_export"] = {"path": f"raw/{date}/{rel}", "ids": ids, "at": ts}
+    day = check_target(a, root / "raw" / date, "leads output dir")
+    check_target(a, day / "x", "leads output dir")           # 解析符号链接后仍须在私有根内、且不在 git 工作树内
+    sha = hashlib.sha256((json.dumps({"items": items}, ensure_ascii=False, indent=1) + "\n").encode()).hexdigest()
+    s["pending_export"] = {"path": f"raw/{date}/{rel}", "ids": ids, "at": ts, "sha256": sha}
     save_state(a.state, s)                       # 先写状态（待导出记录）
-    collect.Archive(root / "raw" / date).put_json(rel, {"items": items})   # 再写档案
+    collect.Archive(day).put_json(rel, {"items": items})   # 再写档案
     for pid in ids:
         s["posts"][pid]["exported_at"] = ts
     s.pop("pending_export", None)                # main 随后保存状态
@@ -424,14 +439,37 @@ def private_paths(a):
     if in_git_worktree(root):
         raise UsageError("--private-root is inside a git work tree; refusing to keep X post text there")
 
-    def inside(p, what):
-        q = Path(p).resolve()
-        if q != root and root not in q.parents:
-            raise UsageError(f"{what} must be inside --private-root")
-    inside(a.state, "--state")
+    a.root = root
+    a.state = check_target(a, a.state, "--state")
     if getattr(a, "file", None):
-        inside(a.file, "--file")
+        a.file = str(check_target(a, a.file, "--file"))
     return root
+
+
+def check_target(a, p, what):
+    """读写目标：先解析符号链接（含 ..），真实路径须在私有根目录内，再对真实父目录做 in_git_worktree 检查
+    （根内嵌套仓库、经符号链接进入仓库都拒绝）。返回解析后的路径。"""
+    root = a.root
+    q = Path(p).resolve()
+    if q != root and root not in q.parents:
+        raise UsageError(f"{what} must be inside --private-root")
+    if in_git_worktree(q):                 # 目录本身或文件的真实父目录
+        raise UsageError(f"{what} resolves into a git work tree; refusing to keep X post text there")
+    return q
+
+
+@contextlib.contextmanager
+def state_lock(a):
+    """X 状态/预算的跨进程排他锁（fcntl）：PRIVATE/state/locks/x-state.lock。读状态、核额度、写状态都在锁内完成。"""
+    import fcntl
+    d = check_target(a, a.root / "state" / "locks", "lock dir")
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / "x-state.lock", "a+") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
 
 
 def main(argv=None):
@@ -460,13 +498,14 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         a.root = private_paths(a)
-        s = load_state(a.state)
-        r = a.f(a, s)
-        rc = 0
-        if isinstance(r, tuple):
-            r, rc = r
-        if a.mut:
-            save_state(a.state, s)
+        with state_lock(a):                 # 读 → 核额度 → 写 同在一把锁里，并发预留不会突破每日额度
+            s = load_state(a.state)
+            r = a.f(a, s)
+            rc = 0
+            if isinstance(r, tuple):
+                r, rc = r
+            if a.mut:
+                save_state(a.state, s)
     except (UsageError, ValueError, KeyError) as e:
         print(f"error: {type(e).__name__}: {e}", file=sys.stderr); return 2
     except OSError as e:                 # 只输出错误类别，不带出私有路径

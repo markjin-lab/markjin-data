@@ -1006,8 +1006,8 @@ class R7Primary(R6Primary):
         st = collect.HostState(self.base / "hs.json")
         items, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}],
                                     {u: Resp(200, body, {"Content-Type": "text/plain"})}, state=st)
-        self.assertEqual(idx[0]["fetch_status"], "challenge")
-        self.assertIn("e.org", collect.HostState(self.base / "hs.json").data["hosts"])
+        self.assertEqual(idx[0]["fetch_status"], "suspected_challenge")                 # r9：text/plain 标签+短语只记本轮可疑
+        self.assertEqual(collect.HostState(self.base / "hs.json").data["hosts"], {})
         self.assertTrue(list(self.priv.rglob(hashlib.sha256(body).hexdigest() + ".*")))
 
     def test_long_challenge_302_disables(self):
@@ -1121,6 +1121,138 @@ class R8Scraper(R7Scraper):
         log = [json.loads(l) for p in (out.parent / "priv").rglob("fetch-log-*.jsonl") for l in p.read_text().splitlines()]
         self.assertEqual(log[0]["error"], "scraper:no_items")
         self.assertTrue(log[0]["hop_raws"])
+
+
+class R9XCapture(R8XCapture):
+    """PR #6 审查 r9：每个读写目标解析符号链接后检查 git 工作树；预算事务在 fcntl 锁内；恢复导出核对 sha256 与 MANIFEST。"""
+
+    def test_state_in_nested_git_repo_under_private_root_rejected(self):
+        import subprocess
+        repo = self.d / "nested"
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        for st in (repo / "s.json", repo / "deep" / "s.json"):
+            rc, _ = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(st), "--date", "2026-10-12", "--round", "1")
+            self.assertEqual(rc, 2, st)
+            self.assertFalse(st.exists())
+        f = repo / "r.txt"; f.write_text("x")
+        self.plan()
+        rc, _ = self.x("ingest", "--state", str(self.st), "--call-id", "x", "--file", str(f))
+        self.assertEqual(rc, 2)                                                              # --file 同样检查
+
+    def test_symlink_into_git_repo_rejected_for_state_and_leads_dir(self):
+        import os, subprocess
+        pub = Path(self.enterContext(tempfile.TemporaryDirectory(dir="/workspace")))
+        subprocess.run(["git", "init", "-q", str(pub)], check=True)
+        inner = self.d / "inner-repo"; subprocess.run(["git", "init", "-q", str(inner)], check=True)
+        os.symlink(inner, self.d / "link")
+        rc, _ = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.d / "link" / "s.json"),
+                       "--date", "2026-10-12", "--round", "1")
+        self.assertEqual(rc, 2)
+        self.assertFalse((inner / "s.json").exists())
+        self._seed_lead()
+        (self.d / "raw" / "2026-10-12").mkdir(parents=True)
+        os.symlink(inner, self.d / "raw" / "2026-10-12" / "x")                              # 输出子目录 → 根内仓库
+        rc, _ = self.x("leads", "--state", str(self.st))
+        self.assertEqual(rc, 2)
+        self.assertEqual(list(inner.glob("leads-*")), [])
+        os.unlink(self.d / "raw" / "2026-10-12" / "x")
+        os.symlink(pub, self.d / "raw" / "2026-10-12" / "x")                                # 输出子目录 → 根外公开仓库
+        rc, _ = self.x("leads", "--state", str(self.st))
+        self.assertEqual(rc, 2)
+        self.assertEqual(list(pub.glob("leads-*")), [])
+        self.assertNotIn("exported_at", XC.load_state(self.st)["posts"]["7"])
+
+    def test_concurrent_reserve_cannot_exceed_daily_cap(self):
+        import io, sys, threading, time as _t
+        self.plan()
+        s = XC.load_state(self.st)
+        now = _t.time()
+        t0 = max(now - 3600, (now // 86400) * 86400 + 1)                                    # 同一 UTC 日、早于一分钟窗口
+        s["calls"] = [{"id": f"c{i}", "t": t0, "tool": "search_posts_all", "ingested": True} for i in range(XC.DAY_CAP - 1)]
+        XC.save_state(self.st, s)
+        orig = XC.load_state
+
+        def slow_load(p):
+            r = orig(p); _t.sleep(0.3); return r                                             # 拉大读→写窗口
+        XC.load_state = slow_load
+        out, rcs = io.StringIO(), []
+        old = sys.stdout; sys.stdout = out
+        try:
+            ts = [threading.Thread(target=lambda: rcs.append(XC.main(
+                ["reserve", "--state", str(self.st), "--private-root", str(self.d), "--tool", "search_posts_all",
+                 "--slug", "ai", "--page", "1"]))) for _ in range(2)]
+            [t.start() for t in ts]; [t.join() for t in ts]
+        finally:
+            sys.stdout = old; XC.load_state = orig
+        self.assertEqual(len(XC.load_state(self.st)["calls"]), XC.DAY_CAP)                  # 只多出一次预留
+        self.assertEqual(out.getvalue().count('"allowed": true'), 1, out.getvalue())          # 只放行一次工具调用
+        self.assertTrue((self.d / "state" / "locks" / "x-state.lock").exists())
+
+    def test_lock_held_during_state_transaction(self):
+        import fcntl
+        self.plan()
+        seen = []
+        orig = XC.save_state
+
+        def probe(p, s):
+            with open(self.d / "state" / "locks" / "x-state.lock") as lk:
+                try:
+                    fcntl.flock(lk, fcntl.LOCK_EX | fcntl.LOCK_NB); seen.append("free"); fcntl.flock(lk, fcntl.LOCK_UN)
+                except BlockingIOError:
+                    seen.append("held")
+            orig(p, s)
+        XC.save_state = probe
+        try:
+            self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "1")[0], 0)
+        finally:
+            XC.save_state = orig
+        self.assertEqual(seen, ["held"])
+
+    def test_recovery_registers_missing_manifest_then_marks_exported(self):
+        from markjin import collect
+        self._seed_lead()
+        orig = collect.Archive._append
+
+        def boom(self_, name, line):
+            raise OSError(28, "No space left on device")
+        collect.Archive._append = boom                      # 档案已独占创建，MANIFEST 追加失败
+        try:
+            rc, _ = self.x("leads", "--state", str(self.st))
+        finally:
+            collect.Archive._append = orig
+        self.assertEqual(rc, 1)
+        day = self.d / "raw" / "2026-10-12"
+        files = list((day / "x").glob("leads-*.json"))
+        self.assertEqual(len(files), 1)
+        self.assertFalse((day / "MANIFEST.sha256").exists())
+        self.assertEqual(self.leads()["items"], [])                                          # 恢复：不重导
+        import hashlib
+        sha = hashlib.sha256(files[0].read_bytes()).hexdigest()
+        lines = (day / "MANIFEST.sha256").read_text().splitlines()
+        self.assertIn(f"{sha}  ./x/{files[0].name}", lines)                                 # 先补登
+        self.assertTrue(XC.load_state(self.st)["posts"]["7"]["exported_at"])                # 再记 exported_at
+
+    def test_recovery_sha_mismatch_not_trusted(self):
+        from markjin import collect
+        self._seed_lead()
+        orig = collect.Archive.put_json
+
+        def tampered(self_, rel, obj):
+            return orig(self_, rel, {"items": obj["items"], "x": 1})                         # 写出的字节与待导出记录不符
+        orig_save, n = XC.save_state, [0]
+
+        def flaky(p, s):
+            n[0] += 1
+            if n[0] == 2:
+                raise OSError(28, "No space left on device")
+            orig_save(p, s)
+        collect.Archive.put_json = tampered; XC.save_state = flaky
+        try:
+            rc, _ = self.x("leads", "--state", str(self.st))
+        finally:
+            collect.Archive.put_json = orig; XC.save_state = orig_save
+        self.assertEqual(rc, 1)
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])                    # 哈希不符 → 照常重导
 
 
 if __name__ == "__main__":
