@@ -382,7 +382,8 @@ class R2Fixes(unittest.TestCase):
         self.assertTrue(r.ok)
         self.assertNotIn("SEKRITKEY", json.dumps(r.hops))
         self.assertEqual(r.hops[0]["from"], "https://api.f.org/obs")
-        self.assertEqual(r.hops[0]["query_params"], ["series_id", "api_key"])
+        self.assertEqual(r.hops[0]["query_param_count"], 2)
+        self.assertNotIn("api_key", json.dumps(r.hops))
 
     def test_capture_after_302_no_api_key_in_any_log(self):
         t = CaptureT("test_auth_key_never_logged"); t.setUp()
@@ -535,7 +536,7 @@ class R3Fixes(unittest.TestCase):
 
     def test_logs_have_no_query_values(self):
         self.assertEqual(collect.public_url("https://a.org/?page=TOKENVALUE&q=api_key%3DTOKENVALUE"), "https://a.org/")
-        self.assertEqual(collect.query_names("https://a.org/?page=TOKENVALUE&q=x&page=2"), ["page", "q"])
+        self.assertEqual(collect.query_count("https://a.org/?page=TOKENVALUE&q=x&page=2"), 3)
 
     def test_capture_public_params_declared_per_source(self):
         t = CaptureT("test_auth_key_never_logged"); t.setUp()
@@ -547,7 +548,7 @@ class R3Fixes(unittest.TestCase):
                       if p.is_file() and p.suffix in (".json", ".jsonl"))
         self.assertNotIn("TOKENVALUE", txt)
         self.assertIn("a.json?series_id=S1", txt)
-        self.assertIn('"query_params": ["series_id", "page"]', txt)
+        self.assertIn('"query_param_count": 2', txt)
 
     def test_interval_nan_inf_rejected(self):
         for bad in ("nan", "inf", "-inf", "1.9"):
@@ -560,6 +561,95 @@ class R3Fixes(unittest.TestCase):
         with self.assertRaises(collect.ConfigError):
             collect.check_interval(float("inf"))
         self.assertEqual(collect.check_interval(2), 2.0)
+
+
+class R4Fixes(unittest.TestCase):
+    """PR #3 审查 r4 REJECTED 修复的针对性测试。"""
+
+    def test_challenge_new_markers(self):
+        for b in (b'<div class="cf-turnstile" data-sitekey=x>', b'<form id="challenge-form" action=/x>',
+                  b"<script src='/_Incapsula_Resource?x'>", b'<div id="px-captcha">', b'<div class="geetest_panel">',
+                  b"<title>Verify you are human</title>", b"<title>Amazon.com - Robot Check</title>"):
+            self.assertTrue(collect.CHALLENGE.search(b), b)
+        self.assertFalse(collect.CHALLENGE.search(b"<p>How to verify you are human: a survey</p>"))
+
+    def test_content_page_with_new_markers_disables(self):
+        for b in (b"<html><title>Verify you are human</title></html>", b'<div class="cf-turnstile"></div>',
+                  b'<form id="challenge-form"></form>', b'<div id="px-captcha"></div>', b"<div class=geetest_x>"):
+            p = Path(tempfile.mkdtemp()) / "st.json"
+            f, _ = mk({"https://a.org/p": Resp(200, b)}, state=collect.HostState(p))   # robots 404
+            r = f.get("https://a.org/p", sid="s")
+            self.assertEqual(r.error, "challenge", b)
+            self.assertFalse(r.ok)
+            self.assertIn("a.org", collect.HostState(p).data["hosts"])
+
+    def _robots(self, resp):
+        p = Path(tempfile.mkdtemp()) / "st.json"
+        f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+        r = f.get("https://a.org/p", sid="s")
+        return r, f, collect.HostState(p).data
+
+    def test_robots_401_429_5xx_html_suspected_challenge_no_retry(self):
+        for st in (401, 429, 500, 503):
+            r, f, d = self._robots(Resp(st, b"<html><body>please wait</body></html>", {"Content-Type": "text/html"}))
+            self.assertEqual(r.error, "disabled", st)
+            self.assertIn("pending manual review", d["hosts"]["a.org"]["reason"])
+            calls = [u for u, _ in f.opener.calls]
+            self.assertEqual(calls.count("https://a.org/robots.txt"), 1, st)       # 不重复请求
+            self.assertNotIn("https://a.org/p", calls)
+
+    def test_robots_5xx_plain_still_retried_and_disallowed_not_disabled(self):
+        r, f, d = self._robots(Resp(503, b"busy", {"Content-Type": "text/plain"}))
+        self.assertEqual(r.error, "robots_disallow")
+        self.assertEqual(d["hosts"], {})
+        self.assertEqual([u for u, _ in f.opener.calls].count("https://a.org/robots.txt"), collect.MAX_RETRIES + 1)
+
+    def test_robots_404_410_html_is_no_robots(self):
+        for st in (404, 410):
+            r, _, d = self._robots(Resp(st, b"<html>nf</html>", {"Content-Type": "text/html"}))
+            self.assertTrue(r.ok, st)
+            self.assertEqual(d["hosts"], {})
+
+    def test_robots_same_host_redirect_hops_checked_by_policies(self):
+        seen = []
+
+        def extra(u):
+            seen.append(u)
+            return "extra blocks hop" if u.startswith("https://a.org/robots") else None
+        f, _ = mk({"http://a.org/robots.txt": Resp(301, headers={"Location": "https://a.org/robots.txt"}),
+                   "https://a.org/robots.txt": Resp(200, b"User-agent: *\nAllow: /\n")}, addr_policy=extra)
+        rp = f.robots("http://a.org/x")
+        self.assertIn("https://a.org/robots.txt", seen)
+        self.assertNotIn("https://a.org/robots.txt", [u for u, _ in f.opener.calls])
+        self.assertFalse(rp.can_fetch("markjin-collector", "http://a.org/x"))
+        # 强制策略：同主机跳转后主机重新解析到内网 → 不请求
+        n = [0]
+
+        def dns(h):
+            n[0] += 1
+            return {"93.184.216.34"} if n[0] == 1 else {"127.0.0.1"}
+        f, _ = mk({"http://b.org/robots.txt": Resp(301, headers={"Location": "https://b.org/robots.txt"}),
+                   "https://b.org/robots.txt": Resp(200, b"")}, resolver=dns)
+        f.robots("http://b.org/x")
+        self.assertEqual([u for u, _ in f.opener.calls], ["http://b.org/robots.txt"])
+
+    def test_robots_direct_call_checks_policy(self):
+        f, _ = mk({"http://127.0.0.1/robots.txt": Resp(200, b"")})
+        rp = f.robots("http://127.0.0.1/x")
+        self.assertEqual(f.opener.calls, [])
+        self.assertFalse(rp.can_fetch("markjin-collector", "http://127.0.0.1/x"))
+
+    def test_query_param_names_not_logged(self):
+        t = CaptureT("test_auth_key_never_logged"); t.setUp()
+        s = dict(CaptureT.S, id="api", method="api", url="https://f.org/a.json?TOKENNAME=1&x=2")
+        routes = {"https://f.org/a.json?TOKENNAME=1&x=2": Resp(302, headers={"Location": "/b.json?OTHERSECRET=1"}),
+                  "https://f.org/b.json?OTHERSECRET=1": Resp(200, b'{"o": 1}')}
+        self.assertEqual(t.run_cs([s], routes), 0)
+        txt = "".join(p.read_text() for root in (t.out, t.priv) for p in root.rglob("*") if p.is_file()
+                      and p.suffix in (".json", ".jsonl"))
+        self.assertNotIn("TOKENNAME", txt)
+        self.assertNotIn("OTHERSECRET", txt)
+        self.assertIn('"query_param_count": 2', txt)
 
 
 if __name__ == "__main__":

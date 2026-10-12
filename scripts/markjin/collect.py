@@ -12,7 +12,7 @@
 - 403 / 验证页：持久写入停用状态（主机 + 源），人工复核后才恢复；只有 429、5xx、网络错误按
   Retry-After 或指数退避重试，次数与等待均有上限。
 - robots.txt 自身的跳转逐跳校验（scheme / t.co / 停用 / 跨主机即禁止）；robots 403 或验证页 → 持久停用。
-- 一切日志（公开与私有）不写本机路径、不写凭证：URL 不带查询值（只记参数名；按源 public_params 声明的才留值），hops 只存脱敏 URL；
+- 一切日志（公开与私有）不写本机路径、不写凭证：URL 不带查询值（只记参数个数，不记参数名；按源 public_params 声明的才留值），hops 只存脱敏 URL；
 - 地址策略强制安装（AddressPolicy，每一跳/子 sitemap 在任何请求前检查）；外部策略只能叠加更严。
 - robots.txt 返回 HTTP 200 的 HTML → 一律按验证页处理并持久停用。私有根目录必须显式给出且不能与公开根目录重叠。
 """
@@ -48,7 +48,8 @@ REDIRECT_CODES = {301, 302, 303, 307, 308}
 CHALLENGE = re.compile(rb"Just a moment\.\.\.|challenges\.cloudflare\.com|/cdn-cgi/challenge-platform|cf-chl-|"
                        rb"Attention Required! \| Cloudflare|<title>\s*Access Denied|Access Denied</title>|"
                        rb"<title>[^<]*captcha|id\s*=\s*[\"']?captcha\b|class\s*=\s*[\"'][^\"']*\bcaptcha\b|"
-                       rb"g-recaptcha|hcaptcha", re.I)
+                       rb"g-recaptcha|hcaptcha|cf-turnstile|id\s*=\s*[\"']?challenge-form\b|_Incapsula_Resource|"
+                       rb"px-captcha|geetest_|<title>[^<]*(?:Verify you are human|Robot Check)", re.I)
 FAKEIP_ENV = "MARKJIN_PROXY_FAKEIP_CIDR"
 APPROVED = "approved"
 
@@ -110,7 +111,7 @@ def resolve_internal_root(arg, out_root, env="MARKJIN_INTERNAL_DIR"):
 # ---------------------------------------------------------------- URL 脱敏
 def public_url(u, public_params=()):
     """用于一切记录/日志（公开与私有）：去掉 userinfo、片段和查询串。查询参数的*值*默认一律不记
-    （参数名见 query_names）；只有该源在 sources.yaml 里用 public_params 显式声明的参数才保留值。"""
+    （日志只记参数个数，见 query_count）；只有该源在 sources.yaml 里用 public_params 显式声明的参数才保留值。"""
     p = urlsplit(u.strip())
     host = (p.hostname or "").lower()
     netloc = (f"[{host}]" if ":" in host else host) + (f":{p.port}" if p.port else "")
@@ -119,9 +120,9 @@ def public_url(u, public_params=()):
     return urlunsplit((p.scheme.lower(), netloc, p.path, urlencode(q), ""))
 
 
-def query_names(u):
-    """URL 中查询参数的名字（去重、保序），供日志记录；不含值。"""
-    return list(dict.fromkeys(k for k, _ in parse_qsl(urlsplit(u.strip()).query, keep_blank_values=True)))
+def query_count(u):
+    """URL 中查询参数的个数。日志默认只记个数，不记参数名（参数名本身也可能是秘密）。"""
+    return len(parse_qsl(urlsplit(u.strip()).query, keep_blank_values=True))
 
 
 def host_of(u):
@@ -344,6 +345,10 @@ class HostState:
 
 
 # ---------------------------------------------------------------- 抓取层
+def suspect_status(st):
+    return st in (401, 429) or 500 <= st < 600
+
+
 def looks_html(headers, body):
     ct = ((headers or {}).get("Content-Type") or "").lower()
     head = body[:2048].lstrip(b"\xef\xbb\xbf \r\n\t").lower()
@@ -399,6 +404,10 @@ class Fetcher:
         self.log = log or (lambda *_: None)
         self.requests = []     # (host, t) — 供测试/审计
 
+    def address_check(self, url):
+        """强制策略与外部策略的合取；返回拒绝原因或 None。"""
+        return AllOf(self._forced_policy, self.addr_policy)(url)
+
     # -- 每主机限速（所有请求都走这里）
     def _wait(self, host):
         gap = max(self.interval, self._host_interval.get(host, 0))
@@ -436,10 +445,13 @@ class Fetcher:
             return status, headers, b"", "too_large", f">{self.max_bytes} bytes"
         return status, headers, buf, None, None
 
-    def _with_retry(self, url, accept):
+    def _with_retry(self, url, accept, html_is_challenge=False):
+        """html_is_challenge（robots 用）：401/429/5xx 返回 HTML 视为疑似验证页，不重试，直接交回调用方停用。"""
         for attempt in range(MAX_RETRIES + 1):
             st, h, body, ec, det = self._raw(url, accept)
             challenged = bool(body) and CHALLENGE.search(body[:20000])
+            if html_is_challenge and suspect_status(st) and body and looks_html(h, body):
+                challenged = True
             retryable = (ec == "network" or st == 429 or 500 <= st < 600) and not challenged
             if not retryable or attempt == MAX_RETRIES:
                 return st, h, body, ec, det
@@ -476,7 +488,10 @@ class Fetcher:
                     st, ec = 0, "robots_redirect_disabled_host"; break
                 if qh != host:
                     st, ec = 0, "robots_cross_host_redirect"; break
-            st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*")
+            why = self.address_check(cur)          # 每一跳 robots 请求前都过强制策略 + 外部策略
+            if why:
+                st, ec, body, h = 0, "robots_blocked_address", b"", {}; break
+            st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*", html_is_challenge=True)
             h = h or {}
             if st in REDIRECT_CODES:
                 loc = h.get("Location")
@@ -491,6 +506,9 @@ class Fetcher:
             challenged = True     # robots.txt 返回 HTML：一律按验证页处理（不当作空规则）
         if challenged:
             self.state.disable(host, sid, f"robots.txt bot challenge page (HTTP {st})")
+            rp.disallow_all = True
+        elif suspect_status(st) and body and looks_html(h, body):
+            self.state.disable(host, sid, f"robots.txt suspected challenge: HTTP {st} HTML (pending manual review)")
             rp.disallow_all = True
         elif st == 403:
             self.state.disable(host, sid, "robots.txt HTTP 403")
@@ -527,7 +545,7 @@ class Fetcher:
             why = self.state.disabled(host, sid)
             if why:
                 return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
-            why = AllOf(self._forced_policy, self.addr_policy)(cur)   # 每一跳、子 sitemap 都在任何请求前检查
+            why = self.address_check(cur)   # 每一跳、子 sitemap 都在任何请求前检查
             if why:
                 return Result(False, final_url=cur, hops=hops, error="blocked_address", detail=why)
             if not self.allowed(cur, sid):
@@ -541,7 +559,7 @@ class Fetcher:
                 loc = h.get("Location") if h else None
                 if not loc:
                     return Result(False, st, final_url=cur, hops=hops, error="redirect_without_location")
-                hops.append({"from": public_url(cur), "query_params": query_names(cur), "status": st})   # hops 只存脱敏 URL
+                hops.append({"from": public_url(cur), "query_param_count": query_count(cur), "status": st})   # hops 只存脱敏 URL
                 cur = urljoin(cur, loc)
                 continue
             if body and CHALLENGE.search(body[:20000]):

@@ -15,7 +15,7 @@ Usage:
   query-log-<run>.jsonl、failures-<run>.json，并追加 OUT/raw/DATE/MANIFEST.sha256。整份 RSS/API 响应是多条目聚合，
   不做逐条许可核验，因此全文永不进公开目录（逐条全文见 fetch_primary.py 的 license evidence）。
   internal_only 源：原件与记录全部写入内部目录，公开目录不写任何东西。
-公开与私有记录都不含本机路径，URL 不带查询值（只记参数名 query_params）；某源确需公开的参数值须在
+公开与私有记录都不含本机路径，URL 不带查询值（只记参数个数 query_param_count，不记参数名）；某源确需公开的参数值须在
 sources.yaml 里按源声明 public_params: [name, ...]。stored 只写 private/internal。
 地址策略强制生效（每一跳）：拒绝本机/内网/链路本地/保留地址；经透明代理时用 --proxy-fakeip-cidr 或
 $MARKJIN_PROXY_FAKEIP_CIDR 声明代理假 IP 网段（只接受 198.18.0.0/15 内）。
@@ -149,7 +149,7 @@ def main(argv=None):
             r = collect.Result(False, error=cred_err)
         else:
             r = fetcher.get(req_url, sid=sid)
-        rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_params": collect.query_names(url), "round": a.round,
+        rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url), "round": a.round,
                "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
                "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
         kind = parse_ok(r.body) if r.ok else None
