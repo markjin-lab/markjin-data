@@ -33,29 +33,29 @@
 | unit | 单位 |
 | data_source | 数据来源，如 FRED 序列号 |
 | data_vintage | 取数规则，不是固定快照。宏观默认写“每季取到期核对日（SGT）最新发布的版本”；不适用填 `NA` |
-| window_start / window_end | 观测窗口的起止日期；window_end 就是到期日 |
+| window_start / window_end | 观测窗口的起止日期；window_end 就是到期日。观测从 window_start 当日 00:00（SGT）开始，window_start 至少是 publish_date 的次日 |
 | branch_order | 同一篇稿件内的分支序号，从 1 开始 |
 | interval_low / interval_high | 区间型分支的下沿和上沿，留空表示无穷。按季读数型分支、没有数值区间的定性条件，四个区间字段一律填 `NA` |
 | interval_low_closed / interval_high_closed | 端点是否包含在区间内，填 `true` 或 `false`；不适用填 `NA` |
-| trigger_condition | 触发条件的文字写法。必须和区间字段等价，判定以区间字段为准 |
+| trigger_condition | 触发条件。区间型分支必须写成机器写法，与区间字段逐字一致：`L < x < U`、`L <= x < U`、`x < U`、`L <= x` 等（`<=` 表示端点闭），至少一端有限，脚本按区间字段复算比对；按季读数型和定性条件写文字 |
 | n_quarters | 按季读数型分支需要连续观察的季度数 N。其他分支填 `NA` 或留空，下面四个按季字段同理 |
 | window_quarters | 参与判定的 N 个季度，按时间顺序用英文分号分隔，如 `2026Q4;2027Q1` |
 | lu_basis_date | 计算下沿 L、上沿 U 所依据的基准日期 |
 | l_value / u_value | 所用下沿 L 和上沿 U 的数值 |
 | lu_evidence | 计算 L 和 U 用到的每个读数，用英文分号分隔，每个写成 `季度:读数@vintage#raw 路径:sha256\|来源链接`，vintage 写 YYYY-MM-DD |
-| registered_by / registered_at | 登记人（bot 名）和登记时间 |
+| registered_by / registered_at | 登记人（bot 名）和登记时间。registered_at 写完整时间 `YYYY-MM-DDTHH:MM:SS+08:00`，第一行的日期必须等于 publish_date，并且早于观测开始；登记后不可改 |
 
 **到期对账**：window_end 之后由审查与治理 bot 填写。
 
 | 字段 | 含义 |
 |---|---|
-| actual_value | 实际取值（区间型分支） |
+| actual_value | 实际取值。区间型分支对账出 HIT、MISS、NONE_HIT、MULTI_HIT 时必须是数字 |
 | quarter_readings | 每个季度的读数，写成 `季度:读数@vintage#raw 路径:sha256`，用英文分号分隔，季度须在 window_quarters 内并按顺序（按季读数型分支） |
 | actual_branch | 是否为实际发生的那一支，填 `是`、`否` 或留空 |
 | check_result | 对账结果：`PENDING`（未到期）、`HIT`、`MISS`、`NONE_HIT`、`MULTI_HIT`、`TRIGGER_UNOBSERVABLE`、`DATA_UNAVAILABLE` |
 | error_source | 错在哪一环，只能填 `采集`、`解读`、`框架`。有多个原因时用英文分号分隔，主因写在最前。只在对账结果为 NONE_HIT、MULTI_HIT 或 TRIGGER_UNOBSERVABLE 时填写 |
-| checked_by / checked_at | 核对人和核对时间 |
-| evidence | 复算依据：raw 路径和 sha256、计算脚本的路径和 commit、取值时间 |
+| checked_by / checked_at | 核对人和写入时间（完整时间戳）。对账行的 checked_at 必须晚于 window_end；按季读数行的 checked_at 是这一行的写入时间 |
+| evidence | 复算依据，格式 `raw 路径:sha256[,raw 路径:sha256…]\|scripts/脚本路径@40 位 commit\|取值时间（+08:00）`；raw 路径须是 `raw/YYYY-MM-DD/…`、不得含 `..`，并与该日 MANIFEST.sha256 一致 |
 
 ## framework_sha256 和 framework_commit
 
@@ -63,16 +63,20 @@
 
 ## 登记和对账的规则
 
-1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。CI 用 `--base` 检查新文件是否以原文件开头（push 取 before，PR 取 base 与 head 的 merge-base）。
-2. **第一行是登记行。** 每个分支（draft_id + branch_order）的第一行 check_result 必须是 `PENDING`，registered_at 不得晚于 window_end 当天。
-3. **事先登记字段写了不改。** 同一分支后追加的对账行，事先登记字段必须和该分支当前的登记行（第一行，或最近一条更正行）完全一致。
-4. **对账时追加一行，不改原行。** 事先登记字段照抄，再填对账字段；checked_at 必须晚于 window_end。数据未发布（DATA_UNAVAILABLE）可以等数据发布后再追加一行。每个分支只能有一个最终结论（HIT、MISS、NONE_HIT、MULTI_HIT、TRIGGER_UNOBSERVABLE）；要改结论，只能追加更正行，此后另算。
-5. **更正行。** 填 corrects_row_id（指向同一分支已存在的 row_id）和 reason，check_result 为 `PENDING`，其余字段写更正后的值。原行保留不动。
-6. **PENDING 行**不得填 actual_value、actual_branch、error_source、evidence、checked_by、checked_at。按季读数型分支可以在 PENDING 行先登记 quarter_readings。
-7. **按季读数型分支**：王总确认判定规则前，结论只允许 `PENDING`、`TRIGGER_UNOBSERVABLE`、`DATA_UNAVAILABLE`，error_source 留空。
-8. **门禁计数。** 统计“至少 20 条可到期分支”时，每个分支只算第一行：第一行 window_end 不晚于 2026-12-31、check_result 为 PENDING 的计 1；对账行和更正行都不重复计数。门禁不限于宏观。
-9. **登记校验**（从严临时执行），任一条不满足就不登记，退回生产与发布 bot：N ≥ 1；L ≤ U；window_quarters 恰好是 N 个连续季度，最后一个不晚于 window_end 所在季度；lu_evidence 非空且每个读数格式正确；按季读数型分支四个区间字段填 `NA`。
-10. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导。
+行分四种：**登记行**（每个分支的第一行）、**对账行**、**登记更正行**、**结论更正行**。
+
+1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。CI 用 `--base` 检查新文件是否以原文件开头（push 取 before，PR 取 base 与 head 的 merge-base）。基线提交不存在或读不出时判失败，不放行。
+2. **登记行。** check_result 必须是 `PENDING`，quarter_readings 为空；registered_at 的日期等于 publish_date，并早于观测开始（window_start 至少是发布次日）；lu_basis_date 和 lu_evidence 里每个读数的 vintage 都不得晚于 registered_at。
+3. **不可改字段**：全部事先登记字段，加上 registered_at。对账行和结论更正行里，这些字段必须与当前登记（登记行，或最近一条登记更正行）完全一致。
+4. **对账行**：window_end 之后追加，事先登记字段照抄，再填对账字段，checked_at 晚于 window_end。DATA_UNAVAILABLE 可以等数据发布后再追加一行。每个分支只能有一个最终结论（HIT、MISS、NONE_HIT、MULTI_HIT、TRIGGER_UNOBSERVABLE）；要改只能走结论更正。
+5. **登记更正行**（观测开始前）：check_result 为 `PENDING`，corrects_row_id 指向当前登记行，reason 必填。可以改事先登记字段（draft_id、branch_order、publish_date 不能改），registered_at 写更正行自己的真实时间：必须晚于被更正行，日期早于 window_start（更正前后都要早于）。观测开始后就不能再做登记更正。
+6. **结论更正行**（观测开始后）：只能改对账字段，事先登记字段和 registered_at 照抄；corrects_row_id 必须指向当前那条最终结论（第一次是那条对账行，之后是上一条结论更正行），reason 必填，check_result 是最终结论之一。“结论改过”的次数就是这个分支结论更正行的条数，由台账直接推导，不另设字段。
+7. **观测开始后要改条件**，只能用新的 branch_order 作为新分支重新登记（新的登记行，照第 2 条），原分支照原登记对账。
+8. **按季读数型分支**：王总确认判定规则前，所有行的结论都只能是 `PENDING`，error_source 留空。唯一例外是可以追加读数行：仍为 `PENDING`，填 quarter_readings 以及 checked_by、checked_at（写入时间）。quarter_readings 必须以前一条读数为前缀，只能按季度往后追加，已有条目不改不删；季度从 window_quarters 第一个开始按顺序；每个读数写成 `季度:读数@vintage#raw 路径:sha256`，vintage 不早于该季度结束，也不晚于这一行的写入时间；raw 路径不得含 `..`，并与 MANIFEST 一致。
+9. **PENDING 行**（读数行除外）不得填 actual_value、actual_branch、error_source、evidence、checked_by、checked_at。
+10. **门禁计数和命中率**都以每个分支的第一行为准：门禁计第一行 window_end 不晚于 2026-12-31、check_result 为 PENDING 的分支，对账行和更正行不重复计数；门禁不限于宏观。
+11. **登记校验**（从严临时执行），任一条不满足就不登记，退回生产与发布 bot：N ≥ 1；L ≤ U；window_quarters 恰好是 N 个连续季度，最后一个不晚于 window_end 所在季度；lu_evidence 非空，每个读数都带 vintage、raw 路径、sha256 和来源链接；按季读数型分支四个区间字段填 `NA`。
+12. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导；台账全文（含自由文本字段）由 check-public 检查，不得含本机路径。
 
 ## 校验
 

@@ -15,6 +15,7 @@
    台账非空、无重复键，每行通过字段白名单、真实日历日期、与文件名日期一致、card_id 有对应公开稿件锚点的校验。
 解码失败（E-CHECK-DECODE）、stdin 为空或格式异常（E-CHECK-STDIN）、git 失败（E-CHECK-GIT）一律拒绝。
 4) 新增 raw/ 文件不得含 /workspace/、/home/ 本机绝对路径或指向它们的 file: URI（先网址解码；只豁免 http(s)://主机 开头的网址；JSON 先解码）（E-PUBLIC-LOCAL-PATH；本规则引入前已提交的文件豁免）。
+5) 分支台账 ledger/branches.csv（含自由文本字段）不得含本机绝对路径或 file: URI（E-PUBLIC-LOCAL-PATH，无豁免）。
 内部主题词检查不在这里（见 check-internal.py，仅本机 pre-push）。输出已脱敏：只给提交短 SHA、文件序号、行号。"""
 import argparse, re, sys
 from pathlib import Path
@@ -144,6 +145,8 @@ def main(argv=None, stdin=None):
                         exempt = local_path_exempt_paths(c)
                     if path not in exempt:
                         print(f"FAIL E-PUBLIC-LOCAL-PATH 新增 raw 文件含本机绝对路径: {gitscan.loc(c, kind, idx, 0)}"); fail = 1
+                if kind == "blob" and path == "ledger/branches.csv" and text is not None and has_local_path(text):
+                    print(f"FAIL E-PUBLIC-LOCAL-PATH 分支台账含本机绝对路径: {gitscan.loc(c, kind, idx, 0)}"); fail = 1
                 where = lambda ln: gitscan.loc(c, kind, idx, ln)  # noqa: E731
                 if text is None:
                     print(f"FAIL E-CHECK-DECODE 无法解码: {where(0)}"); fail = 1

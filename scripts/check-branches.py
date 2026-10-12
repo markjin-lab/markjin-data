@@ -5,7 +5,8 @@
   scripts/check-branches.py [--repo .] [--ref HEAD] [--base REF] [--count-gate [--cutoff YYYY-MM-DD] [--domain D]]
 - 检查 REF 中的 ledger/branches.csv：表头、逐行登记规则（N≥1、L≤U、window_quarters 等）、
   同一 draft_id+branch_order 的事先登记字段不变。
-- 给出 --base 且 base 中已有该文件时，另查只追加：新文件必须以旧文件为前缀。
+- 给出 --base 时另查只追加：新文件必须以旧文件为前缀；base 提交不存在或读不出 → 失败；base 中确实没有该文件 → 视为空。
+- raw 绑定（lu_evidence、quarter_readings、evidence）按 REF 树中 raw/<日期>/MANIFEST.sha256 核对。
 输出只含行号与错误码。退出码 0=通过，1=不通过。
 """
 import argparse, sys
@@ -23,13 +24,21 @@ def main(argv=None):
     ap.add_argument("--cutoff", default="2026-12-31")
     ap.add_argument("--domain")
     a = ap.parse_args(argv)
-    new = branches.git_show(a.repo, a.ref)
+    try:
+        new = branches.git_show(a.repo, a.ref)
+    except branches.GitError:
+        print(f"E-BR-GIT 无法读取 {a.ref}（fail-closed）")
+        return 1
     if new is None:
         print(f"E-BR-MISSING {branches.LEDGER_PATH} 不在 {a.ref}")
         return 1
-    rows, errs = branches.parse(new)
+    rows, errs = branches.parse(new, branches.manifest_from_git(a.repo, a.ref))
     if a.base:
-        old = branches.git_show(a.repo, a.base)
+        try:
+            old = branches.git_show(a.repo, a.base)
+        except branches.GitError:
+            print(f"E-BR-BASE-UNREADABLE 基线 {a.base} 不存在或无法读取（fail-closed）")
+            return 1
         if old is not None and not branches.append_only(old, new):
             errs.append((0, "E-BR-NOT-APPEND-ONLY"))
     for line, code in errs:
