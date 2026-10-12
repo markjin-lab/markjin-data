@@ -90,14 +90,14 @@
 | round2 | ≤28 | ≤34 | ≤10 | ≤72 |
 | 合计/日（含内部集 ≤24） | | | | **≤168** |
 
-辅助脚本 `x_capture.py`（不直接调 X，由 agent 调工具并以 write_to_file 落盘后交给脚本）：
+辅助脚本 `x_capture.py`（不直接调 X，由 agent 调工具并以 write_to_file 落盘后交给脚本）。状态文件和工具结果文件都含帖文，必须放在私有根目录 `$PRIVATE` 下（`--private-root` 或 `$MARKJIN_PRIVATE_DIR`；与公开仓库互不包含，且不能位于任何 git 工作树内），否则脚本拒绝运行：
 ```
-x_capture.py plan    --queries q.json --state S.json --date YYYY-MM-DD --round 1|2   # 自动算 start_time；完整参数写入状态
-x_capture.py reserve --state S.json --tool search_posts_all --slug A01 --page 1      # 每次调用前；不允许 → 退出码 3 + wait_s
-x_capture.py ingest  --state S.json --call-id ID --file RESULT.txt                    # -> {"next": {完整参数 + next_token, "wait_s"}} 或 {"next": null}
-x_capture.py hydrate --state S.json                                                  # get_posts_by_ids 批次（≤100；每批先 reserve --tool get_posts_by_ids）
-x_capture.py ingest-hydrate --state S.json --call-id ID --file RESULT.txt
-x_capture.py leads   --state S.json                                                  # 线索 JSON（label: 线索, source_role: lead）
-x_capture.py budget  --state S.json                                                  # 今日（UTC）已用/剩余、需等待秒数
+x_capture.py plan    --queries q.json --state $PRIVATE/x/state.json --private-root $PRIVATE --date YYYY-MM-DD --round 1|2   # 自动算 start_time；完整参数写入状态
+x_capture.py reserve --state $PRIVATE/x/state.json --private-root $PRIVATE --tool search_posts_all --slug A01 --page 1      # 每次调用前；不允许 → 退出码 3 + wait_s
+x_capture.py ingest  --state $PRIVATE/x/state.json --private-root $PRIVATE --call-id ID --file $PRIVATE/x/results/RESULT.txt                    # -> {"next": {完整参数 + next_token, "wait_s"}} 或 {"next": null}
+x_capture.py hydrate --state $PRIVATE/x/state.json --private-root $PRIVATE                                                  # get_posts_by_ids 批次（≤100；每批先 reserve --tool get_posts_by_ids）
+x_capture.py ingest-hydrate --state $PRIVATE/x/state.json --private-root $PRIVATE --call-id ID --file $PRIVATE/x/results/RESULT.txt
+x_capture.py leads   --state $PRIVATE/x/state.json --private-root $PRIVATE                                                  # 线索 JSON（label: 线索, source_role: lead）
+x_capture.py budget  --state $PRIVATE/x/state.json --private-root $PRIVATE                                                  # 今日（UTC）已用/剩余、需等待秒数
 ```
 `leads` 输出（含补全的 `urls[].expanded_url/unwound_url`）交 `fetch_primary.py` 抓一手来源；抓取结果只写 `fetch_status`，线索身份不变。

@@ -363,21 +363,27 @@ def in_git_worktree(path):
 
 
 def cmd_leads(a, s):
-    """按文档派生规则导出*当天*（最近一次 plan 的日期）的线索。线索含帖文，只写入显式给出的私有目录：
-    PRIVATE/raw/DATE/x/leads-<run>.json（独占创建 + MANIFEST.sha256 只追加）。
-    私有根目录：沿用 collect.resolve_private_root 的与公开根目录不重叠检查，并拒绝位于任何 git 工作树内的目录。
-    stdout 只输出相对私有根目录的路径和条数。"""
+    """按文档派生规则导出线索：lead_date ≤ 当天（最近一次 plan 的日期）且尚未导出。线索含帖文，只写入私有根目录：
+    PRIVATE/raw/DATE/x/leads-<run>.json（独占创建 + MANIFEST.sha256 只追加）。stdout 只输出相对私有根目录的路径和条数。
+    可恢复的单次提交：先把待导出记录（pending_export：路径 + id 列表）写进状态，再写档案，最后记 exported_at。
+    中途失败时，下次运行先核对 pending_export：档案已在 → 补记 exported_at；不在 → 丢弃记录，这些帖子照常重导。"""
     from markjin import collect
-    try:
-        root = collect.resolve_private_root(a.private_root, a.out_root)
-    except collect.ConfigError as e:
-        raise UsageError(str(e))
-    if in_git_worktree(root):
-        raise UsageError("--private-root is inside a git work tree; refusing to write post text there")
+    root = a.root
     date = (s.get("current") or {}).get("date")
     if not date:
         raise UsageError("no plan yet (run plan --date --round first)")
-    wl, items, dropped = whitelist(s, date), [], 0
+    pend = s.pop("pending_export", None)
+    if pend:
+        f = root / pend["path"]
+        if f.is_file():
+            try:
+                done = {str(x.get("id")) for x in strictjson.loads(f.read_text(encoding="utf-8")).get("items", [])}
+            except ValueError:
+                done = set()
+            for pid in pend["ids"]:
+                if pid in done and pid in s["posts"]:
+                    s["posts"][pid]["exported_at"] = pend["at"]
+    wl, items, ids, dropped = whitelist(s, date), [], [], 0
     ts = collect.now()
     for pid, p in s["posts"].items():    # posts 以 id 为键 → 按 id 去重
         if p.get("exported_at"):          # 已导出过的不再导出（重复运行幂等）
@@ -389,12 +395,16 @@ def cmd_leads(a, s):
                 p["lead_date"], p["lead_round"], p["lead_reason"] = date, (s.get("current") or {}).get("round"), why
         if p.get("lead_date") and p["lead_date"] <= date:   # 达标日不晚于当天、且还没导出过（补上漏跑的日子）
             items.append(dict(p, label="线索", source_role="lead"))
-            p["exported_at"] = ts
+            ids.append(pid)
         elif (p.get("last_seen") or {}).get("date", p.get("date")) == date:
             dropped += 1
-    ar = collect.Archive(root / "raw" / date)
     rel = f"x/leads-{collect.stamp()}.json"
-    ar.put_json(rel, {"items": items})
+    s["pending_export"] = {"path": f"raw/{date}/{rel}", "ids": ids, "at": ts}
+    save_state(a.state, s)                       # 先写状态（待导出记录）
+    collect.Archive(root / "raw" / date).put_json(rel, {"items": items})   # 再写档案
+    for pid in ids:
+        s["posts"][pid]["exported_at"] = ts
+    s.pop("pending_export", None)                # main 随后保存状态
     return {"path": f"raw/{date}/{rel}", "count": len(items), "filtered_out": dropped}
 
 
@@ -403,37 +413,66 @@ def cmd_budget(a, s):
     return {"used_today_utc": u, "remaining": DAY_CAP - u, "wait_s": wait_needed(s)}
 
 
+def private_paths(a):
+    """所有子命令：状态文件与工具结果文件都必须位于 --private-root（或 $MARKJIN_PRIVATE_DIR）下；私有根目录沿用
+    collect.resolve_private_root 的与公开根目录不重叠检查，并拒绝位于任何 git 工作树内的目录。返回私有根目录。"""
+    from markjin import collect
+    try:
+        root = collect.resolve_private_root(a.private_root, a.out_root)
+    except collect.ConfigError as e:
+        raise UsageError(str(e))
+    if in_git_worktree(root):
+        raise UsageError("--private-root is inside a git work tree; refusing to keep X post text there")
+
+    def inside(p, what):
+        q = Path(p).resolve()
+        if q != root and root not in q.parents:
+            raise UsageError(f"{what} must be inside --private-root")
+    inside(a.state, "--state")
+    if getattr(a, "file", None):
+        inside(a.file, "--file")
+    return root
+
+
 def main(argv=None):
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--state", required=True, help="状态文件，必须位于私有根目录下（如 $PRIVATE/x/state.json）")
+    common.add_argument("--private-root", help="私有根目录（或 $MARKJIN_PRIVATE_DIR）；不能在 git 工作树内")
+    common.add_argument("--out-root", default=".", help="公开仓库根目录（与私有根目录互不包含）")
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
-    p = sp.add_parser("plan"); p.add_argument("--queries", required=True); p.add_argument("--state", required=True)
+    p = sp.add_parser("plan", parents=[common]); p.add_argument("--queries", required=True)
     p.add_argument("--date", required=True); p.add_argument("--round", type=int, choices=(1, 2), required=True)
     p.set_defaults(f=cmd_plan, mut=True)
-    p = sp.add_parser("reserve"); p.add_argument("--state", required=True)
+    p = sp.add_parser("reserve", parents=[common])
     p.add_argument("--tool", choices=TOOLS, required=True); p.add_argument("--slug"); p.add_argument("--page", type=int)
     p.add_argument("--batch", type=int); p.add_argument("--args", help="可选：本次实际调用参数 JSON，须与计划一致")
     p.set_defaults(f=cmd_reserve, mut=True)
-    p = sp.add_parser("cancel"); p.add_argument("--state", required=True); p.add_argument("--call-id", required=True)
+    p = sp.add_parser("cancel", parents=[common]); p.add_argument("--call-id", required=True)
     p.set_defaults(f=cmd_cancel, mut=True)
     for n, f in (("ingest", cmd_ingest), ("ingest-hydrate", cmd_ingest_hydrate)):
-        p = sp.add_parser(n); p.add_argument("--state", required=True); p.add_argument("--call-id", required=True)
-        p.add_argument("--file", required=True); p.set_defaults(f=f, mut=True)
-    p = sp.add_parser("leads"); p.add_argument("--state", required=True)
-    p.add_argument("--private-root", required=True, help="私有输出根目录（必须显式给出，不能在 git 工作树内）")
-    p.add_argument("--out-root", default=".", help="公开仓库根目录（与私有根目录互不包含）")
+        p = sp.add_parser(n, parents=[common]); p.add_argument("--call-id", required=True)
+        p.add_argument("--file", required=True, help="工具结果文件，必须位于私有根目录下")
+        p.set_defaults(f=f, mut=True)
+    p = sp.add_parser("leads", parents=[common])
     p.set_defaults(f=cmd_leads, mut=True)   # 记 exported_at / 补判 lead_date
     for n, f in (("hydrate", cmd_hydrate), ("budget", cmd_budget)):
-        p = sp.add_parser(n); p.add_argument("--state", required=True); p.set_defaults(f=f, mut=False)
+        p = sp.add_parser(n, parents=[common]); p.set_defaults(f=f, mut=False)
     a = ap.parse_args(argv)
     try:
+        a.root = private_paths(a)
         s = load_state(a.state)
         r = a.f(a, s)
+        rc = 0
+        if isinstance(r, tuple):
+            r, rc = r
+        if a.mut:
+            save_state(a.state, s)
     except (UsageError, ValueError, KeyError) as e:
         print(f"error: {type(e).__name__}: {e}", file=sys.stderr); return 2
-    rc = 0
-    if isinstance(r, tuple):
-        r, rc = r
-    if a.mut:
-        save_state(a.state, s)
+    except OSError as e:                 # 只输出错误类别，不带出私有路径
+        print(f"error: {type(e).__name__} (errno {e.errno})", file=sys.stderr); return 1
+    except Exception as e:               # 如 ArchiveError：同样只给类别
+        print(f"error: {type(e).__name__}", file=sys.stderr); return 1
     print(json.dumps(r, ensure_ascii=False, indent=1))
     return rc
 

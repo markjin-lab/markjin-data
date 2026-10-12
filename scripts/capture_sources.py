@@ -103,12 +103,11 @@ def run_scraper(fetcher, raw_ar, sub, sid, s, url):
         items = scrapers.get(s["scraper"]).scrape(fetch, url, None, **(s.get("scraper_args") or {}))
     except Exception as e:
         r = collect.Result(False, error=f"scraper:{type(e).__name__}", detail=str(e)[:160])
-        r.hop_raws = hop_raws
-        return r, raws
-    if not items:
-        return collect.Result(False, error="scraper:no_items"), raws
-    return collect.Result(True, 200, "application/json",
-                          json.dumps(items, ensure_ascii=False).encode()), raws
+    else:
+        r = collect.Result(False, error="scraper:no_items") if not items else \
+            collect.Result(True, 200, "application/json", json.dumps(items, ensure_ascii=False).encode())
+    r.hop_raws = hop_raws          # 所有返回路径都带上每次响应的私有存档记录（含 robots、重试、跳转）
+    return r, raws
 
 
 def main(argv=None):
@@ -189,9 +188,9 @@ def main(argv=None):
                    "license": lic, "content_type": "scraper", "raw_responses": [x["sha256"] for x in raws]}
             if raws:
                 rec["stored"] = "internal" if internal else "private"
-                raw_logs[where].append({"id": sid, "run": run, "raws": raws, "url": purl})
-            if getattr(r, "hop_raws", None):
-                raw_logs[where].append({"id": sid, "run": run, "url": purl, "error": r.error, "hop_raws": r.hop_raws})
+            if raws or r.hop_raws:          # 每个 scraper 统一一条私有抓取记录
+                raw_logs[where].append({"id": sid, "run": run, "url": purl, "ok": r.ok, "error": r.error,
+                                        "raws": raws, "hop_raws": r.hop_raws})
             if r.ok:
                 raw_ar.put_derived(sub, sid, sha, f"items-{run}.json", r.body,
                                    sources=[x["sha256"] for x in raws])   # 登记全部原件

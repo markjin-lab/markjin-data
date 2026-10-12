@@ -44,7 +44,7 @@ class ScraperCapture(unittest.TestCase):
         man = (day / "MANIFEST.sha256").read_text()
         raws = sorted(p.read_bytes() for p in (day / "anthropic-news").glob("*.xml"))
         self.assertEqual(raws, sorted([idx, s1]))                                   # 每个原始响应都存档
-        self.assertEqual(man.count("anthropic-news/"), 2)
+        self.assertEqual(man.count("anthropic-news/"), 3)                            # r8：子 sitemap 的 robots.txt 响应也存档
         der = list((day / "anthropic-news/derived").glob("*items-*.json"))
         self.assertEqual(len(der), 1)
         self.assertIn("news/foo", der[0].read_text())
@@ -161,16 +161,19 @@ class XCapture(unittest.TestCase):
     def x(self, *a):
         import io, contextlib
         buf = io.StringIO()
+        a = list(a)
+        if "--private-root" not in a:          # r8：状态与工具结果文件必须在私有根目录下
+            a += ["--private-root", str(self.d)]
         with contextlib.redirect_stdout(buf):
-            rc = XC.main(list(a))
+            rc = XC.main(a)
         return rc, (json.loads(buf.getvalue()) if buf.getvalue().strip() else None)
 
     def leads(self):
-        rc, r = self.x("leads", "--state", str(self.st), "--private-root", str(self.d / "priv"))
+        rc, r = self.x("leads", "--state", str(self.st), "--private-root", str(self.d))
         self.assertEqual(rc, 0)
         self.assertEqual(set(r), {"path", "count", "filtered_out"})          # stdout 只有路径和条数
         self.assertFalse(Path(r["path"]).is_absolute())                         # 相对私有根目录
-        out = json.loads((self.d / "priv" / r["path"]).read_text())
+        out = json.loads((self.d / r["path"]).read_text())
         self.assertEqual(len(out["items"]), r["count"])
         out["filtered_out"] = r["filtered_out"]
         return out
@@ -628,25 +631,30 @@ class R4XCapture(R3XCapture):
 
     def test_leads_requires_private_root_and_appends(self):
         self.plan()
-        with self.assertRaises(SystemExit):
-            XC.main(["leads", "--state", str(self.st)])
+        import os
+        old = os.environ.pop("MARKJIN_PRIVATE_DIR", None)
+        try:
+            self.assertEqual(XC.main(["leads", "--state", str(self.st)]), 2)          # 没有私有根目录 → 拒绝
+        finally:
+            if old is not None:
+                os.environ["MARKJIN_PRIVATE_DIR"] = old
         s = XC.load_state(self.st)
         s["posts"] = {"1": {"id": "1", "text": "SECRET TEXT", "public_metrics": {"like_count": 50}, "date": "2026-10-12"}}
         XC.save_state(self.st, s)
         import io, contextlib
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            XC.main(["leads", "--state", str(self.st), "--private-root", str(self.d / "priv")])
+            XC.main(["leads", "--state", str(self.st), "--private-root", str(self.d)])
         self.assertNotIn("SECRET TEXT", buf.getvalue())
         r1 = json.loads(buf.getvalue())
         r2 = self.leads()
-        day = self.d / "priv/raw/2026-10-12"
+        day = self.d / "raw/2026-10-12"
         files = sorted((day / "x").glob("leads-*.json"))
         self.assertEqual(len(files), 2)                                                  # 每次新建，不覆盖
         man = (day / "MANIFEST.sha256").read_text()
         for f in files:
             self.assertIn("./x/" + f.name, man)
-        self.assertIn("SECRET TEXT", (self.d / "priv" / r1["path"]).read_text())
+        self.assertIn("SECRET TEXT", (self.d / r1["path"]).read_text())
 
 
 def dt_same_utc_day(a, b):
@@ -834,7 +842,7 @@ class R5XCapture(R4XCapture):
         out = self.leads()      # r7：lead_date ≤ 当天且未导出过 → 10-12 达标但当天漏跑的 1 号也补导出
         self.assertEqual(sorted(i["id"] for i in out["items"]), ["1", "2"])
         self.assertIn("raw/2026-10-13/x/leads-", out_path := self.x("leads", "--state", str(self.st),
-                      "--private-root", str(self.d / "priv"))[1]["path"])
+                      "--private-root", str(self.d))[1]["path"])
         self.assertFalse(out_path.startswith("/"))
 
     def test_whitelist_only_current_day_queries(self):
@@ -1005,13 +1013,114 @@ class R7Primary(R6Primary):
     def test_long_challenge_302_disables(self):
         u = "https://e.org/page"
         body = b"<html><head><title>x</title></head><body><p>Please enable JavaScript and cookies to continue</p>" + \
-               b"<p>pad</p>" * 400 + b"</body></html>"
+               b"<p>pad</p>" * 400 + b"<div class='cf-turnstile'></div></body></html>"      # r8：长页须有厂商标记才停用
         st = collect.HostState(self.base / "hs.json")
         _, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}],
                                 {u: Resp(302, body, {"Location": "https://e.org/next"}), "https://e.org/next": Resp(200, b"ok")},
                                 state=st)
         self.assertEqual(idx[0]["fetch_status"], "challenge")
         self.assertIn("e.org", collect.HostState(self.base / "hs.json").data["hosts"])
+
+
+class R8XCapture(R7XCapture):
+    """PR #6 审查 r8：状态/工具结果文件必须在私有根目录下；导出可恢复；错误不带私有路径。"""
+
+    def test_state_and_file_must_be_inside_private_root(self):
+        other = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        rc, _ = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(other / "S.json"),
+                       "--date", "2026-10-12", "--round", "1")
+        self.assertEqual(rc, 2)
+        self.assertFalse((other / "S.json").exists())
+        self.plan()
+        _, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        f = other / "r.txt"; f.write_text("x\n{\"data\": []}\n")
+        rc, _ = self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"], "--file", str(f))
+        self.assertEqual(rc, 2)
+
+    def test_private_root_in_git_worktree_or_overlap_rejected_for_all_commands(self):
+        import subprocess
+        g = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        subprocess.run(["git", "init", "-q", str(g)], check=True)
+        for cmd in (["plan", "--queries", str(self.d / "q.json"), "--date", "2026-10-12", "--round", "1"], ["budget"],
+                    ["hydrate"], ["leads"]):
+            rc, _ = self.x(*cmd, "--state", str(g / "x/state.json"), "--private-root", str(g))
+            self.assertEqual(rc, 2, cmd)
+        self.assertFalse((g / "x").exists())
+        rc, _ = self.x("budget", "--state", str(self.st), "--private-root", str(self.d), "--out-root", str(self.d / "sub"))
+        self.assertEqual(rc, 2)                                                           # 与公开根目录重叠
+
+    def _seed_lead(self):
+        self.plan()
+        s = XC.load_state(self.st)
+        s["posts"] = {"7": {"id": "7", "text": "SECRET", "public_metrics": {"like_count": 99}, "date": "2026-10-12",
+                            "lead_date": "2026-10-12", "lead_reason": "like_count>=20"}}
+        XC.save_state(self.st, s)
+
+    def test_archive_write_failure_recovers_without_path_leak(self):
+        import io, contextlib
+        from markjin import collect
+        self._seed_lead()
+        orig = collect.Archive.put_json
+
+        def boom(*a, **k):
+            raise PermissionError(13, "Permission denied", str(self.d / "raw/secret-path"))
+        collect.Archive.put_json = boom
+        try:
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc, _ = self.x("leads", "--state", str(self.st))
+        finally:
+            collect.Archive.put_json = orig
+        self.assertEqual(rc, 1)
+        self.assertIn("PermissionError", err.getvalue())
+        self.assertNotIn(str(self.d), err.getvalue())                                     # 不带出私有路径
+        st = XC.load_state(self.st)
+        self.assertIn("pending_export", st)                                               # 先写了状态
+        self.assertNotIn("exported_at", st["posts"]["7"])
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])                 # 重跑照常导出
+        self.assertNotIn("pending_export", XC.load_state(self.st))
+        self.assertEqual(self.leads()["items"], [])
+
+    def test_state_save_failure_after_archive_not_reexported(self):
+        self._seed_lead()
+        orig, n = XC.save_state, [0]
+
+        def flaky(p, s):
+            n[0] += 1
+            if n[0] == 2:                       # 第 1 次：pending；第 2 次（档案写完后）失败
+                raise OSError(28, "No space left on device")
+            orig(p, s)
+        XC.save_state = flaky
+        try:
+            rc, _ = self.x("leads", "--state", str(self.st))
+        finally:
+            XC.save_state = orig
+        self.assertEqual(rc, 1)
+        self.assertEqual(len(list((self.d / "raw/2026-10-12/x").glob("leads-*.json"))), 1)
+        self.assertEqual(self.leads()["items"], [])                                       # 档案已在 → 只补记，不重导
+        self.assertTrue(XC.load_state(self.st)["posts"]["7"]["exported_at"])
+
+
+class R8Scraper(R7Scraper):
+    def test_success_path_records_hop_raws(self):
+        rc, out, op = self.run_cs({"https://www.anthropic.com/robots.txt": Resp(200, b"User-agent: *\nAllow: /\n"),
+                                   "https://www.anthropic.com/sitemap.xml": Resp(301, b"moved",
+                                                                                 {"Location": "https://www.anthropic.com/sm2.xml"}),
+                                   "https://www.anthropic.com/sm2.xml": Resp(200, self.S1)})
+        self.assertEqual(rc, 0)
+        log = [json.loads(l) for p in (out.parent / "priv").rglob("fetch-log-*.jsonl") for l in p.read_text().splitlines()]
+        self.assertEqual(len(log), 1)                                                     # 统一一条记录
+        self.assertTrue(log[0]["ok"])
+        self.assertEqual([h["status"] for h in log[0]["hop_raws"]], [200, 301, 200])      # robots、跳转、正文
+        self.assertTrue(log[0]["raws"])
+
+    def test_no_items_path_records_hop_raws(self):
+        empty = b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'/>"
+        rc, out, op = self.run_cs({"https://www.anthropic.com/sitemap.xml": Resp(200, empty)})
+        self.assertEqual(rc, 1)
+        log = [json.loads(l) for p in (out.parent / "priv").rglob("fetch-log-*.jsonl") for l in p.read_text().splitlines()]
+        self.assertEqual(log[0]["error"], "scraper:no_items")
+        self.assertTrue(log[0]["hop_raws"])
 
 
 if __name__ == "__main__":

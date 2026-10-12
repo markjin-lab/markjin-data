@@ -138,7 +138,8 @@ def main(argv=None, fetcher=None):
     pub = collect.Archive(Path(a.out_root) / "raw" / a.date)
     priv = collect.Archive(priv_root / "raw" / a.date)
     f = fetcher or collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"),
-                                   interval=a.interval, fakeip_cidr=a.proxy_fakeip_cidr or "")
+                                   interval=a.interval, fakeip_cidr=a.proxy_fakeip_cidr or "",
+                                   lock_dir=priv_root / "state" / "locks")    # SEC 跨进程限速锁
     # 外部传入的 Fetcher：其自带策略与本次强制策略合取（两边都放行才放行），不能用宽松策略绕过
     # （强制策略沿用该 Fetcher 的解析器，保证检查的是它实际会连接的解析结果）
     policy = collect.AddressPolicy(a.proxy_fakeip_cidr, resolver=f.resolver)
