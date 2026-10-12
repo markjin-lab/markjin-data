@@ -109,12 +109,20 @@ def resolve_internal_root(arg, out_root, env="MARKJIN_INTERNAL_DIR"):
 
 
 # ---------------------------------------------------------------- URL 脱敏
-def public_url(u, public_params=()):
-    """用于一切记录/日志（公开与私有）：去掉 userinfo、片段和查询串。查询参数的*值*默认一律不记
-    （日志只记参数个数，见 query_count）；只有该源在 sources.yaml 里用 public_params 显式声明的参数才保留值。"""
+def url_sha256(u):
+    return hashlib.sha256(u.strip().encode("utf-8")).hexdigest()
+
+
+def public_url(u, public_params=(), public_path=False):
+    """用于一切记录/日志（公开与私有）。默认只写 scheme://主机/ 加完整 URL 的 sha256（作为片段
+    #sha256=…），路径、查询串一律不写——路径里也可能有凭证。只有逐条确认路径不含凭证（public_path=True：
+    sources.yaml 里该源声明 public_path: true，或逐条许可证据已核实）才写出路径；查询值仍只保留该源
+    public_params 声明的参数（日志只记参数个数，见 query_count）。"""
     p = urlsplit(u.strip())
     host = (p.hostname or "").lower()
     netloc = (f"[{host}]" if ":" in host else host) + (f":{p.port}" if p.port else "")
+    if not public_path:
+        return f"{p.scheme.lower()}://{netloc}/#sha256={url_sha256(u)}"
     keep = set(public_params or ())
     q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k in keep]
     return urlunsplit((p.scheme.lower(), netloc, p.path, urlencode(q), ""))
@@ -364,11 +372,16 @@ def suspect_status(st):
     return st in (401, 429) or 500 <= st < 600
 
 
+_TAG_START = re.compile(rb"<(?:!|\?|/?[a-z][a-z0-9-]*(?:[\s/>]|$))", re.I)
+
+
 def looks_html(headers, body):
+    """是否 HTML：Content-Type 含 html，或正文（去 BOM/空白后）以 < 开头的标签片段（含 text/plain 下的
+    <div>…、<!doctype …>、<?xml …>）。robots.txt 正文合法情况下不会以标签开头。"""
     ct = ((headers or {}).get("Content-Type") or "").lower()
     head = body[:2048].lstrip(b"\xef\xbb\xbf \r\n\t").lower()
-    return "html" in ct or head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<html" in head \
-        or b"<body" in head or b"<script" in head
+    return "html" in ct or bool(_TAG_START.match(head)) or b"<html" in head or b"<body" in head \
+        or b"<script" in head
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
@@ -509,6 +522,8 @@ class Fetcher:
                 st, ec, body, h = 0, "robots_blocked_address", b"", {}; break
             st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*", html_is_challenge=True)
             h = h or {}
+            if body and CHALLENGE.search(body[:20000]):
+                break                    # 先查验证页（含带验证内容的 3xx），命中即停用，不再跟随 Location
             if st in REDIRECT_CODES:
                 loc = h.get("Location")
                 if not loc:
@@ -571,6 +586,9 @@ class Fetcher:
                 return Result(False, final_url=cur, hops=hops, error="robots_disallow")
             st, h, body, ec, det = self._with_retry(cur, accept)
             ctype = (h.get("Content-Type") if h else "") or ""
+            if body and CHALLENGE.search(body[:20000]):    # 每一跳先查验证页，再处理 Location
+                self.state.disable(host, sid, f"bot challenge page (HTTP {st})")
+                return Result(False, st, ctype, b"", cur, hops, "challenge")
             if st in REDIRECT_CODES:
                 loc = h.get("Location") if h else None
                 if not loc:
@@ -578,9 +596,6 @@ class Fetcher:
                 hops.append({"from": public_url(cur), "query_param_count": query_count(cur), "status": st})   # hops 只存脱敏 URL
                 cur = urljoin(cur, loc)
                 continue
-            if body and CHALLENGE.search(body[:20000]):
-                self.state.disable(host, sid, f"bot challenge page (HTTP {st})")
-                return Result(False, st, ctype, b"", cur, hops, "challenge")
             if st == 403:
                 self.state.disable(host, sid, "HTTP 403")
                 return Result(False, st, ctype, b"", cur, hops, "http_403")

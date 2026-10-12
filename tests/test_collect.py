@@ -104,7 +104,8 @@ class Paths(unittest.TestCase):
 
 class Redact(unittest.TestCase):
     def test_public_url_strips_secrets_and_tracking(self):
-        u = collect.public_url("https://user:pw@Example.org/a?api_key=SEKRIT&page=1&utm_source=t&token=T&s=20#f")
+        u = collect.public_url("https://user:pw@Example.org/a?api_key=SEKRIT&page=1&utm_source=t&token=T&s=20#f",
+                               public_path=True)
         self.assertEqual(u, "https://example.org/a")
         self.assertNotIn("SEKRIT", collect.public_url("https://e.org/?apiKey=SEKRIT"))
         self.assertNotIn("SEKRIT", collect.public_url("https://e.org/?X-Amz-Signature=SEKRIT"))
@@ -392,7 +393,8 @@ class R2Fixes(unittest.TestCase):
         r = f.get("https://api.f.org/obs?series_id=X&api_key=SEKRITKEY")
         self.assertTrue(r.ok)
         self.assertNotIn("SEKRITKEY", json.dumps(r.hops))
-        self.assertEqual(r.hops[0]["from"], "https://api.f.org/obs")
+        self.assertEqual(r.hops[0]["from"], "https://api.f.org/#sha256=" +
+                         collect.url_sha256("https://api.f.org/obs?series_id=X&api_key=SEKRITKEY"))
         self.assertEqual(r.hops[0]["query_param_count"], 2)
         self.assertNotIn("api_key", json.dumps(r.hops))
 
@@ -419,13 +421,13 @@ class R2Fixes(unittest.TestCase):
         for p in logs:
             self.assertNotIn("SEKRITKEY", p.read_text(encoding="utf-8"), p.name)
         fl = next(p for p in logs if "fetch-log" in p.name).read_text(encoding="utf-8")
-        self.assertIn('"hops": [{"from": "https://api.f.org/obs"', fl)
+        self.assertIn('"hops": [{"from": "https://api.f.org/#sha256=', fl)
 
     def test_public_url_allowlist(self):
         u = collect.public_url("https://s3.a.org/o?AWSAccessKeyId=AKIA123&Expires=1&Signature=S&series_id=X"
                                "&X-Goog-Credential=G&whatever=W&page=2")
-        self.assertEqual(u, "https://s3.a.org/o")
-        self.assertEqual(collect.public_url("https://a.org/o?series_id=X&page=TOK", ["series_id"]),
+        self.assertTrue(u.startswith("https://s3.a.org/#sha256="))
+        self.assertEqual(collect.public_url("https://a.org/o?series_id=X&page=TOK", ["series_id"], True),
                          "https://a.org/o?series_id=X")
 
     def test_interval_floor(self):
@@ -546,13 +548,15 @@ class R3Fixes(unittest.TestCase):
         self.assertFalse(collect.CHALLENGE.search(b"<p>We discuss CAPTCHA research in this paper.</p>"))
 
     def test_logs_have_no_query_values(self):
-        self.assertEqual(collect.public_url("https://a.org/?page=TOKENVALUE&q=api_key%3DTOKENVALUE"), "https://a.org/")
+        self.assertEqual(collect.public_url("https://a.org/?page=TOKENVALUE&q=api_key%3DTOKENVALUE", public_path=True),
+                         "https://a.org/")
+        self.assertNotIn("TOKENVALUE", collect.public_url("https://a.org/?page=TOKENVALUE"))
         self.assertEqual(collect.query_count("https://a.org/?page=TOKENVALUE&q=x&page=2"), 3)
 
     def test_capture_public_params_declared_per_source(self):
         t = CaptureT("test_auth_key_never_logged"); t.setUp()
         s = dict(CaptureT.S, id="api", method="api", url="https://f.org/a.json?series_id=S1&page=TOKENVALUE",
-                 public_params=["series_id"])
+                 public_params=["series_id"], public_path=True)
         rc = t.run_cs([s], {"https://f.org/a.json?series_id=S1&page=TOKENVALUE": Resp(200, b'{"o": 1}')})
         self.assertEqual(rc, 0)
         txt = "".join(p.read_text() for root in (t.out, t.priv) for p in root.rglob("*")
@@ -661,6 +665,73 @@ class R4Fixes(unittest.TestCase):
         self.assertNotIn("TOKENNAME", txt)
         self.assertNotIn("OTHERSECRET", txt)
         self.assertIn('"query_param_count": 2', txt)
+
+
+class R5Fixes(unittest.TestCase):
+    """PR #3 审查 r5 REJECTED 修复的针对性测试（临时目录用 TemporaryDirectory）。"""
+
+    def tmpdir(self):
+        return Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def test_looks_html_fragments(self):
+        for b in (b"<div>Check your browser</div>", b"  \n<p>x", b"<!DOCTYPE html>", b"<span class=a>", b"<br/>",
+                  b"\xef\xbb\xbf<div>x</div>"):
+            self.assertTrue(collect.looks_html({"Content-Type": "text/plain"}, b), b)
+        for b in (b"User-agent: *\nDisallow: /\n", b"# comment <div>\nUser-agent: *", b"< not a tag", b"<3 robots"):
+            self.assertFalse(collect.looks_html({"Content-Type": "text/plain"}, b), b)
+
+    def _robots(self, resp):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+        r = f.get("https://a.org/p", sid="s")
+        return r, [u for u, _ in f.opener.calls], collect.HostState(p).data
+
+    def test_robots_text_plain_html_fragment_200_and_429_disable(self):
+        for st in (200, 429):
+            r, calls, d = self._robots(Resp(st, b"<div>Check your browser</div>", {"Content-Type": "text/plain"}))
+            self.assertEqual(r.error, "disabled", st)
+            self.assertIn("a.org", d["hosts"], st)
+            self.assertNotIn("https://a.org/p", calls)
+            self.assertEqual(calls.count("https://a.org/robots.txt"), 1, st)          # 429 也不重试
+
+    def test_robots_302_with_challenge_body_disables_before_location(self):
+        r, calls, d = self._robots(Resp(302, b'<form id="challenge-form"></form>',
+                                        {"Location": "https://a.org/robots2.txt"}))
+        self.assertEqual(r.error, "disabled")
+        self.assertIn("a.org", d["hosts"])
+        self.assertNotIn("https://a.org/robots2.txt", calls)
+        self.assertNotIn("https://a.org/p", calls)
+
+    def test_content_302_with_challenge_body_disables_before_location(self):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk({"https://a.org/x": Resp(302, b'<form id="challenge-form"></form>', {"Location": "https://a.org/y"}),
+                   "https://a.org/y": Resp(200, b"ok")}, state=collect.HostState(p))
+        r = f.get("https://a.org/x", sid="s")
+        self.assertEqual(r.error, "challenge")
+        self.assertNotIn("https://a.org/y", [u for u, _ in f.opener.calls])
+        self.assertIn("a.org", collect.HostState(p).data["hosts"])
+
+    def test_public_url_default_host_plus_hash(self):
+        u = "https://docs.e.org/private/TOKENPATH/document?key=TOKENQUERY"
+        pu = collect.public_url(u)
+        self.assertEqual(pu, "https://docs.e.org/#sha256=" + collect.url_sha256(u))
+        self.assertNotIn("TOKENPATH", pu)
+        self.assertEqual(collect.public_url(u, public_path=True), "https://docs.e.org/private/TOKENPATH/document")
+
+    def test_capture_index_path_only_when_source_confirms(self):
+        t = CaptureT("test_auth_key_never_logged"); t.setUp()
+        s1 = dict(CaptureT.S, id="a1", method="api", url="https://f.org/TOKENPATH/a.json")
+        s2 = dict(CaptureT.S, id="a2", method="api", url="https://f.org/public/b.json", public_path=True)
+        import io, contextlib
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = t.run_cs([s1, s2], {"https://f.org/TOKENPATH/a.json": Resp(200, b'{"o": 1}'),
+                                     "https://f.org/public/b.json": Resp(200, b'{"o": 2}')})
+        self.assertEqual(rc, 0)
+        pub = "".join(p.read_text() for p in t.out.rglob("*") if p.is_file())
+        self.assertNotIn("TOKENPATH", pub + err.getvalue())
+        self.assertIn("https://f.org/#sha256=", pub)
+        self.assertIn("https://f.org/public/b.json", pub)
 
 
 if __name__ == "__main__":

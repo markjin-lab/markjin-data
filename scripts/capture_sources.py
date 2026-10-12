@@ -19,7 +19,8 @@ Fetcher（逐跳 robots、限速、停用），每个原始响应先按字节私
   不做逐条许可核验，因此全文永不进公开目录（逐条全文见 fetch_primary.py 的 license evidence）。
   internal_only 源：原件与记录全部写入内部目录，公开目录不写任何东西。
 公开与私有记录都不含本机路径，URL 不带查询值（只记参数个数 query_param_count，不记参数名）；某源确需公开的参数值须在
-sources.yaml 里按源声明 public_params: [name, ...]。stored 只写 private/internal。
+sources.yaml 里按源声明 public_params: [name, ...]。URL 默认只写 scheme://主机/#sha256=<完整 URL 的 sha256>；
+逐源确认路径不含凭证后，声明 public_path: true 才写出路径。stored 只写 private/internal。
 地址策略强制生效（每一跳）：拒绝本机/内网/链路本地/保留地址；经透明代理时用 --proxy-fakeip-cidr 或
 $MARKJIN_PROXY_FAKEIP_CIDR 声明代理假 IP 网段（只接受 198.18.0.0/15 内）。
 需要免费密钥的 API：auth_env（环境变量名）+ auth_param（查询参数名），密钥只在请求时拼接，不进任何记录。
@@ -167,7 +168,8 @@ def main(argv=None):
         url = expand_url(s["url"], a.date)
         lic = s.get("license", "url+hash-only")
         pp = s.get("public_params") or ()
-        purl = collect.public_url(url, pp)
+        ppath = s.get("public_path") is True       # 逐源确认路径不含凭证后才公开路径
+        purl = collect.public_url(url, pp, ppath)
         t0 = collect.now()
         raws = []
         if s["method"] == "scraper":
@@ -197,7 +199,7 @@ def main(argv=None):
                     raw_ar.put_derived(sub, sid, sha, kind, gzip.decompress(r.body))
                 rec["stored"] = "internal" if internal else "private"
                 raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": purl, "parsed": kind,
-                                        "final_url": collect.public_url(r.final_url or url, pp), "hops": r.hops})
+                                        "final_url": collect.public_url(r.final_url or url, pp, ppath), "hops": r.hops})
         if r.ok and kind:
             (int_ar if internal else pub_ar).put_json(
                 f"{sub}{sid}/index-{run}.json",
