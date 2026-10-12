@@ -116,11 +116,13 @@ def normalize_numbers(s):
 
 
 # —— 否定（按分句、计奇偶）
-NEG_ZH = ("未能", "尚未", "并非", "不是", "无法", "不能", "不会", "无需", "无须", "不必", "不用", "没有", "未", "没", "不", "非", "无")
+NEG_ZH = ("难以", "尚待", "有待", "未曾", "从未", "未能", "尚未", "并非", "不是", "无法", "不能", "不会", "无需", "无须", "不必", "不用", "没有", "未", "没", "不", "非", "无")
 NOT_NEG_ZH = ("不变", "不同", "不断", "不少", "不仅", "不久", "不过", "不论", "无论", "非常", "并且", "无人机", "非洲",
               "持平", "不等", "不止")
-NEG_EN = re.compile(r"\b(?:not|no|never|cannot|without|unable|neither|nor|fail(?:s|ed|ing)?\s+to)\b|n't", re.I)
-NOT_NEG_EN = re.compile(r"\bno\.\s*\d|\bnot only\b|\bno longer\b", re.I)
+# r4：no longer 是否定（“no longer reaches”≠“仍达到”）；隐性否定 hardly/barely/scarcely/yet to/remain(s) to be 硬拦
+NEG_EN = re.compile(r"\b(?:no\s+longer|not|no|never|cannot|without|unable|neither|nor|hardly|barely|scarcely|"
+                    r"yet\s+to|remains?\s+to\s+be|fail(?:s|ed|ing)?\s+to)\b|n't", re.I)
+NOT_NEG_EN = re.compile(r"\bno\.\s*\d|\bnot only\b", re.I)
 CLAUSE_RE = re.compile(r"[，；;。！？、]|,(?!\d{3})|[.!?](?=\s|$)")
 
 
@@ -139,3 +141,29 @@ def neg_count(s):
 
 def clauses(s):
     return [c for c in CLAUSE_RE.split(s) if c.strip()]
+
+
+# —— r4：without / 无需 只否定它后面那个动作，不否定整句。先把“without X”“无需 X”整段挖出来单独配对，
+#    再对剩下的主干比较否定奇偶。前置（“无需微调即达到…”“Without fine-tuning, …”）和后置写法都适用。
+_SCOPED_EN = re.compile(r"\b(?:without|no\s+need\s+(?:to|for))\s+(?:any\s+|the\s+|a\s+|an\s+)?[\w\-]+", re.I)
+_SCOPED_ZH = re.compile(r"(?:无需|无须|不必|不用|不需要)(?:[^\s，,；;。即就便也]{1,6}?(?=即|就|便|也|[，,；;。]|$)|[^\s，,；;。即就便也]{0,2})")
+
+
+def strip_scoped(s):
+    """返回 (挖掉 without/无需 短语后的文本, 挖掉的短语个数)。"""
+    n = 0
+    def f(m):
+        nonlocal n
+        n += 1
+        return " "
+    s = _SCOPED_EN.sub(f, s)
+    s = _SCOPED_ZH.sub(f, s)
+    return s, n
+
+
+# —— r4：基点是独立单位，100 bp = 1 个百分点。比较前把“N 基点 / basis points / bp”换成“N/100 个百分点”。
+_BP_RE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:个基点|基点|basis\s+points?|bps?(?![A-Za-z]))", re.I)
+
+
+def bp_to_pp(s):
+    return _BP_RE.sub(lambda m: _fmt(Decimal(m.group(1)) / 100) + " 个百分点", s)

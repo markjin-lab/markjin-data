@@ -231,8 +231,10 @@ class NegationByClause(Base):
         loc = "Without fine-tuning, the model reaches 90% accuracy on MMLU."
         repo = custom_repo(loc)
         self.expect(run(T + arxiv_line("无需微调，模型在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo), "PASS")   # P2
-        # “经过微调”分句不含数字，与整个片段比：片段含 without → 奇偶不同 → 拦
-        self.expect(run(T + arxiv_line("经过微调，模型在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        # r4：without 只否定“微调”，不否定“达到 90%”。“经过微调”与 without 的矛盾属于前提语义，机器不硬拦，
+        # 只保留人工审查提示，交 Codex 核对（见 PR 说明“局限”）
+        r = run(T + arxiv_line("经过微调，模型在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo)
+        self.assertNotIn("E-SUPPORT-LOCATOR-MISMATCH", r["error_codes"]); self.assertIn("R-SUPPORT-REVIEW", r["error_codes"])
 
     def test_double_negation(self):
         loc = "The model is able to reach 90% accuracy on MMLU."
@@ -247,6 +249,93 @@ class NegationByClause(Base):
         loc = "The model fails to reach 90% accuracy on MMLU."
         repo = custom_repo(loc)
         self.expect(run(T + arxiv_line("模型在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class ObjectPairing(Base):
+    """#32 r4：先按对象配对分句，配不出唯一一句就判错配。原文两个分句都含“90% 和 MMLU”。"""
+    LOC = "Model A reaches 90% accuracy on MMLU, while Model B fails to reach 90% accuracy on MMLU."
+
+    def test_b_negative_direction(self):
+        repo = custom_repo(self.LOC)
+        self.expect(run(T + arxiv_line("Model B 在 MMLU 上未能达到 90% 准确率。", locator=self.LOC), repo=repo), "PASS")
+        self.expect(run(T + arxiv_line("Model B 在 MMLU 上达到 90% 准确率。", locator=self.LOC), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_a_positive_direction(self):
+        repo = custom_repo(self.LOC)
+        self.expect(run(T + arxiv_line("Model A 在 MMLU 上达到 90% 准确率。", locator=self.LOC), repo=repo), "PASS")
+        self.expect(run(T + arxiv_line("Model A 在 MMLU 上未能达到 90% 准确率。", locator=self.LOC), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_ambiguous_pairing_mismatch(self):
+        # 断言不写是哪个模型：两个分句都配得上，不唯一 → 错配（两个方向都拦）
+        repo = custom_repo(self.LOC)
+        for c in ("模型在 MMLU 上达到 90% 准确率。", "模型在 MMLU 上未能达到 90% 准确率。"):
+            self.expect(run(T + arxiv_line(c, locator=self.LOC), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class ImplicitNegation(Base):
+    """#32 r4：no longer 与隐性否定（难以、未曾、尚待；hardly、never、yet to、remains to be）硬拦。"""
+    def _pair(self, loc, good, bad):
+        repo = custom_repo(loc)
+        self.expect(run(T + arxiv_line(good, locator=loc), repo=repo), "PASS")
+        self.expect(run(T + arxiv_line(bad, locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_no_longer(self):
+        self._pair("The model no longer reaches 90% accuracy on MMLU.", "模型在 MMLU 上已不再达到 90% 准确率。", "模型在 MMLU 上仍达到 90% 准确率。")
+
+    def test_hardly(self):
+        self._pair("The model hardly reaches 90% accuracy on MMLU.", "模型在 MMLU 上难以达到 90% 准确率。", "模型在 MMLU 上达到 90% 准确率。")
+
+    def test_nanyi_vs_positive_source(self):
+        self._pair("The model reaches 90% accuracy on MMLU.", "模型在 MMLU 上达到 90% 准确率。", "模型在 MMLU 上难以达到 90% 准确率。")
+
+    def test_never(self):
+        self._pair("The model has never reached 90% accuracy on MMLU.", "模型在 MMLU 上未曾达到 90% 准确率。", "模型在 MMLU 上曾达到 90% 准确率。")
+
+    def test_yet_to(self):
+        self._pair("The model has yet to reach 90% accuracy on MMLU.", "模型在 MMLU 上尚未达到 90% 准确率。", "模型在 MMLU 上已达到 90% 准确率。")
+
+    def test_remains_to_be(self):
+        self._pair("Whether the model reaches 90% on MMLU remains to be verified.", "模型能否在 MMLU 上达到 90% 尚待验证。", "模型在 MMLU 上达到 90% 已经验证。")
+
+
+class BasisPoints(Base):
+    """#32 r4：基点 / basis points / bp 是独立单位，100 bp = 1 个百分点。"""
+    def test_25bp_vs_25pct_mismatch(self):
+        loc = "The policy rate on FY2025 was raised by 25% according to the MMLU-Bench report."
+        repo = custom_repo(loc)
+        self.expect(run(T + arxiv_line("FY2025 政策利率上调 25 个基点。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_025pp_vs_25bp_pass(self):
+        loc = "The policy rate on FY2025 was raised by 25 basis points according to the MMLU-Bench report."
+        repo = custom_repo(loc)
+        # 单位核对通过（不出 LOCATOR-MISMATCH）；“百分点”措辞另会触发既有宏观观点规则，与本门禁无关，单独核定
+        r = run(T + arxiv_line("FY2025 政策利率上调 0.25 个百分点。", locator=loc), repo=repo)
+        self.assertNotIn("E-SUPPORT-LOCATOR-MISMATCH", r["error_codes"], r["errors"]); self.assertIn("R-SUPPORT-REVIEW", r["error_codes"])
+        self.expect(run(T + arxiv_line("FY2025 政策利率上调 25 bp。", locator=loc), repo=repo), "PASS")
+        self.expect(run(T + arxiv_line("FY2025 政策利率上调 0.25%。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class WithoutScoped(Base):
+    """#32 r4：without / 无需 按被否定的动作配对，前置、后置都覆盖。"""
+    PRE = "Without fine-tuning, the model reaches 90% accuracy on MMLU."
+    POST = "The model reaches 90% accuracy on MMLU without fine-tuning."
+
+    def test_all_orders_pass(self):
+        for loc in (self.PRE, self.POST):
+            repo = custom_repo(loc)
+            for c in ("无需微调，模型在 MMLU 上达到 90% 准确率。", "模型无需微调即在 MMLU 上达到 90% 准确率。",
+                      "模型在 MMLU 上达到 90% 准确率，无需微调。", "模型在 MMLU 上达到 90% 准确率。"):
+                self.expect(run(T + arxiv_line(c, locator=loc), repo=repo), "PASS")
+
+    def test_main_verb_negation_still_blocks(self):
+        for loc in (self.PRE, self.POST):
+            repo = custom_repo(loc)
+            self.expect(run(T + arxiv_line("模型无需微调，但在 MMLU 上未能达到 90% 准确率。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_claimed_without_absent_in_source(self):
+        loc = "After fine-tuning, the model reaches 90% accuracy on MMLU."
+        repo = custom_repo(loc)
+        self.expect(run(T + arxiv_line("模型无需微调即在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
 
 
 class Magnitude(Base):

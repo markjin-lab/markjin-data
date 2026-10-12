@@ -941,20 +941,40 @@ def _fred_unit_class(u):
     return "level"     # Index、Billions of Dollars、Thousands of Persons 等：不是百分比，也不是倍数
 
 
+_OBJ_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z][A-Za-z0-9\-]*(?![A-Za-z0-9])")   # Model、B、MMLU、Llama 这类对象词
+
+
+def _has_word(w, s):
+    return re.search(r"(?<![A-Za-z0-9])" + re.escape(w) + r"(?![A-Za-z0-9])", s) is not None
+
+
 def _neg_parity_ok(claim, loc):
-    """#32 r3：按具体说法核对否定，不整行判断。断言逐个分句：含数字或代号的分句，与片段中含同样数字/代号的分句比；
-    其余分句与整个片段比。比较的是否定词个数的奇偶（双重否定抵消；“不变”“不同”不算否定；“无需”与 without 同为否定）。"""
+    """#32 r4：按具体说法核对否定，不整行判断。
+    1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
+       原文有、断言省略 → 不算否定（主干照常比）。
+    2. 断言每个含数字、代号或对象词的分句，要先按对象配对：原文里同时含这些数字、代号和对象词的分句必须恰好一句；
+       配出多句（如两句都含“90% 和 MMLU”且无法分辨对象）→ 错配；没有单句含全部关键项时按整个片段比。其余分句与整个片段比。
+    3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、尚待、hardly、yet to 等计为否定）。"""
+    loc_main, loc_scoped = numnorm.strip_scoped(loc)
+    if numnorm.strip_scoped(claim)[1] > loc_scoped:
+        return False
     lclauses = numnorm.clauses(loc) or [loc]
     for cc in numnorm.clauses(claim) or [claim]:
-        keys_n = numbers(numnorm.normalize_numbers(cc)[0])
+        keys_n = numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(cc)[0]))
         keys_t = [t.lower() for t in claim_terms(cc)]
+        objs = [w for w in _OBJ_RE.findall(cc) if _has_word(w, loc)]
         if keys_n or keys_t:
             cands = [lc for lc in lclauses
-                     if keys_n <= numbers(numnorm.normalize_numbers(lc)[0]) and all(t in lc.lower() for t in keys_t)]
+                     if keys_n <= numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(lc)[0]))
+                     and all(t in lc.lower() for t in keys_t) and all(_has_word(w, lc) for w in objs)]
+            if len(cands) > 1:
+                return False          # 多句都配得上，分不清对象 → 错配
+            # 没有单个分句同时含全部关键项（如 FRED 片段“日期,数值”被逗号分开）：关键项分散在片段里，
+            # 不存在可混淆的候选句，按整个片段比较
             target = cands[0] if cands else loc
         else:
             target = loc
-        if numnorm.neg_count(cc) % 2 != numnorm.neg_count(target) % 2:
+        if numnorm.neg_count(numnorm.strip_scoped(cc)[0]) % 2 != numnorm.neg_count(numnorm.strip_scoped(target)[0]) % 2:
             return False
     return True
 
@@ -967,7 +987,7 @@ def support_at(scopes, kind, claim, loc, fred_units=None):
          断言里有解析不了的中文数值（如“百分之九十几”“三成多”）→ 不成立（宏观算式稿验算通过的推导值除外）；
       3. 单位与倍数一致：% 与“倍”不能互换，% 与“个百分点”不能互换；FRED 用存档的序列单位（<ID>.series.json，
          须登记在 MANIFEST）核对，拿不到单位时带单位的断言不成立；
-      4. 否定按分句核对（见 _neg_parity_ok）；
+      4. 否定按对象配对分句后核对（见 _neg_parity_ok）；基点按 100 bp = 1 个百分点换算；
       5. 断言中的指标/对象代号（两个以上大写字母或含数字，如 MMLU、GSM8K、GPT-4）全部出现在片段里。
     提示（R-*，不硬拦，交 Codex 逐条核对）：support_review（每条通过的断言都带）、locator_short、entity_unchecked。"""
     hints = set()
@@ -980,6 +1000,7 @@ def support_at(scopes, kind, claim, loc, fred_units=None):
     derived = bool(_FORMULA_MARK_RE.search(c) and fms and all(verify_formula(fm.group(0)) for fm in fms))
     cn, c_unparsed = numnorm.normalize_numbers(c)
     ln, _ = numnorm.normalize_numbers(norm(loc))
+    cn, ln = numnorm.bp_to_pp(cn), numnorm.bp_to_pp(ln)     # r4：100 bp = 1 个百分点
     if not derived:
         if c_unparsed or not numbers(cn) <= numbers(ln):
             return False, hints
