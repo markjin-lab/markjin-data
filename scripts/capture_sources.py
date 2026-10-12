@@ -18,7 +18,7 @@ Fetcher（逐跳 robots、限速、停用），每个原始响应先按字节私
   query-log-<run>.jsonl、failures-<run>.json，并追加 OUT/raw/DATE/MANIFEST.sha256。整份 RSS/API 响应是多条目聚合，
   不做逐条许可核验，因此全文永不进公开目录（逐条全文见 fetch_primary.py 的 license evidence）。
   internal_only 源：原件与记录全部写入内部目录，公开目录不写任何东西。
-公开与私有记录都不含本机路径，URL 不带查询值（只记参数名 query_params）；某源确需公开的参数值须在
+公开与私有记录都不含本机路径，URL 不带查询值（只记参数个数 query_param_count，不记参数名）；某源确需公开的参数值须在
 sources.yaml 里按源声明 public_params: [name, ...]。stored 只写 private/internal。
 地址策略强制生效（每一跳）：拒绝本机/内网/链路本地/保留地址；经透明代理时用 --proxy-fakeip-cidr 或
 $MARKJIN_PROXY_FAKEIP_CIDR 声明代理假 IP 网段（只接受 198.18.0.0/15 内）。
@@ -91,7 +91,7 @@ def run_scraper(fetcher, raw_ar, sub, sid, s, url):
         r = fetcher.get(u, sid=sid)
         if r.ok:
             rel, sha = raw_ar.put_raw(sub, sid, r.body, collect.ext_for(r.ctype, r.body))
-            raws.append({"url": collect.public_url(u, s.get("public_params") or ()), "query_params": collect.query_names(u),
+            raws.append({"url": collect.public_url(u, s.get("public_params") or ()), "query_param_count": collect.query_count(u),
                          "raw": rel, "sha256": sha})
         return r.status, r.ctype, r.body, (None if r.ok else (r.error or f"http_{r.status}"))
     try:
@@ -174,7 +174,7 @@ def main(argv=None):
             r, raws = run_scraper(fetcher, raw_ar, sub, sid, s, url)
             kind = "json" if r.ok else None
             sha = raws[0]["sha256"] if raws else None
-            rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_params": collect.query_names(url),
+            rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url),
                    "round": a.round, "fetched_at": t0, "http_status": r.status, "bytes": None, "raw_count": len(raws), "sha256": sha,
                    "license": lic, "content_type": "scraper", "raw_responses": [x["sha256"] for x in raws]}
             if raws:
@@ -185,7 +185,7 @@ def main(argv=None):
         else:
             req_url, cred_err = request_url(s, url)
             r = collect.Result(False, error=cred_err) if cred_err else fetcher.get(req_url, sid=sid)
-            rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_params": collect.query_names(url), "round": a.round,
+            rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url), "round": a.round,
                    "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
                    "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
             kind = parse_ok(r.body) if r.ok else None
