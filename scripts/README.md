@@ -208,7 +208,7 @@
 - **许可**：所有源默认 `url+hash-only`。不再有整源或整域名（含 .gov/.mil）全文许可；整份 RSS/API 响应永不进公开目录。全文只能逐条目公开：须有针对该 URL 的许可证据（`url, license, license_url, evidence_url, attribution, verified_by, verified_at`，许可限 CC-BY-4.0 / CC0-1.0 / US-Gov-PD 且后者须 `third_party_excluded: true`），由 `collect.public_fulltext_ok` 在写公开目录前逐条校验，否则默认私有。
 - **原件与只追加**：原字节不解压、不脱敏，按 sha256 独占创建写入私有 `raw/DATE/[round2/]<id>/<sha256>.<ext>`，追加私有 `MANIFEST.sha256`；解压等派生物写 `derived/` 并登记 `DERIVED.sha256` / `DERIVED-FROM.tsv`。公开目录每次运行只独占创建 `<id>/index-<run>.json`、`query-log-<run>.jsonl`、`failures-<run>.json`，追加公开 `MANIFEST.sha256`，任何已存在文件都不改写（字节不同 → `ArchiveError`）。
 - **访问礼仪**：UA `markjin-collector/0.1 (+https://markjin-lab.github.io)`（不写死邮箱；SEC 另见下文）``；每主机限速（默认且最低 2 秒，`--interval` 须为有限数且不低于 2，否则退出码 2；robots `Crawl-delay`/`Request-rate` 更严则从严），robots.txt 请求本身也限速；RSS/API 也查 robots；不自动跟随重定向，每一跳重新查拒绝主机（t.co）、停用状态、robots 与限速。robots.txt 自身的跳转也逐跳查 scheme、t.co、停用状态，跨主机跳转按禁止处理；robots.txt 返回 403 或验证页（任何状态码），或 HTTP 200 却是 HTML → 一律按验证页处理；HTML 判断不只看 Content-Type，正文以 `<` 开头的标签片段（如 text/plain 下的 `<div>…`）也算；401/429/5xx 返回 HTML → 按疑似验证页持久停用（不重试，待人工复核）；404/410 仍按“没有 robots”处理；robots 的每一跳请求前也过地址策略；不再逐条加厂商特征，rss/api 按采集方式校验内容：looks_html、rss 的 XML 根元素不是 rss/feed/RDF、api 应为 JSON 却解析不了（api 源可声明 `format: xml` + `xml_roots`），任一条都按疑似验证页持久停用主机、不写成功索引（原字节仍私有存档）；通用验证短语（Check(ing) your browser、verify you are human、enable JavaScript and cookies 等，`collect.CHALLENGE_PHRASES`）在 title 和可见文本（去脚本/样式/标签）的前 2KB 里匹配，不看整页长度；Fetcher 每一跳、robots、fetch_primary、scrapers 共用；text/plain 正文以 HTML 标签开头也按验证页停用；XML 根元素按完整 QName（`{namespace}local`）比对，`xml_roots` 也写完整名字；含 DOCTYPE/ENTITY 的 XML 一律拒收；JSON 顶层必须是对象或数组；每一跳收到的原字节先私有存档（`hop_raws`），再决定丢弃或跳转；每一跳（含 3xx）拿到响应后先做验证页检测，命中即持久停用，之后才处理 Location，持久停用主机/源，不再抓正文。验证页识别只有 `collect.CHALLENGE` 一份（含 `id=captcha`、`g-recaptcha`、`hcaptcha`）。**地址策略强制生效**：每个 Fetcher 都装有 `AddressPolicy`（不能关闭，外部策略只能叠加），初始 URL、DNS 结果、每一跳都拒绝本机/内网/链路本地/保留地址；出站经透明代理、DNS 返回 RFC 2544 假 IP（198.18.0.0/15 内的某个地址）时，用 `--proxy-fakeip-cidr` 或 `MARKJIN_PROXY_FAKEIP_CIDR` 显式声明该网段，只对主机名解析结果放行，IP 字面量永远拒绝。
-- **拒绝与重试**：403 或验证页 → 持久停用主机与源（私有 `state/collector-hosts.json`，人工复核后删条目恢复）；只有 429/5xx/网络错误重试，按 `Retry-After`（>120 秒则放弃本次）或指数退避（2、4、8 秒），最多 3 次；超过 25 MiB 明确失败，不存半截。
+- **拒绝与重试**：403、401 或高置信验证页（厂商组件）→ 持久停用主机与源（私有 `state/collector-hosts.json`，人工复核后删条目恢复）；只有 429/5xx/网络错误重试，按 `Retry-After`（>120 秒则放弃本次）或指数退避（2、4、8 秒），最多 3 次；超过 25 MiB 明确失败，不存半截。
 - **路径与日志**：私有根目录必须 `--private-root` 或 `MARKJIN_PRIVATE_DIR` 显式给出，且与公开根目录互不包含；代码中无本机默认路径。公开记录只写 `stored: private|internal`、错误类别和脱敏 URL（默认只写 `scheme://主机/#sha256=<完整 URL 的 sha256>`，路径也不写——路径里也可能有凭证；逐源确认路径不含凭证后在 sources.yaml 声明 `public_path: true` 才写路径；去 userinfo、片段和查询值，只记参数个数 `query_param_count`，不记参数名；某源确需公开的参数值，在 sources.yaml 里按源声明 `public_params`）；重定向 `hops[].from` 从一开始就只存脱敏 URL，私有日志同样不含凭证；需要免费密钥的 API 用 `auth_env`/`auth_param`，密钥只在请求时拼接，不进任何记录。
 - **严格 JSON**：`capture_sources.parse_ok`、`collect.HostState`、`collect.load_license_evidence` 用 `markjin/strictjson.py`（重复键 → 无法解析）。
 - 测试：`tests/test_collect.py`（审批门禁、路径、URL 脱敏、逐条许可、只追加档案、robots/重定向/t.co、403 与验证页停用、退避、限速、超限、重复键）。
@@ -221,9 +221,9 @@
 
 ## 停用原则（r8）
 
-- 只有 HTTP 403 和高置信验证页（命中厂商标记 `collect.CHALLENGE`：Cloudflare challenge/turnstile、reCAPTCHA、hCaptcha、Incapsula、PerimeterX、GeeTest 等）才持久停用主机/源。
-- 泛用短语（`CHALLENGE_PHRASES`）只在 HTML 形态的正文里匹配，且只看 title，或可见文本很短（≤512 字符）且短语占一半以上；只命中短语 → `suspected_challenge`，本轮失败、不跟随跳转、不停用。text/plain 正文以 HTML 标签开头（标签名后必须是空白、`>` 或 `/>`）只作辅助证据，须与短语同时命中才停用。
-- JSON / XML 只做格式校验：格式不对只记本轮失败，不停用。XML 只拒收 DOCTYPE 内部子集（`[`）和 `<!ENTITY`；外部 DOCTYPE（如 pubmed、RSS 0.91）放行但不加载。
-- robots.txt 返回 HTML 但无厂商标记：本轮按禁止处理，不停用。
+- 先按状态码：HTTP 403 和 401（robots 与每一跳都一样）直接持久停用主机/源，不再看正文。其余只有高置信验证页才持久停用：`collect.CHALLENGE` 只认真正的组件——`<script src>` 指向 challenges.cloudflare.com、hcaptcha 或 recaptcha 的 api.js；`form#challenge-form`；元素 class 含 `cf-turnstile` / `g-recaptcha`。匹配前先去掉 `<pre>`/`<code>`/`<textarea>`/注释，可见文本里的提及不算。
+- 泛用短语（`CHALLENGE_PHRASES`）只在 HTML 形态的正文里匹配，且只看 title，或可见文本很短（≤512 字符）且短语占一半以上；只命中短语（包括 text/plain 以标签开头再加短语）→ `suspected_challenge`，本轮失败，不停用。512 字符/占比门槛只用于判本轮可疑，不作停用依据。
+- JSON / XML 只做格式校验：格式不对只记本轮失败，不停用。XML 用 `xml.parsers.expat` 按编码与语法检查（含 UTF-16、DOCTYPE 引号里的 `>`）：`StartDoctypeDeclHandler` 的 has_internal_subset 为真即拒收，`EntityDeclHandler` 见到实体声明即拒收，未声明的实体引用也拒收；外部 DOCTYPE（如 pubmed、RSS 0.91）放行但不加载。
+- robots.txt 返回 HTML 但无厂商标记（401/403 以外）：本轮按禁止处理，不停用。
 - 每收到一次响应（含 robots.txt、重试中的 429/5xx、3xx）都先交给 `raw_sink` 私有存档，再做判定。
-- SEC 主机组限速另有跨进程文件锁（私有目录 `state/locks/rate-sec.gov.lock`，fcntl）：同一时间只有一个实例在请求 SEC，间隔按锁文件里的时间戳控制。
+- SEC 主机组限速另有跨进程文件锁（私有目录 `state/locks/rate-sec.gov.lock`，fcntl）：同一时间只有一个实例在请求 SEC，间隔按锁文件里的时间戳控制。 锁文件里同时记 SEC 组上次请求时间和每台主机上次请求时间，组间隔（0.2 秒）与单主机间隔（≥2 秒，含 Crawl-delay）都在锁内执行，跨进程有效。

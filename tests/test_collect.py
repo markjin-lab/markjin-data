@@ -374,7 +374,7 @@ class R2Fixes(unittest.TestCase):
         self._robots_disables(Resp(200, b'<html><div class="g-recaptcha"></div></html>'))
 
     def test_robots_503_challenge_disables(self):
-        self._robots_disables(Resp(503, b"<script src='/cdn-cgi/challenge-platform/x'></script>"))
+        self._robots_disables(Resp(503, b"<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'></script>"))
 
     def test_hops_redacted_after_302_no_api_key_anywhere(self):
         f, _ = mk({"https://api.f.org/obs?series_id=X&api_key=SEKRITKEY":
@@ -514,7 +514,7 @@ class R3Fixes(unittest.TestCase):
         self.assertIn("a.org", collect.HostState(p).data["hosts"])
 
     def test_robots_generic_captcha_div_disables(self):
-        self._robots_html(b'<html><div id="captcha">verify</div></html>')
+        self._robots_html(b'<html><div class="g-recaptcha">verify</div></html>')   # r9：id=captcha 不再算组件
 
     def test_robots_any_html_disallowed_not_disabled(self):
         # r8：robots 返回 HTML 但没有厂商标记 = 格式不对 → 本轮按禁止，不持久停用
@@ -538,9 +538,11 @@ class R3Fixes(unittest.TestCase):
         self.assertTrue(f.get("https://a.org/p").ok)
 
     def test_challenge_regex_variants(self):
-        for b in (b'<div id="captcha">', b"<div id=captcha>", b'<div class="g-recaptcha" data-sitekey=x>',
-                  b'<script src="https://hcaptcha.com/1/api.js">', b'<div class="h-captcha">'.replace(b"h-", b"h")):
+        for b in (b'<div class="g-recaptcha" data-sitekey=x>', b"<div class=g-recaptcha>",
+                  b'<script src="https://hcaptcha.com/1/api.js">', b'<script src="https://www.google.com/recaptcha/api.js">'):
             self.assertTrue(collect.CHALLENGE.search(b), b)
+        for b in (b'<div id="captcha">', b"<div id=captcha>", b'<div class="hcaptcha">'):
+            self.assertIsNone(collect.CHALLENGE.search(b), b)                    # r9：只认真正的组件
         for b in (b"<html><title>Just a moment...</title></html>", b"<html><TITLE>Access Denied</TITLE></html>"):
             self.assertIsNone(collect.CHALLENGE.search(b), b)                    # r8：泛用短语不是厂商标记
             self.assertEqual(collect.classify_page("text/html", b), "phrase", b)
@@ -582,15 +584,17 @@ class R4Fixes(unittest.TestCase):
 
     def test_challenge_new_markers(self):
         for b in (b'<div class="cf-turnstile" data-sitekey=x>', b'<form id="challenge-form" action=/x>',
-                  b"<script src='/_Incapsula_Resource?x'>", b'<div id="px-captcha">', b'<div class="geetest_panel">'):
+                  b"<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'>"):
             self.assertTrue(collect.CHALLENGE.search(b), b)
+        for b in (b"<script src='/_Incapsula_Resource?x'>", b'<div id="px-captcha">', b'<div class="geetest_panel">'):
+            self.assertIsNone(collect.CHALLENGE.search(b), b)                    # r9：清单外不算
         for b in (b"<html><title>Verify you are human</title></html>", b"<html><title>Robot Check</title></html>"):
             self.assertEqual(collect.classify_page("text/html", b), "phrase", b)
         self.assertFalse(collect.CHALLENGE.search(b"<p>How to verify you are human: a survey</p>"))
 
     def test_content_page_with_new_markers_disables(self):
         for b in (b'<div class="cf-turnstile"></div>',
-                  b'<form id="challenge-form"></form>', b'<div id="px-captcha"></div>', b"<div class=geetest_x>"):
+                  b'<form id="challenge-form"></form>'):
             p = Path(tempfile.mkdtemp()) / "st.json"
             f, _ = mk({"https://a.org/p": Resp(200, b)}, state=collect.HostState(p))   # robots 404
             r = f.get("https://a.org/p", sid="s")
@@ -607,8 +611,12 @@ class R4Fixes(unittest.TestCase):
     def test_robots_401_429_5xx_html_suspected_challenge_no_retry(self):
         for st in (401, 429, 500, 503):
             r, f, d = self._robots(Resp(st, b"<html><body>please wait</body></html>", {"Content-Type": "text/html"}))
-            self.assertEqual(r.error, "robots_disallow", st)        # r8：本轮禁止，不停用
-            self.assertEqual(d["hosts"], {}, st)
+            if st == 401:                                           # r9：401 同 403，按状态码持久停用
+                self.assertEqual(r.error, "disabled", st)
+                self.assertIn("a.org", d["hosts"])
+            else:
+                self.assertEqual(r.error, "robots_disallow", st)    # 本轮禁止，不停用
+                self.assertEqual(d["hosts"], {}, st)
             calls = [u for u, _ in f.opener.calls]
             self.assertEqual(calls.count("https://a.org/robots.txt"), 1, st)       # 不重复请求
             self.assertNotIn("https://a.org/p", calls)
@@ -689,8 +697,8 @@ class R5Fixes(unittest.TestCase):
     def test_robots_text_plain_html_fragment_200_and_429_disable(self):
         for st in (200, 429):
             r, calls, d = self._robots(Resp(st, b"<div>Check your browser</div>", {"Content-Type": "text/plain"}))
-            self.assertEqual(r.error, "disabled", st)
-            self.assertIn("a.org", d["hosts"], st)
+            self.assertEqual(r.error, "robots_disallow", st)        # r9：text/plain 标签+短语 → 本轮可疑，不停用
+            self.assertEqual(d["hosts"], {}, st)
             self.assertNotIn("https://a.org/p", calls)
             self.assertEqual(calls.count("https://a.org/robots.txt"), 1, st)          # 429 也不重试
 
@@ -772,9 +780,9 @@ class R6Fixes(unittest.TestCase):
             p = self.tmpdir() / "st.json"
             f, _ = mk({"https://a.org/x": resp, "https://a.org/y": Resp(200, b"ok")}, state=collect.HostState(p))
             r = f.get("https://a.org/x", sid="s")
-            self.assertEqual(r.error, "challenge", resp.status)
+            self.assertEqual(r.error, "suspected_challenge", resp.status)   # r9：本轮可疑，不停用
             self.assertNotIn("https://a.org/y", [u for u, _ in f.opener.calls])
-            self.assertIn("a.org", collect.HostState(p).data["hosts"])
+            self.assertEqual(collect.HostState(p).data["hosts"], {})
 
     def _cs(self, src, resp):
         t = CaptureT("test_auth_key_never_logged"); t.setUp()
@@ -822,7 +830,7 @@ class R7Fixes(unittest.TestCase):
     LONG = (b"<html><head><title>One moment</title><style>" + b"x{}" * 300 + b"</style></head><body>"
             b"<div>Checking your browser before accessing the site.</div>" + b"<p>pad</p>" * 400 + b"</body></html>")
 
-    LONGV = LONG.replace(b"</body>", b"<script src='/cdn-cgi/challenge-platform/x.js'></script></body>")   # 长页 + 厂商标记
+    LONGV = LONG.replace(b"</body>", b"<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'></script></body>")   # 长页 + 厂商标记
 
     def test_long_page_phrase_in_visible_window(self):
         # r8：长页面里的短语（title 不是短语为主）不算；短页且短语为主才算 phrase（只可疑，不停用）
@@ -863,8 +871,8 @@ class R7Fixes(unittest.TestCase):
         self.assertEqual(d["hosts"], {})
         r, calls, d, sink = self._get({"https://a.org/x": Resp(200, b"<div>Check your browser</div>",
                                                                {"Content-Type": "text/plain"})})
-        self.assertEqual(r.error, "challenge")                        # 辅助证据 + 短语 → 停用
-        self.assertIn("a.org", d["hosts"])
+        self.assertEqual(r.error, "suspected_challenge")              # r9：辅助证据 + 短语 → 本轮可疑，不停用
+        self.assertEqual(d["hosts"], {})
         r, *_ = self._get({"https://a.org/x": Resp(200, b"<?xml version='1.0'?><rss/>", {"Content-Type": "text/plain"})})
         self.assertTrue(r.ok)
 
@@ -1050,8 +1058,8 @@ class R8Fixes(unittest.TestCase):
             self.assertTrue(r.ok, b)                                                      # 只有标签外形：不停用
             self.assertEqual(d["hosts"], {})
         r, d, *_ = self._fetch(Resp(200, b"<div>Please verify that you are human to continue</div>", {"Content-Type": P}))
-        self.assertEqual(r.error, "challenge")                                            # 辅助证据 + 短语 → 停用
-        self.assertIn("a.org", d["hosts"])
+        self.assertEqual(r.error, "suspected_challenge")                                  # r9：只记本轮可疑
+        self.assertEqual(d["hosts"], {})
 
     def test_raw_sink_every_response_incl_robots_and_retries(self):
         p = self.tmpdir() / "st.json"
@@ -1095,6 +1103,124 @@ class R8Fixes(unittest.TestCase):
             self.assertTrue(all(g >= collect.RATE_GROUPS["sec.gov"] - 0.02 for g in gaps), gaps)
             self.assertEqual(len(state["times"]), 6)                                      # robots + 正文 × 3
             self.assertTrue((lock / "rate-sec.gov.lock").exists())
+        finally:
+            if old is None:
+                os.environ.pop(collect.SEC_UA_ENV, None)
+            else:
+                os.environ[collect.SEC_UA_ENV] = old
+
+
+class R9Fixes(unittest.TestCase):
+    """PR #3 审查 r9 REJECTED 修复的针对性测试。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(dir="/workspace"); self.addCleanup(d.cleanup); return Path(d.name)
+
+    BODIES = [(b"<html><head><title>Access Denied</title></head><body></body></html>", "text/html"),
+              (b"<html><body>Just a moment...</body></html>", "text/html"),
+              (b"plain forbidden", "text/plain"),
+              (b'{"error": "forbidden"}', "application/json"),
+              (b"", "text/html"),
+              (b"<html><body>" + b"<p>long normal page</p>" * 300 + b"</body></html>", "text/html")]
+
+    def test_content_403_401_disable_first_regardless_of_body(self):
+        for st in (401, 403):
+            for b, ct in self.BODIES:
+                p = self.tmpdir() / "st.json"
+                f, _ = mk({"https://a.org/p": Resp(st, b, {"Content-Type": ct})}, state=collect.HostState(p))
+                r = f.get("https://a.org/p", sid="s")
+                self.assertEqual(r.error, f"http_{st}", (st, b[:30]))
+                self.assertIn("a.org", collect.HostState(p).data["hosts"], (st, b[:30]))
+                self.assertEqual([u for u, _ in f.opener.calls].count("https://a.org/p"), 1)   # 不重试
+
+    def test_redirect_hop_403_401_disable(self):
+        for st in (401, 403):
+            p = self.tmpdir() / "st.json"
+            f, _ = mk({"https://a.org/p": Resp(302, b"", {"Location": "https://a.org/q"}),
+                       "https://a.org/q": Resp(st, b"<html><title>Just a moment...</title></html>")},
+                      state=collect.HostState(p))
+            r = f.get("https://a.org/p", sid="s")
+            self.assertEqual(r.error, f"http_{st}")
+            self.assertIn("a.org", collect.HostState(p).data["hosts"])
+
+    def test_robots_403_401_disable_first_regardless_of_body(self):
+        for st in (401, 403):
+            for b, ct in self.BODIES:
+                p = self.tmpdir() / "st.json"
+                f, _ = mk({"https://a.org/robots.txt": Resp(st, b, {"Content-Type": ct}), "https://a.org/p": Resp(200, b"ok")},
+                          state=collect.HostState(p))
+                r = f.get("https://a.org/p", sid="s")
+                self.assertEqual(r.error, "disabled", (st, b[:30]))
+                self.assertIn("a.org", collect.HostState(p).data["hosts"])
+                self.assertNotIn("https://a.org/p", [u for u, _ in f.opener.calls])
+
+    def test_vendor_markers_only_real_components(self):
+        real = [b"<script src='https://challenges.cloudflare.com/turnstile/v0/api.js' async></script>",
+                b'<script src="https://js.hcaptcha.com/1/api.js"></script>',
+                b'<script src="https://www.recaptcha.net/recaptcha/api.js"></script>',
+                b'<form id="challenge-form" action="/x"></form>',
+                b'<div class="foo cf-turnstile" data-sitekey="x"></div>', b'<div class="g-recaptcha"></div>']
+        for b in real:
+            self.assertEqual(collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>"), "vendor", b)
+        fake = [b"<p>Use the g-recaptcha class and cf-turnstile widget.</p>",
+                b'<pre><div class="g-recaptcha"></div></pre>', b'<code><form id="challenge-form"></code>',
+                b'<pre>&lt;div class="g-recaptcha"&gt;</pre>', b'<!-- <div class="cf-turnstile"></div> -->',
+                b"<p>see https://challenges.cloudflare.com/turnstile/v0/api.js</p>",
+                b'<script src="/static/recaptcha-helper.min.js"></script>']
+        for b in fake:
+            self.assertNotEqual(collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>"), "vendor", b)
+
+    def test_tutorial_and_plain_access_denied_not_disabled(self):
+        art = (b"<html><body><article><h1>How to add reCAPTCHA</h1><pre>&lt;div class=\"g-recaptcha\"&gt;</pre>"
+               b"<p>Use g-recaptcha class.</p>" + b"<p>text</p>" * 100 + b"</article></body></html>")
+        for b, ct in ((art, "text/html"), (b"<p>Access denied</p>", "text/plain")):
+            p = self.tmpdir() / "st.json"
+            f, _ = mk({"https://a.org/p": Resp(200, b, {"Content-Type": ct})}, state=collect.HostState(p))
+            f.get("https://a.org/p", sid="s")
+            self.assertEqual(collect.HostState(p).data["hosts"], {}, b[:40])
+
+    def test_xml_expat_internal_subset_entity_utf16_quoted_gt(self):
+        X = b"<?xml version='1.0'?>"
+        for b in (X + b"<!DOCTYPE r [<!ATTLIST r a CDATA 'x'>]><r/>",
+                  X + b"<!DOCTYPE r SYSTEM 'a>b' [<!ATTLIST r a CDATA 'x'>]><r/>",
+                  X + b'<!DOCTYPE r PUBLIC "-//x>y//EN" "u>v" [<!ENTITY a "b">]><r>&a;</r>',
+                  "<?xml version='1.0' encoding='UTF-16'?><!DOCTYPE rss [<!ENTITY a 'aaaa'>]><rss>&a;</rss>".encode("utf-16"),
+                  "<?xml version='1.0' encoding='UTF-16'?><!DOCTYPE rss [<!ATTLIST rss a CDATA 'x'>]><rss/>".encode("utf-16-le")):
+            with self.assertRaises(Exception, msg=b[:60]):
+                collect.xml_root(b)
+            self.assertTrue(collect.content_suspect("rss", {"Content-Type": "application/xml"}, b), b[:60])
+        ok = [(X + b"<!DOCTYPE eSearchResult PUBLIC '-//NLM//DTD esearch 20060628//EN' 'https://e.example.org/a>b.dtd'><eSearchResult/>",
+               "eSearchResult"),
+              ("<?xml version='1.0' encoding='UTF-16'?><rss version='2.0'><channel/></rss>".encode("utf-16"), "rss"),
+              (X + b"<feed xmlns='http://www.w3.org/2005/Atom'/>", "{http://www.w3.org/2005/Atom}feed")]
+        for b, root in ok:
+            self.assertEqual(collect.xml_root(b), root)
+        with self.assertRaises(Exception):          # 外部 DTD 不加载 → 未声明实体解析失败
+            collect.xml_root(X + b"<!DOCTYPE rss SYSTEM 'file:///etc/passwd'><rss>&x;</rss>")
+
+    def test_sec_lock_records_per_host_and_enforces_host_interval_across_fetchers(self):
+        import os
+        from unittest import mock
+        old = os.environ.get(collect.SEC_UA_ENV)
+        os.environ[collect.SEC_UA_ENV] = "markjin research (+https://example.org/contact)"
+        try:
+            lock = self.tmpdir()
+
+            class O:
+                def __init__(self): self.calls = []
+                def open(self, req, timeout=None):
+                    self.calls.append(req.full_url)
+                    return Resp(200, b"" if req.full_url.endswith("robots.txt") else b"{}")
+            mk_f = lambda: collect.Fetcher(opener=O(), lock_dir=lock, resolver=lambda h: {"93.184.216.34"}, sleep=lambda w: None)
+            waits = []
+            with mock.patch("time.sleep", side_effect=lambda w: waits.append(w)):
+                mk_f().get("https://data.sec.gov/x")            # 进程 A
+                rec = json.loads((lock / "rate-sec.gov.lock").read_text())
+                self.assertIn("data.sec.gov", rec["hosts"])
+                self.assertIn("group", rec)
+                waits.clear()
+                mk_f().get("https://data.sec.gov/y")            # 进程 B：内存里没有 _last，靠锁文件里的单主机时间戳
+            self.assertTrue(waits and max(waits) >= collect.HOST_INTERVAL - 0.5, waits)
         finally:
             if old is None:
                 os.environ.pop(collect.SEC_UA_ENV, None)
