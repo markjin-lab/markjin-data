@@ -15,7 +15,10 @@ Usage:
   query-log-<run>.jsonl、failures-<run>.json，并追加 OUT/raw/DATE/MANIFEST.sha256。整份 RSS/API 响应是多条目聚合，
   不做逐条许可核验，因此全文永不进公开目录（逐条全文见 fetch_primary.py 的 license evidence）。
   internal_only 源：原件与记录全部写入内部目录，公开目录不写任何东西。
-公开记录不含本机路径与凭证型 URL 参数（stored 只写 private/internal）。
+公开与私有记录都不含本机路径，URL 不带查询值（只记参数名 query_params）；某源确需公开的参数值须在
+sources.yaml 里按源声明 public_params: [name, ...]。stored 只写 private/internal。
+地址策略强制生效（每一跳）：拒绝本机/内网/链路本地/保留地址；经透明代理时用 --proxy-fakeip-cidr 或
+$MARKJIN_PROXY_FAKEIP_CIDR 声明代理假 IP 网段（只接受 198.18.0.0/15 内）。
 需要免费密钥的 API：auth_env（环境变量名）+ auth_param（查询参数名），密钥只在请求时拼接，不进任何记录。
 403 / 验证页 → 持久停用（PRIVATE/state/collector-hosts.json），人工复核后删除条目才恢复。
 Exit code: 0 = all ok, 1 = 有失败或拒绝, 2 = 参数/配置错误.
@@ -88,22 +91,28 @@ def main(argv=None):
     ap.add_argument("--interval", type=float, default=collect.HOST_INTERVAL,
                     help=f"每主机最小间隔秒数，下限 {collect.HOST_INTERVAL}")
     ap.add_argument("--timeout", type=float, default=30)
+    ap.add_argument("--proxy-fakeip-cidr", default=os.environ.get(collect.FAKEIP_ENV),
+                    help="仅当出站经透明代理且 DNS 返回 RFC 2544 假 IP 时设置（必须在 198.18.0.0/15 内）")
     a = ap.parse_args(argv)
-    if a.interval < collect.HOST_INTERVAL:
-        print(f"--interval must be >= {collect.HOST_INTERVAL}", file=sys.stderr); return 2
+    try:
+        collect.check_interval(a.interval)          # 先 isfinite（拒绝 nan/inf），再要求 >= 2s
+    except collect.ConfigError as e:
+        print(f"--interval: {e}", file=sys.stderr); return 2
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a.date):
         print("bad --date", file=sys.stderr); return 2
     try:
         priv_root = collect.resolve_private_root(a.private_root, a.out_root)
         int_root = collect.resolve_internal_root(a.internal_root, a.out_root)
-    except collect.ConfigError as e:
+        collect.AddressPolicy(a.proxy_fakeip_cidr)  # 校验代理假 IP 网段配置（错误 → 退出码 2）
+    except (collect.ConfigError, ValueError) as e:
         print(f"config: {e}", file=sys.stderr); return 2
     srcs = (yaml.safe_load(open(a.sources, encoding="utf-8")) or {}).get("sources", [])
     only = {x for x in a.only.split(",") if x}
     run = collect.stamp()
     sub = "round2/" if a.round == 2 else ""
     fetcher = collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"),
-                              interval=a.interval, timeout=a.timeout)
+                              interval=a.interval, timeout=a.timeout, fakeip_cidr=a.proxy_fakeip_cidr or "")
+    # 地址策略（addr_policy）由 Fetcher 强制安装：每一跳、scraper 的子 sitemap 都在请求前检查
     pub_ar = collect.Archive(day_dir(a.out_root, a.date))
     priv_ar = collect.Archive(day_dir(priv_root, a.date))
     int_ar = collect.Archive(day_dir(int_root, a.date)) if int_root else None
@@ -132,13 +141,15 @@ def main(argv=None):
         where = "internal" if internal else "public"
         url = expand_url(s["url"], a.date)
         lic = s.get("license", "url+hash-only")
+        pp = s.get("public_params") or ()
+        purl = collect.public_url(url, pp)
         t0 = collect.now()
         req_url, cred_err = request_url(s, url)
         if cred_err:
             r = collect.Result(False, error=cred_err)
         else:
             r = fetcher.get(req_url, sid=sid)
-        rec = {"id": sid, "theme": s.get("theme"), "url": collect.public_url(url), "round": a.round,
+        rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_params": collect.query_names(url), "round": a.round,
                "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
                "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
         kind = parse_ok(r.body) if r.ok else None
@@ -148,8 +159,8 @@ def main(argv=None):
             if ext == "gz" and kind:
                 raw_ar.put_derived(sub, sid, sha, kind, gzip.decompress(r.body))
             rec["stored"] = "internal" if internal else "private"
-            raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": collect.public_url(url), "parsed": kind,
-                                    "final_url": collect.public_url(r.final_url or url), "hops": r.hops})
+            raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": purl, "parsed": kind,
+                                    "final_url": collect.public_url(r.final_url or url, pp), "hops": r.hops})
         if r.ok and kind:
             (int_ar if internal else pub_ar).put_json(
                 f"{sub}{sid}/index-{run}.json",

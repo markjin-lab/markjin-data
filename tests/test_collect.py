@@ -39,12 +39,18 @@ class FakeOpener:
         return r
 
 
+def PUBLIC_DNS(host):
+    """离线测试用解析器：所有主机名都解析到公网示例地址（不访问真实 DNS）。"""
+    return {"93.184.216.34"}
+
+
 def mk(routes, state=None, **kw):
     sleeps = []
     t = [0.0]
 
     def sleep(s):
         sleeps.append(s); t[0] += s
+    kw.setdefault("resolver", PUBLIC_DNS)
     f = collect.Fetcher(state or collect.HostState(None), opener=FakeOpener(routes), sleep=sleep,
                         clock=lambda: t[0], **kw)
     return f, sleeps
@@ -99,7 +105,7 @@ class Paths(unittest.TestCase):
 class Redact(unittest.TestCase):
     def test_public_url_strips_secrets_and_tracking(self):
         u = collect.public_url("https://user:pw@Example.org/a?api_key=SEKRIT&page=1&utm_source=t&token=T&s=20#f")
-        self.assertEqual(u, "https://example.org/a?page=1")
+        self.assertEqual(u, "https://example.org/a")
         self.assertNotIn("SEKRIT", collect.public_url("https://e.org/?apiKey=SEKRIT"))
         self.assertNotIn("SEKRIT", collect.public_url("https://e.org/?X-Amz-Signature=SEKRIT"))
 
@@ -238,7 +244,7 @@ class CaptureT(unittest.TestCase):
         orig = collect.Fetcher.__init__
 
         def init(s, *a, **k):
-            k["opener"] = FakeOpener(routes); k["sleep"] = lambda x: None
+            k["opener"] = FakeOpener(routes); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS)
             orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
@@ -375,7 +381,8 @@ class R2Fixes(unittest.TestCase):
         r = f.get("https://api.f.org/obs?series_id=X&api_key=SEKRITKEY")
         self.assertTrue(r.ok)
         self.assertNotIn("SEKRITKEY", json.dumps(r.hops))
-        self.assertEqual(r.hops[0]["from"], "https://api.f.org/obs?series_id=X")
+        self.assertEqual(r.hops[0]["from"], "https://api.f.org/obs")
+        self.assertEqual(r.hops[0]["query_params"], ["series_id", "api_key"])
 
     def test_capture_after_302_no_api_key_in_any_log(self):
         t = CaptureT("test_auth_key_never_logged"); t.setUp()
@@ -400,12 +407,14 @@ class R2Fixes(unittest.TestCase):
         for p in logs:
             self.assertNotIn("SEKRITKEY", p.read_text(encoding="utf-8"), p.name)
         fl = next(p for p in logs if "fetch-log" in p.name).read_text(encoding="utf-8")
-        self.assertIn('"hops": [{"from": "https://api.f.org/obs?series_id=X"', fl)
+        self.assertIn('"hops": [{"from": "https://api.f.org/obs"', fl)
 
     def test_public_url_allowlist(self):
         u = collect.public_url("https://s3.a.org/o?AWSAccessKeyId=AKIA123&Expires=1&Signature=S&series_id=X"
                                "&X-Goog-Credential=G&whatever=W&page=2")
-        self.assertEqual(u, "https://s3.a.org/o?series_id=X&page=2")
+        self.assertEqual(u, "https://s3.a.org/o")
+        self.assertEqual(collect.public_url("https://a.org/o?series_id=X&page=TOK", ["series_id"]),
+                         "https://a.org/o?series_id=X")
 
     def test_interval_floor(self):
         f, _ = mk({}, interval=0)
@@ -416,6 +425,141 @@ class R2Fixes(unittest.TestCase):
         self.assertEqual(CS.main(["--sources", str(d / "s.yaml"), "--date", "2026-10-12", "--round", "1",
                                   "--out-root", str(d / "pub"), "--private-root", str(d / "priv"),
                                   "--interval", "0.5"]), 2)
+
+
+class R3Fixes(unittest.TestCase):
+    """PR #3 审查 r3 REJECTED 修复的针对性测试。"""
+
+    def test_fetcher_forces_address_policy_on_redirect(self):
+        f, _ = mk({"https://src.org/feed": Resp(302, headers={"Location": "http://127.0.0.1/admin"}),
+                   "http://127.0.0.1/admin": Resp(200, b"{}")})
+        r = f.get("https://src.org/feed", sid="s")
+        self.assertEqual(r.error, "blocked_address")
+        self.assertFalse(any("127.0.0.1" in u for u, _ in f.opener.calls))
+
+    def test_forced_policy_cannot_be_disabled_by_extra_policy(self):
+        f, _ = mk({"http://10.0.0.5/x": Resp(200, b"x")}, addr_policy=lambda u: None)
+        f.addr_policy = lambda u: None
+        self.assertEqual(f.get("http://10.0.0.5/x").error, "blocked_address")
+        self.assertEqual(f.opener.calls, [])
+
+    def test_extra_policy_is_conjunctive(self):
+        f, _ = mk({"https://a.org/x": Resp(200, b"x")}, addr_policy=lambda u: "extra says no")
+        r = f.get("https://a.org/x")
+        self.assertEqual((r.error, r.detail), ("blocked_address", "extra says no"))
+
+    def test_hostname_resolving_private_blocked_by_default(self):
+        f, _ = mk({"https://in.example/x": Resp(200, b"x")}, resolver=lambda h: {"192.168.0.10"})
+        self.assertEqual(f.get("https://in.example/x").error, "blocked_address")
+        self.assertEqual(f.opener.calls, [])
+
+    def test_fakeip_only_when_configured(self):
+        fake = lambda h: {"198.18.0.7"}
+        f, _ = mk({"https://a.org/x": Resp(200, b"x")}, resolver=fake, fakeip_cidr="")
+        self.assertEqual(f.get("https://a.org/x").error, "blocked_address")
+        f, _ = mk({"https://a.org/x": Resp(200, b"x")}, resolver=fake, fakeip_cidr="198.18.0.0/15")
+        self.assertTrue(f.get("https://a.org/x").ok)
+        f, _ = mk({"http://198.18.0.7/x": Resp(200, b"x")}, resolver=fake, fakeip_cidr="198.18.0.0/15")
+        self.assertEqual(f.get("http://198.18.0.7/x").error, "blocked_address")    # IP 字面量永远拒绝
+        with self.assertRaises(collect.ConfigError):
+            mk({}, fakeip_cidr="10.0.0.0/8")
+
+    def test_mapped_and_odd_ip_forms_blocked(self):
+        p = collect.AddressPolicy(resolver=lambda h: {"127.0.0.1"} if h in ("2130706433", "0x7f.1", "0") else {"93.184.216.34"})
+        for u in ("http://[::ffff:127.0.0.1]/", "http://[::ffff:198.18.0.1]/", "http://2130706433/", "http://0x7f.1/",
+                  "http://0/", "http://localhost./"):
+            self.assertIsNotNone(p(u), u)
+        self.assertIsNotNone(collect.AddressPolicy(resolver=lambda h: {"::ffff:10.0.0.1"})("http://m.example/"))
+
+    def test_capture_sources_redirect_to_loopback_not_requested(self):
+        t = CaptureT("test_auth_key_never_logged"); t.setUp()
+        routes = {"https://f.org/rss": Resp(302, headers={"Location": "http://127.0.0.1/admin"}),
+                  "http://127.0.0.1/admin": Resp(200, b"<rss/>")}
+        import yaml
+        t.src.write_text(yaml.safe_dump({"sources": [dict(CaptureT.S, url="https://f.org/rss")]}), encoding="utf-8")
+        op = FakeOpener(routes)
+        orig = collect.Fetcher.__init__
+
+        def init(s, *a, **k):
+            k["opener"] = op; k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS
+            orig(s, *a, **k)
+        collect.Fetcher.__init__ = init
+        try:
+            rc = CS.main(["--sources", str(t.src), "--date", "2026-10-12", "--round", "1",
+                          "--out-root", str(t.out), "--private-root", str(t.priv)])
+        finally:
+            collect.Fetcher.__init__ = orig
+        self.assertEqual(rc, 1)
+        self.assertFalse(any("127.0.0.1" in u for u, _ in op.calls))
+        fails = next((t.out / "raw/2026-10-12").glob("failures-*.json")).read_text()
+        self.assertIn("blocked_address", fails)
+
+    def test_capture_sources_rejects_bad_fakeip_cidr(self):
+        d = Path(tempfile.mkdtemp()); (d / "s.yaml").write_text("sources: []\n"); (d / "pub").mkdir()
+        self.assertEqual(CS.main(["--sources", str(d / "s.yaml"), "--date", "2026-10-12", "--round", "1",
+                                  "--out-root", str(d / "pub"), "--private-root", str(d / "priv"),
+                                  "--proxy-fakeip-cidr", "10.0.0.0/8"]), 2)
+
+    def _robots_html(self, body, ctype="text/html"):
+        p = Path(tempfile.mkdtemp()) / "state.json"
+        f, _ = mk({"https://a.org/robots.txt": Resp(200, body, {"Content-Type": ctype}),
+                   "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+        r = f.get("https://a.org/p", sid="s")
+        self.assertEqual(r.error, "disabled")
+        self.assertNotIn("https://a.org/p", [u for u, _ in f.opener.calls])
+        self.assertIn("a.org", collect.HostState(p).data["hosts"])
+
+    def test_robots_generic_captcha_div_disables(self):
+        self._robots_html(b'<html><div id="captcha">verify</div></html>')
+
+    def test_robots_any_html_disables(self):
+        self._robots_html(b"<!DOCTYPE html><html><body>Welcome</body></html>")
+        self._robots_html(b"<html><body>no ctype</body></html>", ctype="text/plain")
+
+    def test_robots_plain_text_still_parsed(self):
+        f, _ = mk({"https://a.org/robots.txt": Resp(200, b"User-agent: *\nDisallow: /x\n", {"Content-Type": "text/plain"}),
+                   "https://a.org/p": Resp(200, b"ok")})
+        self.assertTrue(f.get("https://a.org/p").ok)
+
+    def test_robots_404_html_is_not_challenge(self):
+        f, _ = mk({"https://a.org/robots.txt": Resp(404, b"<html>not found</html>", {"Content-Type": "text/html"}),
+                   "https://a.org/p": Resp(200, b"ok")})
+        self.assertTrue(f.get("https://a.org/p").ok)
+
+    def test_challenge_regex_variants(self):
+        for b in (b'<div id="captcha">', b"<div id=captcha>", b'<div class="g-recaptcha" data-sitekey=x>',
+                  b'<script src="https://hcaptcha.com/1/api.js">', b'<div class="h-captcha">'.replace(b"h-", b"h"),
+                  b"<title>Security captcha</title>", b"Just a moment...", b"<TITLE>Access Denied</TITLE>"):
+            self.assertTrue(collect.CHALLENGE.search(b), b)
+        self.assertFalse(collect.CHALLENGE.search(b"<p>We discuss CAPTCHA research in this paper.</p>"))
+
+    def test_logs_have_no_query_values(self):
+        self.assertEqual(collect.public_url("https://a.org/?page=TOKENVALUE&q=api_key%3DTOKENVALUE"), "https://a.org/")
+        self.assertEqual(collect.query_names("https://a.org/?page=TOKENVALUE&q=x&page=2"), ["page", "q"])
+
+    def test_capture_public_params_declared_per_source(self):
+        t = CaptureT("test_auth_key_never_logged"); t.setUp()
+        s = dict(CaptureT.S, id="api", method="api", url="https://f.org/a.json?series_id=S1&page=TOKENVALUE",
+                 public_params=["series_id"])
+        rc = t.run_cs([s], {"https://f.org/a.json?series_id=S1&page=TOKENVALUE": Resp(200, b'{"o": 1}')})
+        self.assertEqual(rc, 0)
+        txt = "".join(p.read_text() for root in (t.out, t.priv) for p in root.rglob("*")
+                      if p.is_file() and p.suffix in (".json", ".jsonl"))
+        self.assertNotIn("TOKENVALUE", txt)
+        self.assertIn("a.json?series_id=S1", txt)
+        self.assertIn('"query_params": ["series_id", "page"]', txt)
+
+    def test_interval_nan_inf_rejected(self):
+        for bad in ("nan", "inf", "-inf", "1.9"):
+            d = Path(tempfile.mkdtemp()); (d / "s.yaml").write_text("sources: []\n"); (d / "pub").mkdir()
+            self.assertEqual(CS.main(["--sources", str(d / "s.yaml"), "--date", "2026-10-12", "--round", "1",
+                                      "--out-root", str(d / "pub"), "--private-root", str(d / "priv"),
+                                      f"--interval={bad}"]), 2, bad)
+        with self.assertRaises(collect.ConfigError):
+            mk({}, interval=float("nan"))
+        with self.assertRaises(collect.ConfigError):
+            collect.check_interval(float("inf"))
+        self.assertEqual(collect.check_interval(2), 2.0)
 
 
 if __name__ == "__main__":

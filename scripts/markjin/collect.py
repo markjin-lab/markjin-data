@@ -12,14 +12,19 @@
 - 403 / 验证页：持久写入停用状态（主机 + 源），人工复核后才恢复；只有 429、5xx、网络错误按
   Retry-After 或指数退避重试，次数与等待均有上限。
 - robots.txt 自身的跳转逐跳校验（scheme / t.co / 停用 / 跨主机即禁止）；robots 403 或验证页 → 持久停用。
-- 一切日志（公开与私有）不写本机路径、不写凭证：URL 查询参数只留白名单，hops 只存脱敏 URL；私有根目录必须显式给出且不能与公开根目录重叠。
+- 一切日志（公开与私有）不写本机路径、不写凭证：URL 不带查询值（只记参数名；按源 public_params 声明的才留值），hops 只存脱敏 URL；
+- 地址策略强制安装（AddressPolicy，每一跳/子 sitemap 在任何请求前检查）；外部策略只能叠加更严。
+- robots.txt 返回 HTTP 200 的 HTML → 一律按验证页处理并持久停用。私有根目录必须显式给出且不能与公开根目录重叠。
 """
 import datetime as dt
 import email.utils
 import hashlib
+import ipaddress
 import json
+import math
 import os
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -39,8 +44,12 @@ BACKOFF_BASE = 2.0
 BACKOFF_CAP = 120.0          # Retry-After 超过此值直接放弃本次（不长时间挂起）
 REFUSED_HOSTS = {"t.co"}
 REDIRECT_CODES = {301, 302, 303, 307, 308}
+# 验证页识别（collector 与 scrapers 共用这一份）
 CHALLENGE = re.compile(rb"Just a moment\.\.\.|challenges\.cloudflare\.com|/cdn-cgi/challenge-platform|cf-chl-|"
-                       rb"Attention Required! \| Cloudflare|<title>\s*Access Denied|<title>[^<]*captcha", re.I)
+                       rb"Attention Required! \| Cloudflare|<title>\s*Access Denied|Access Denied</title>|"
+                       rb"<title>[^<]*captcha|id\s*=\s*[\"']?captcha\b|class\s*=\s*[\"'][^\"']*\bcaptcha\b|"
+                       rb"g-recaptcha|hcaptcha", re.I)
+FAKEIP_ENV = "MARKJIN_PROXY_FAKEIP_CIDR"
 APPROVED = "approved"
 
 
@@ -99,24 +108,20 @@ def resolve_internal_root(arg, out_root, env="MARKJIN_INTERNAL_DIR"):
 
 
 # ---------------------------------------------------------------- URL 脱敏
-# 公开 URL 只保留白名单内的查询参数（审查 r2：黑名单漏掉 AWSAccessKeyId 等凭证名）。
-# 未列入的参数一律丢弃；新增数据源若需公开展示别的参数，须在此显式加入并确认不是凭证。
-SAFE_PARAMS = frozenset({
-    "series_id", "file_type", "sort_order", "sort", "sortBy", "sortOrder", "limit", "offset", "start",
-    "page", "page[size]", "size", "pagesize", "pageSize", "per_page", "max_results", "retmax", "mrv",
-    "format", "db", "term", "query.term", "q", "query", "search_query", "id", "id_list", "lang",
-    "date", "year", "month", "yearFrom", "yearTo", "from", "to", "observation_start", "observation_end",
-    "frequency", "units", "category", "type", "tag",
-})
-
-
-def public_url(u):
-    """用于一切记录/日志（公开与私有）：去掉 userinfo、片段，查询参数只留 SAFE_PARAMS 白名单。"""
+def public_url(u, public_params=()):
+    """用于一切记录/日志（公开与私有）：去掉 userinfo、片段和查询串。查询参数的*值*默认一律不记
+    （参数名见 query_names）；只有该源在 sources.yaml 里用 public_params 显式声明的参数才保留值。"""
     p = urlsplit(u.strip())
     host = (p.hostname or "").lower()
-    netloc = host + (f":{p.port}" if p.port else "")
-    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k in SAFE_PARAMS]
+    netloc = (f"[{host}]" if ":" in host else host) + (f":{p.port}" if p.port else "")
+    keep = set(public_params or ())
+    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k in keep]
     return urlunsplit((p.scheme.lower(), netloc, p.path, urlencode(q), ""))
+
+
+def query_names(u):
+    """URL 中查询参数的名字（去重、保序），供日志记录；不含值。"""
+    return list(dict.fromkeys(k for k, _ in parse_qsl(urlsplit(u.strip()).query, keep_blank_values=True)))
 
 
 def host_of(u):
@@ -158,6 +163,88 @@ def load_license_evidence(path):
             raise ConfigError(f"license evidence line {n}: not an object with url")
         out[public_url(e["url"])] = e
     return out
+
+
+# ---------------------------------------------------------------- 目标地址策略（防 SSRF）
+BENCHMARK_NET = ipaddress.ip_network("198.18.0.0/15")
+
+
+def _blocked_ip(ip):
+    if ip.version == 6 and (ip.ipv4_mapped or ip.sixtofour):
+        inner = ip.ipv4_mapped or ip.sixtofour
+        if _blocked_ip(inner) or inner in BENCHMARK_NET:
+            return True
+    return (not ip.is_global) or ip.is_multicast or ip.is_loopback or ip.is_link_local or ip.is_private \
+        or ip.is_reserved or ip.is_unspecified
+
+
+class AddressPolicy:
+    """拒绝本机、内网、链路本地、保留、组播地址：初始 URL、DNS 解析结果、每一跳都查（Fetcher 每跳调用）。
+
+    唯一例外（窄）：fakeip_cidr —— 本机出站经透明代理、DNS 返回代理“假 IP”（RFC 2544 基准网段内的地址）时，
+    *主机名*解析到该网段视为“交给已配置的出站代理”。约束：
+      - 只能是 198.18.0.0/15（RFC 2544 基准网段）的子网，其他网段一律拒绝配置；
+      - 只对 DNS 解析结果生效；URL 中直接写 IP 字面量（含 198.18.x.x）一律拒绝；
+      - 同一主机名若还解析出任何其他非公网地址，仍拒绝。
+    该模式下真实目标 IP 由代理在远端解析，本地无法核对，这一层残余风险由代理负责（见 scripts/README.md）。"""
+
+    def __init__(self, fakeip_cidr=None, resolver=None):
+        self.fakeip = None
+        if fakeip_cidr:
+            net = ipaddress.ip_network(fakeip_cidr, strict=False)
+            if net.version != 4 or not net.subnet_of(BENCHMARK_NET):
+                raise ConfigError("fakeip cidr must be inside 198.18.0.0/15")
+            self.fakeip = net
+        self.resolver = resolver or (lambda h: {a[4][0] for a in socket.getaddrinfo(h, None)})
+
+    def __call__(self, url):
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+        if not host:
+            return "no host"
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+        if ip is not None:
+            return f"IP literal not public ({ip})" if _blocked_ip(ip) or ip in BENCHMARK_NET else None
+        if host == "localhost" or host.endswith(".localhost"):
+            return "localhost"
+        try:
+            addrs = {ipaddress.ip_address(a.split("%")[0]) for a in self.resolver(host)}
+        except (OSError, ValueError, UnicodeError) as e:
+            return f"dns error ({type(e).__name__})"
+        if not addrs:
+            return "dns returned no address"
+        for a in addrs:
+            if self.fakeip is not None and a.version == 4 and a in self.fakeip:
+                continue
+            if _blocked_ip(a):
+                return f"resolves to non-public address ({a})"
+        return None
+
+
+
+
+class AllOf:
+    """多个地址策略的合取：任一拒绝即拒绝。"""
+
+    def __init__(self, *policies):
+        self.policies = [p for p in policies if p is not None]
+
+    def __call__(self, url):
+        for p in self.policies:
+            why = p(url)
+            if why:
+                return why
+        return None
+
+
+def check_interval(v):
+    """--interval / Fetcher 间隔：必须是有限数且不小于 HOST_INTERVAL。"""
+    v = float(v)
+    if not math.isfinite(v) or v < HOST_INTERVAL:
+        raise ConfigError(f"interval must be a finite number >= {HOST_INTERVAL}")
+    return v
 
 
 # ---------------------------------------------------------------- 只追加档案
@@ -257,6 +344,11 @@ class HostState:
 
 
 # ---------------------------------------------------------------- 抓取层
+def looks_html(headers, body):
+    ct = ((headers or {}).get("Content-Type") or "").lower()
+    head = body[:2048].lstrip(b"\xef\xbb\xbf \r\n\t").lower()
+    return "html" in ct or head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<html" in head \
+        or b"<body" in head or b"<script" in head
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
@@ -288,9 +380,18 @@ def retry_after(headers):
 
 class Fetcher:
     def __init__(self, state=None, interval=HOST_INTERVAL, timeout=30, opener=None, sleep=time.sleep,
-                 clock=time.monotonic, max_bytes=MAX_BYTES, log=None):
+                 clock=time.monotonic, max_bytes=MAX_BYTES, log=None, addr_policy=None, resolver=None,
+                 fakeip_cidr=None):
         self.state = state or HostState(None)
-        interval = max(float(interval), HOST_INTERVAL)   # 每主机间隔下限 2s，不能调低
+        interval = float(interval)
+        if not math.isfinite(interval):
+            raise ConfigError("interval must be finite")
+        interval = max(interval, HOST_INTERVAL)   # 每主机间隔下限 2s，不能调低
+        # 地址策略强制安装，不能关闭：fakeip_cidr 缺省取环境变量（同样受 AddressPolicy 的网段限制）。
+        # addr_policy 是额外策略，只能更严：两者都放行才放行。
+        self._forced_policy = AddressPolicy(fakeip_cidr if fakeip_cidr is not None else os.environ.get(FAKEIP_ENV),
+                                            resolver=resolver)
+        self.addr_policy = addr_policy
         self.interval, self.timeout, self.max_bytes = interval, timeout, max_bytes
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
         self.sleep, self.clock = sleep, clock
@@ -362,7 +463,7 @@ class Fetcher:
             return self._robots[base]
         rp = urllib.robotparser.RobotFileParser()
         cur = base + "/robots.txt"
-        st, ec, body = 0, "too_many_redirects", b""
+        st, ec, body, h = 0, "too_many_redirects", b"", {}
         for hop in range(MAX_REDIRECTS + 1):
             if hop:
                 q = urlsplit(cur)
@@ -376,8 +477,9 @@ class Fetcher:
                 if qh != host:
                     st, ec = 0, "robots_cross_host_redirect"; break
             st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*")
+            h = h or {}
             if st in REDIRECT_CODES:
-                loc = h.get("Location") if h else None
+                loc = h.get("Location")
                 if not loc:
                     ec = "robots_redirect_without_location"; break
                 cur = urljoin(cur, loc)
@@ -385,6 +487,8 @@ class Fetcher:
                 continue
             break
         challenged = bool(body) and CHALLENGE.search(body[:20000])
+        if st == 200 and not ec and not challenged and looks_html(h, body):
+            challenged = True     # robots.txt 返回 HTML：一律按验证页处理（不当作空规则）
         if challenged:
             self.state.disable(host, sid, f"robots.txt bot challenge page (HTTP {st})")
             rp.disallow_all = True
@@ -423,6 +527,9 @@ class Fetcher:
             why = self.state.disabled(host, sid)
             if why:
                 return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
+            why = AllOf(self._forced_policy, self.addr_policy)(cur)   # 每一跳、子 sitemap 都在任何请求前检查
+            if why:
+                return Result(False, final_url=cur, hops=hops, error="blocked_address", detail=why)
             if not self.allowed(cur, sid):
                 why = self.state.disabled(host, sid)   # robots 403/验证页刚触发的停用
                 if why:
@@ -434,7 +541,7 @@ class Fetcher:
                 loc = h.get("Location") if h else None
                 if not loc:
                     return Result(False, st, final_url=cur, hops=hops, error="redirect_without_location")
-                hops.append({"from": public_url(cur), "status": st})   # hops 只存脱敏 URL
+                hops.append({"from": public_url(cur), "query_params": query_names(cur), "status": st})   # hops 只存脱敏 URL
                 cur = urljoin(cur, loc)
                 continue
             if body and CHALLENGE.search(body[:20000]):
