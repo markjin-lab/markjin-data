@@ -55,10 +55,15 @@ EVIDENCE_RE = re.compile(r"^([^|]+)\|(scripts/[A-Za-z0-9._/\-]+)@([0-9a-f]{40})\
 # 自由文本字段：不得出现绝对路径、file: URI、内部目录名。先去掉 http(s) 网址再查。
 FREE_TEXT = ["slug", "reason", "observed_variable", "unit", "data_source", "data_vintage", "trigger_condition",
              "registered_by", "checked_by", "actual_value"]
-URL_RE = re.compile(r"(?i)https?://\S+")
+# 网址按明确边界剔除：只吃 URL 合法字符，遇到 | , ; 引号 括号 空白 中文 即止（https://x.org|/opt/x 里的路径仍要检出）
+URL_RE = re.compile(r"(?i)https?://[A-Za-z0-9\-._~:/?#@!$&*+=%]+")
 # 绝对路径：斜杠后必须跟 ASCII 字母、下划线、点或 ~（/年、bp /月、x /5 不算）；斜杠前不能是字母数字（km/s、FRED:GDP/CPI 不算），
 # 冒号后直接跟的绝对路径（a:/opt/x）要算
 ABS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/[A-Za-z_.~][\w.~-]*")
+# 斜杠前是中文（如「见/opt/private/x」）：后面是 ASCII 路径词并且还有下一段，才算路径（「亿元/年」「人/km2」不算）
+CJK_PATH_RE = re.compile(r"(?<=[\u3000-\u9fff\uff00-\uffef])/[A-Za-z_.~][A-Za-z0-9_.~-]*/")
+# unit：只要出现「斜杠 + ASCII 词 + 斜杠」就算路径（如 /data/private/report）
+UNIT_PATH_RE = re.compile(r"/[A-Za-z_.~][A-Za-z0-9_.~-]*/")
 COMMON_RE = re.compile(r"(?i)file:|\\\\|\b[a-z]:[\\/]|markjin-internal|markjin-core|topics-private|(?<![\w])~/")
 # unit 放宽：只认已知的本机根目录
 ROOTS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/(?:workspace|home|opt|Users|tmp|etc|var|root|private|mnt|srv|usr)(?:/|\b)")
@@ -68,7 +73,11 @@ def private_text(field, v):
     v = URL_RE.sub(" ", v)
     if COMMON_RE.search(v):
         return True
-    return bool((ROOTS_RE if field == "unit" else ABS_RE).search(v))
+    if CJK_PATH_RE.search(v):
+        return True
+    if field == "unit":
+        return bool(ROOTS_RE.search(v) or UNIT_PATH_RE.search(v))
+    return bool(ABS_RE.search(v))
 
 
 def blank(v):
@@ -187,7 +196,8 @@ def check_row(row, manifest=None):
         # 作废行：只追加，指向该分支第一行，reason 必填，不填任何对账字段
         if not row["corrects_row_id"] and "E-BR-CORRECTION-REASON" not in e:
             e.append("E-BR-CORRECTION-REASON")
-        if any(not blank(row[f]) for f in ("actual_value", "actual_branch", "error_source", "evidence", "quarter_readings")):
+        if any(not blank(row[f]) for f in ("actual_value", "actual_branch", "error_source", "evidence", "quarter_readings",
+                                           "checked_by", "checked_at")):
             e.append("E-BR-VOID-FILLED")
         return e
     for f in ("draft_id", "classification_id", "slug", "domain", "framework_version", "framework_sha256", "framework_commit",
@@ -351,6 +361,8 @@ def check_row(row, manifest=None):
     if cr == "HIT" and row["actual_branch"] != "是" or cr in ("MISS", "NONE_HIT") and row["actual_branch"] != "否" \
             or cr in ("TRIGGER_UNOBSERVABLE", "DATA_UNAVAILABLE") and row["actual_branch"]:
         e.append("E-BR-ACTUAL-BRANCH")
+    if cr == "TRIGGER_UNOBSERVABLE" and not blank(row["actual_value"]):
+        e.append("E-BR-TU-VALUE")  # 触发条件观测不到，就不得有读数；有读数就按读数判定
     es = row["error_source"]
     if es:
         parts = es.split(";")
@@ -382,7 +394,7 @@ def parse(text, manifest=None):
         errs += [(i, c) for c in check_row(row, manifest)]
     # 行间规则
     seq, ids, reg, final, last_readings, seen = {}, {}, {}, {}, {}, set()
-    first_id, voided = {}, set()
+    first_id, voided, void_groups, recon_groups = {}, set(), set(), set()
     group_closed, prev_group = set(), None
     for i, row in rows:
         key = branch_key(row)
@@ -417,9 +429,13 @@ def parse(text, manifest=None):
             continue
         cur = reg[key]
         changed = [f for f in FROZEN if row[f] != cur[f]]
-        if key in voided:
+        if key in voided or (g in void_groups and row["check_result"] != "VOID"):
             errs.append((i, "E-BR-AFTER-VOID"))
         if row["check_result"] == "VOID":
+            # 作废不能晚于该组第一条对账行
+            if g in recon_groups:
+                errs.append((i, "E-BR-VOID-LATE"))
+            void_groups.add(g)
             # 作废行：指向该分支第一行，事先登记字段照抄当前登记；作废后该分支不计入门禁和命中率
             if row["corrects_row_id"] != first_id[key]:
                 errs.append((i, "E-BR-CORRECTS-TARGET"))
@@ -428,6 +444,8 @@ def parse(text, manifest=None):
             voided.add(key)
             ids[row["row_id"]] = row
             continue
+        if not (row["corrects_row_id"] and row["check_result"] == "PENDING"):
+            recon_groups.add(g)
         if row["corrects_row_id"]:
             target = row["corrects_row_id"]
             if row["check_result"] == "PENDING":
@@ -470,6 +488,12 @@ def parse(text, manifest=None):
         ids[row["row_id"]] = row
     errs += _group_errors(rows, final)
     errs += _group_shape_errors(rows, reg)
+    # 作废按整组：组内每一支都要有作废行，且全组作废行连续出现（同一个提交由逐提交检查核对）
+    for g in void_groups:
+        ks = {branch_key(r) for _, r in rows if group_key(r) == g}
+        vl = [i for i, r in rows if group_key(r) == g and r["check_result"] == "VOID"]
+        if not ks <= voided or vl != list(range(vl[0], vl[0] + len(vl))):
+            errs.append((vl[0], "E-BR-VOID-PARTIAL"))
     return rows, errs
 
 
@@ -533,8 +557,7 @@ def _group_errors(rows, final):
         # 全是区间型分支：先用共同取值统一算出每一支是否命中，再与各行结论核对
         v = D(next(iter(fs.values()))["actual_value"])
         reg_rows = {k: _reg_of(rows, k) for k in keys}
-        if v is not None and all(is_interval(x) for x in reg_rows.values()) \
-                and not any(r["check_result"] == "TRIGGER_UNOBSERVABLE" for r in fs.values()):
+        if v is not None and all(is_interval(x) for x in reg_rows.values()):
             hits = {k for k, x in reg_rows.items() if in_interval(x, v)}
             for k, r in fs.items():
                 if k in hits:
@@ -566,8 +589,14 @@ def _reg_of(rows, key):
     return cur
 
 
+def voided_groups(rows):
+    return {group_key(r) for _, r in rows if r["check_result"] == "VOID"}
+
+
 def voided_branches(rows):
-    return {branch_key(r) for _, r in rows if r["check_result"] == "VOID"}
+    """含作废行的组，其全部分支都视为作废。"""
+    vg = voided_groups(rows)
+    return {branch_key(r) for _, r in rows if group_key(r) in vg}
 
 
 def partition_warnings(rows):
@@ -625,7 +654,7 @@ def hit_stats(rows):
     return {"groups": len(members), "groups_judged": judged, "groups_correct": correct,
             "branches": sum(len(v) for v in members.values()), "registration_corrected_branches": len(reg_corr),
             "conclusion_corrections": sum(conclusion_changes(rows).values()),
-            "voided_branches": len(void), "partition_warnings": partition_warnings(rows)}
+            "voided_branches": len(void), "voided_groups": len(voided_groups(rows)), "partition_warnings": partition_warnings(rows)}
 
 
 def gate_count(rows, cutoff="2026-12-31", domain=None):

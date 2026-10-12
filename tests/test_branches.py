@@ -521,11 +521,52 @@ class R3Cli(unittest.TestCase):
         self.assertEqual(ok.returncode, 0, ok.stdout)
         bad = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-14T08:00:00+08:00")
         self.assertIn("E-BR-MERGE-AFTER-START", bad.stdout)
-        # 已落地的行之后追加作废行：作废行本身不再核对时间
-        self.commit(csv_of(row(), sibling(row()), rid(dict(row(), check_result="VOID", corrects_row_id=FIRST,
-                                                             reason="合并晚于观测开始"), 2)), "void")
-        v = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-15T08:00:00+08:00")
-        self.assertEqual(v.returncode, 0, v.stdout)
+
+    def commit_at(self, text, msg, when):
+        import os
+        (self.d / B.LEDGER_PATH).write_text(text, encoding="utf-8"); self.g("add", ".")
+        subprocess.run(["git", "-C", str(self.d), "commit", "-qm", msg], check=True, capture_output=True,
+                       env={**os.environ, "GIT_COMMITTER_DATE": when, "GIT_AUTHOR_DATE": when})
+
+    def voids(self):
+        r1, r2 = row(), sibling(row())
+        v = lambda r: rid(dict(r, check_result="VOID", corrects_row_id=r["row_id"], reason="合并晚于观测开始"), 2)  # noqa: E731
+        return r1, r2, v(r1), v(r2)
+
+    def test_old_commit_fast_forwarded_late(self):  # r5 HIGH 2：旧提交（10-13）在 10-15 快进推上 main
+        self.commit_at(csv_of(row(), sibling(row())), "old web commit", "2026-10-13T07:30:00+08:00")
+        p = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-15T09:00:00+08:00")  # CI 运行时间
+        self.assertIn("E-BR-MERGE-AFTER-START", p.stdout)
+        wf = (Path(__file__).resolve().parents[1] / ".github/workflows/check-branches.yml").read_text(encoding="utf-8")
+        self.assertNotIn("%cd", wf); self.assertNotIn("noreply@github.com", wf)
+        self.assertIn('--merge-time $NOW', wf)
+
+    def test_void_verified_by_main_history(self):
+        r1, r2, v1, v2 = self.voids()
+        self.commit_at(csv_of(r1, r2), "late merge", "2026-10-14T09:00:00+08:00")
+        self.commit(csv_of(r1, r2, v1, v2), "void")
+        ok = self.cli("--base", "HEAD~1", "--main-ref", "HEAD")
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli("--base", "HEAD~1").stdout)  # 不给 main 就不能核验
+
+    def test_V8_void_on_group_merged_in_time(self):
+        r1, r2, v1, v2 = self.voids()
+        self.commit_at(csv_of(r1, r2), "in time", "2026-10-13T08:00:00+08:00")
+        self.commit(csv_of(r1, r2, v1, v2), "void")
+        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli("--base", "HEAD~1", "--main-ref", "HEAD").stdout)
+
+    def test_V7_void_long_after_window_end(self):
+        r1, r2, v1, v2 = self.voids()
+        self.commit_at(csv_of(r1, r2), "in time", "2026-10-13T08:00:00+08:00")
+        self.commit_at(csv_of(r1, r2, v1, v2), "void 2027-06", "2027-06-01T10:00:00+08:00")
+        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli("--base", "HEAD~1", "--main-ref", "HEAD").stdout)
+
+    def test_void_split_across_commits(self):
+        r1, r2, v1, v2 = self.voids()
+        self.commit_at(csv_of(r1, r2), "late merge", "2026-10-14T09:00:00+08:00")
+        self.commit(csv_of(r1, r2, v1), "void b1")
+        self.commit(csv_of(r1, r2, v1, v2), "void b2")
+        self.assertIn("E-BR-VOID-SPLIT", self.cli("--base", "HEAD~2", "--main-ref", "HEAD").stdout)
 
     def test_non_fast_forward_push(self):  # MEDIUM 2
         self.commit(csv_of(row(), sibling(row())), "A")
@@ -544,7 +585,7 @@ class R4Review(unittest.TestCase):
                              interval_high_closed="false", trigger_condition="5 <= x"), **kw})
 
     def fin(self, r, res, v, **kw):
-        return dict(r, **{**dict(check_result=res, actual_branch="是" if res in ("HIT", "MULTI_HIT") else "否",
+        return dict(r, **{**dict(check_result=res, actual_branch="是" if res in ("HIT", "MULTI_HIT") else ("" if res == "TRIGGER_UNOBSERVABLE" else "否"),
                                  actual_value=v, evidence=EVID, **DONE), **kw})
 
     def two(self, res1, v1, res2, v2, b1=None, b2=None, **kw2):
@@ -605,21 +646,54 @@ class R4Review(unittest.TestCase):
     def void(self, **kw):
         return row(**{**dict(check_result="VOID", corrects_row_id=FIRST, reason="main 上合并晚于 window_start"), **kw})
 
-    def test_void_row(self):
-        rows = chain(row(), self.b2(), self.void())
-        rs, errs = B.parse(csv_of(*rows))
-        self.assertEqual(errs, [])
-        self.assertEqual(B.gate_count(rs), 1)
-        self.assertEqual(B.hit_stats(rs)["voided_branches"], 1)
-        self.assertIn("E-BR-AFTER-VOID", ccodes(row(), self.b2(), self.void(), hit()))
-        self.assertIn("E-BR-CORRECTION-REASON", ccodes(row(), self.b2(), self.void(reason="")))
-        self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), self.b2(), self.void(corrects_row_id="x")))
-        self.assertIn("E-BR-VOID-FILLED", ccodes(row(), self.b2(), self.void(actual_value="4")))
-        self.assertIn("E-BR-PREREG-CHANGED", ccodes(row(), self.b2(), self.void(unit="bp")))
-        # 含作废分支的组不计入命中率
-        rs, _ = B.parse(csv_of(*chain(row(), self.b2(), self.void(), self.fin(self.b2(), "HIT", "6"))))
-        self.assertEqual(B.hit_stats(rs)["groups_judged"], 0)
+    def void2(self, **kw):
+        return self.b2(**{**dict(check_result="VOID", corrects_row_id="2026-10-13-macro-c1-b2-r1",
+                                 reason="main 上合并晚于 window_start"), **kw})
 
+    def test_void_whole_group(self):
+        rs, errs = B.parse(csv_of(*chain(row(), self.b2(), self.void(), self.void2())))
+        self.assertEqual(errs, [])
+        self.assertEqual(B.gate_count(rs), 0)
+        st = B.hit_stats(rs)
+        self.assertEqual((st["voided_groups"], st["voided_branches"]), (1, 2))
+        self.assertIn("E-BR-AFTER-VOID", ccodes(row(), self.b2(), self.void(), self.void2(), hit()))
+        self.assertIn("E-BR-CORRECTION-REASON", ccodes(row(), self.b2(), self.void(reason=""), self.void2()))
+        self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), self.b2(), self.void(corrects_row_id="x"), self.void2()))
+        self.assertIn("E-BR-VOID-FILLED", ccodes(row(), self.b2(), self.void(actual_value="4"), self.void2()))
+        self.assertIn("E-BR-PREREG-CHANGED", ccodes(row(), self.b2(), self.void(unit="bp"), self.void2()))
+
+    def test_void_checked_fields(self):  # r5 MEDIUM 2
+        self.assertIn("E-BR-VOID-FILLED", ccodes(row(), self.b2(), self.void(checked_by="审查与治理"), self.void2()))
+        self.assertIn("E-BR-VOID-FILLED", ccodes(row(), self.b2(), self.void(checked_at=DONE["checked_at"]), self.void2()))
+
+    def test_V3_single_branch_void(self):  # 只作废一支：报错；门禁按整组排除
+        c = ccodes(row(), self.b2(), self.void())
+        self.assertIn("E-BR-VOID-PARTIAL", c)
+        rs, _ = B.parse(csv_of(*chain(row(), self.b2(), self.void())))
+        self.assertEqual(B.gate_count(rs), 0)
+        self.assertEqual(B.hit_stats(rs)["voided_groups"], 1)
+
+    def test_V2p_void_after_conclusion(self):  # 合法 NONE_HIT 之后作废以隐藏错误组
+        gap = self.b2(interval_low="7", trigger_condition="7 <= x")
+        rows = [row(), gap, self.fin(row(), "NONE_HIT", "6"), self.fin(gap, "NONE_HIT", "6"),
+                self.void(), self.void2(interval_low="7", trigger_condition="7 <= x")]
+        self.assertIn("E-BR-VOID-LATE", ccodes(*rows))
+
+    def test_T1_trigger_unobservable_with_value(self):
+        self.assertIn("E-BR-TU-VALUE", self.two("TRIGGER_UNOBSERVABLE", "4", "TRIGGER_UNOBSERVABLE", "4",
+                                                 actual_branch=""))
+        tu = lambda r: dict(r, check_result="TRIGGER_UNOBSERVABLE", actual_branch="", actual_value="", evidence=EVID, **DONE)  # noqa: E731
+        self.assertEqual(ccodes(row(), self.b2(), tu(row()), tu(self.b2())), [])
+
+    def test_paths_r5(self):
+        for v in ("见/opt/private/x", "中文/opt/x", "https://x.org|/opt/private/x", "https://x.org,/srv/a"):
+            self.assertTrue(B.private_text("data_source", v), v)
+            self.assertTrue(B.private_text("unit", v), v)
+        self.assertTrue(B.private_text("unit", "/data/private/report"))
+        for v in ("/年", "亿元 /年", "亿元/年", "人/km2", "美元/桶", "bp /月", "x /5"):
+            self.assertFalse(B.private_text("unit", v), v)
+            self.assertFalse(B.private_text("data_source", v), v)
+        self.assertFalse(B.private_text("data_source", "https://fred.stlouisfed.org/series/X|FRED:X"))
 
 if __name__ == "__main__":
     unittest.main()

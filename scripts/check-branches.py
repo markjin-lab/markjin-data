@@ -11,7 +11,8 @@
 - base 必须是 REF 的祖先（否则 E-BR-NOT-FAST-FORWARD），并直接比较 base 与 REF 的台账（只追加）。
 - PR 用 --now（+08:00 完整时间戳，CI 运行时间）：对本次新登记的行和登记更正行核对
   |now − registered_at| ≤ 6 小时，且 now 早于 window_start（当日 00:00 SGT）。
-- main 用 --merge-time（合并提交时间）：只核对合并时间早于 window_start。失败的行已落地时，用作废行（VOID）标记。
+- main 用 --merge-time：CI 一律传运行时间（不取提交时间，旧提交快进推上来会偏早），只核对早于 window_start。
+- VOID（整组作废）须给 --main-ref：该组登记行首次出现在 main（first-parent）的提交时间不早于 window_start 才认。
 输出只含行号、提交短 SHA、错误码与计数。退出码 0=通过，1=不通过。
 """
 import argparse, json, subprocess, sys
@@ -33,6 +34,37 @@ def _rows(text):
 
 def _has_rows(t):
     return len((t or "").splitlines()) > 1
+
+
+def _git(repo, *a):
+    return subprocess.run(["git", "-C", repo, *a], capture_output=True, text=True)
+
+
+def void_errors(repo, rows, main_ref):
+    """VOID 只用于脚本能核验的失败：这组第一支登记行首次出现在 main（--first-parent）上的那个提交，
+    其提交时间不早于 window_start。找不到、或时间早于 window_start → E-BR-VOID-UNVERIFIED。"""
+    errs, done = [], set()
+    vg = branches.voided_groups(rows)
+    if not vg:
+        return errs
+    if not main_ref:
+        return [("-", ln, "E-BR-VOID-UNVERIFIED") for ln, r in rows if r["check_result"] == "VOID"]
+    log = _git(repo, "log", "--first-parent", "--reverse", "--format=%H %cI", main_ref, "--", branches.LEDGER_PATH)
+    commits = [x.split() for x in log.stdout.splitlines()]
+    for ln, r in rows:
+        g = branches.group_key(r)
+        if r["check_result"] != "VOID" or g in done:
+            continue
+        done.add(g)
+        first = next(x for _, x in rows if branches.group_key(x) == g)
+        when = None
+        for c, t in commits:
+            text = branches.git_show(repo, c) or ""
+            if any(x["row_id"] == first["row_id"] for _, x in _rows(text)):
+                when = t; break
+        if when is None or _dt(when) < _dt(first["window_start"] + "T00:00:00+08:00"):
+            errs.append((main_ref, ln, "E-BR-VOID-UNVERIFIED"))
+    return errs
 
 
 def history_errors(repo, base, ref, now=None, merge_time=None):
@@ -63,10 +95,19 @@ def history_errors(repo, base, ref, now=None, merge_time=None):
             errs.append((c[:12], 0, "E-BR-NOT-APPEND-ONLY")); continue
         old_rows, new_rows = _rows(old_t), _rows(new_t)
         old_groups = {branches.group_key(r) for _, r in old_rows}
+        # 全组作废必须在同一个提交里完成
+        added = new_rows[len(old_rows):]
+        for g in {branches.group_key(r) for _, r in added if r["check_result"] == "VOID"}:
+            ks = {branches.branch_key(r) for _, r in new_rows if branches.group_key(r) == g}
+            vk = {branches.branch_key(r) for _, r in added if branches.group_key(r) == g and r["check_result"] == "VOID"}
+            if vk != ks:
+                errs.append((c[:12], 0, "E-BR-VOID-SPLIT"))
         old_branches = {branches.branch_key(r) for _, r in old_rows}
         for i, r in new_rows[len(old_rows):]:
             if branches.branch_key(r) not in old_branches and branches.group_key(r) in old_groups:
                 errs.append((c[:12], i, "E-BR-GROUP-LATE"))
+            if r["check_result"] == "VOID":
+                continue
             is_reg = branches.branch_key(r) not in old_branches or (r["corrects_row_id"] and r["check_result"] == "PENDING")
             if is_reg and branches._ts(r["registered_at"]) and branches._date(r["window_start"]):
                 start = _dt(r["window_start"] + "T00:00:00+08:00")
@@ -89,7 +130,8 @@ def main(argv=None):
     ap.add_argument("--ref", default="HEAD")
     ap.add_argument("--base")
     ap.add_argument("--now", help="PR 用：推送/运行时间，YYYY-MM-DDTHH:MM:SS+08:00（6 小时与观测开始核对）")
-    ap.add_argument("--merge-time", help="main 用：合并时间（只核对早于观测开始）")
+    ap.add_argument("--merge-time", help="main 用：合并时间（只核对早于观测开始）；CI 在 main push 上一律传运行时间")
+    ap.add_argument("--main-ref", help="核验 VOID 用的 main 提交（PR 取 base，main push 取 HEAD）")
     ap.add_argument("--count-gate", action="store_true", help="输出门禁计数（每个分支只算第一行）")
     ap.add_argument("--cutoff", default="2026-12-31")
     ap.add_argument("--domain")
@@ -108,6 +150,7 @@ def main(argv=None):
         return 1
     rows, errs = branches.parse(new, branches.manifest_from_git(a.repo, a.ref))
     out = [f"line {ln}: {code}" for ln, code in errs]
+    out += [f"main {m} line {ln}: {code}" for m, ln, code in void_errors(a.repo, rows, a.main_ref)]
     if a.base:
         try:
             branches.git_show(a.repo, a.base)

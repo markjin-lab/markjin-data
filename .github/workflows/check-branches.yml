@@ -42,14 +42,13 @@ jobs:
           if [ "$EVENT" = pull_request ]; then
             TIME_ARGS="--now $NOW"
           elif [ "$GITHUB_REF" = refs/heads/main ]; then
-            # 合并时间：优先取 GitHub 签名的提交时间（committer 为 GitHub web-flow），否则退回 CI 运行时间
-            if [ "$(git log -1 --format=%ce HEAD)" = noreply@github.com ]; then
-              MT=$(TZ=Asia/Singapore git log -1 --date=format-local:%Y-%m-%dT%H:%M:%S+08:00 --format=%cd HEAD)
-            else
-              MT=$NOW
-            fi
-            TIME_ARGS="--merge-time $MT"
+            # main push 一律按 CI 运行时间算合并时间（提交时间不可信：旧提交快进推上来会偏早）
+            TIME_ARGS="--merge-time $NOW"
           fi
-          python3 scripts/check-branches.py --repo . --ref "$REF" --base "$BASE" $TIME_ARGS --count-gate --stats
+          # 核验 VOID 用的 main：PR 取 base，main push 取 HEAD，其他分支取 origin/main
+          if [ "$EVENT" = pull_request ]; then MAIN_REF=$PR_BASE
+          elif [ "$GITHUB_REF" = refs/heads/main ]; then MAIN_REF=HEAD
+          else MAIN_REF=origin/main; fi
+          python3 scripts/check-branches.py --repo . --ref "$REF" --base "$BASE" --main-ref "$MAIN_REF" $TIME_ARGS --count-gate --stats
           # 公开检查覆盖本次 PR / push 的全部新增提交（含台账自由文本的本机路径检查）
           python3 scripts/check-public.py --range "$BASE..$REF"
