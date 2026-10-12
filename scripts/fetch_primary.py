@@ -92,12 +92,16 @@ PUBLIC_LEAD_FIELDS = ("id", "url", "text_sha256", "primary_url", "sha256", "fetc
 def public_lead(lead):
     """公开 leads-primary 只留：帖子 id、帖子 URL、帖文 hash、一手 URL（脱敏）与其 sha256、fetch_status、线索身份字段。
     帖文原文、作者、互动数、原始 URL 字段只进私有 leads 档案。"""
-    out = {"id": lead.get("id")}
-    if lead.get("id"):
-        out["url"] = f"https://x.com/i/status/{lead['id']}"
+    pid = lead.get("id")
+    out = {}
+    if isinstance(pid, (str, int)) and re.fullmatch(r"[0-9]{1,20}", str(pid)):   # 只有合法帖子 id 才写 id / url
+        out["id"] = str(pid)
+        out["url"] = f"https://x.com/i/status/{pid}"
     if isinstance(lead.get("text"), str):
         out["text_sha256"] = hashlib.sha256(lead["text"].encode("utf-8")).hexdigest()
     for k in PUBLIC_LEAD_FIELDS:
+        if k in ("id", "url"):        # 输入里的 id / url 不原样复制
+            continue
         if k in lead and k not in out:
             out[k] = lead[k]
     if out.get("primary_url"):

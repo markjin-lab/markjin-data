@@ -165,6 +165,15 @@ class XCapture(unittest.TestCase):
             rc = XC.main(list(a))
         return rc, (json.loads(buf.getvalue()) if buf.getvalue().strip() else None)
 
+    def leads(self):
+        rc, r = self.x("leads", "--state", str(self.st), "--private-root", str(self.d / "priv"))
+        self.assertEqual(rc, 0)
+        self.assertEqual(set(r), {"path", "count", "filtered_out"})          # stdout 只有路径和条数
+        out = json.loads(Path(r["path"]).read_text())
+        self.assertEqual(len(out["items"]), r["count"])
+        out["filtered_out"] = r["filtered_out"]
+        return out
+
     def result(self, ids, tok=None, dup=False):
         p = self.d / f"r{len(list(self.d.iterdir()))}.txt"
         body = json.dumps({"data": [{"id": i, "text": "t"} for i in ids], "meta": {"next_token": tok} if tok else {}})
@@ -216,7 +225,7 @@ class XCapture(unittest.TestCase):
         self.assertEqual(rc, 0)
         _, b = self.x("budget", "--state", str(self.st))
         self.assertEqual(b["used_today_utc"], 2)
-        _, leads = self.x("leads", "--state", str(self.st))
+        leads = self.leads()
         self.assertTrue(all(i["source_role"] == "lead" and i["label"] == "线索" for i in leads["items"]))
 
     def test_minute_and_daily_caps_utc(self):
@@ -402,7 +411,7 @@ class R2XCapture(XCapture):
                             "username": "nobody"},
                       "5": {"id": "5", "text": "e"}}
         XC.save_state(self.st, s)
-        _, out = self.x("leads", "--state", str(self.st))
+        out = self.leads()
         got = {i["id"]: i["lead_reason"] for i in out["items"]}
         self.assertEqual(got, {"1": "like_count>=20", "2": "retweet_count>=5", "3": "whitelisted_author"})
         self.assertEqual(out["filtered_out"], 2)
@@ -416,7 +425,7 @@ class R2XCapture(XCapture):
                                           "includes": {"users": [{"id": "u1", "username": "a"}]}, "meta": {}}))
         self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"], "--file", str(p))
         self.assertEqual(XC.load_state(self.st)["posts"]["5"]["username"], "a")
-        _, out = self.x("leads", "--state", str(self.st))
+        out = self.leads()
         self.assertEqual([i["id"] for i in out["items"]], ["5"])
 
 
@@ -551,12 +560,14 @@ class R3XCapture(R2XCapture):
         rc, plan = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-12", "--round", "1")
         self.assertEqual(rc, 0)
         st = XC.load_state(self.st)
-        self.assertEqual(st["queries"]["ai"]["pages"], 1)
-        self.assertEqual(st["queries"]["ai"]["next_token"], "TOK")
+        self.assertEqual(st["queries"]["2026-10-12/r1/ai"]["pages"], 1)
+        self.assertEqual(st["queries"]["2026-10-12/r1/ai"]["next_token"], "TOK")
         self.assertEqual({p["slug"]: p["page"] for p in plan}["ai"], 2)
         self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "1")[0], 2)
-        rc, _ = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-13", "--round", "1")
-        self.assertEqual(rc, 2)                                              # 已开始的查询换参数 → 拒绝
+        (self.d / "q2.json").write_text(json.dumps([{"slug": "ai", "kind": "topic", "query": "CHANGED"}]))
+        rc, _ = self.x("plan", "--queries", str(self.d / "q2.json"), "--state", str(self.st), "--date", "2026-10-12", "--round", "1")
+        self.assertEqual(rc, 2)                                              # 同日同轮已开始的查询换参数 → 拒绝
+        self.assertEqual(XC.load_state(self.st)["queries"]["2026-10-12/r1/ai"]["pages"], 1)
 
 
 class R3Sources(unittest.TestCase):
@@ -566,6 +577,125 @@ class R3Sources(unittest.TestCase):
         by = {s["id"]: s for s in yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]}
         self.assertTrue(collect.approval_gate(by["nbs-releases"])[0])
         self.assertFalse(collect.approval_gate(by["qwen-blog-rss"])[0])
+
+
+class R4XCapture(R3XCapture):
+    def write_result(self, posts, tok=None):
+        p = self.d / f"r{len(list(self.d.iterdir()))}.txt"
+        p.write_text("x\n" + json.dumps({"data": posts, "meta": {"next_token": tok} if tok else {}}) +
+                     "\nX reads left: 20 of 25 this minute, 300 of 400 today\n")
+        return str(p)
+
+    def test_round2_reuses_round1_state(self):
+        self.plan("1")
+        _, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"],
+               "--file", self.write_result([{"id": "1", "text": "a", "public_metrics": {"like_count": 99}}], "TOK"))
+        rc, plan2 = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st),
+                           "--date", "2026-10-12", "--round", "2")
+        self.assertEqual(rc, 0)
+        self.assertEqual({p["slug"]: p["page"] for p in plan2}["ai"], 1)                 # round2 自己从第 1 页开始
+        self.assertEqual(plan2[0]["args"]["start_time"], "2026-10-11T21:00:00Z")
+        rc, r2 = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("next_token", r2["args"])
+        _, n = self.x("ingest", "--state", str(self.st), "--call-id", r2["call_id"],
+                      "--file", self.write_result([{"id": "1", "text": "a"}, {"id": "2", "text": "b",
+                                                   "public_metrics": {"retweet_count": 9}}], "T2"))
+        self.assertEqual(n["new_ids"], 1)                                                # 跨轮按 id 去重
+        st = XC.load_state(self.st)
+        self.assertEqual(st["ids"], ["1", "2"])
+        self.assertEqual(st["queries"]["2026-10-12/r1/ai"]["pages"], 1)                 # round1 进度保留
+        self.assertEqual(st["queries"]["2026-10-12/r1/ai"]["next_token"], "TOK")
+        self.assertEqual(st["queries"]["2026-10-12/r2/ai"]["pages"], 1)
+        _, b = self.x("budget", "--state", str(self.st))
+        self.assertEqual(b["used_today_utc"], 2)                                         # 两轮共享日额度
+        self.assertEqual({i["id"] for i in self.leads()["items"]}, {"1", "2"})
+
+    def test_daily_cap_shared_across_rounds(self):
+        self.plan("1")
+        s = XC.load_state(self.st)
+        now = time.time()
+        s["calls"] = [{"id": str(i), "t": now - 3600, "tool": "search_posts_all", "ingested": True,
+                       "qkey": "2026-10-12/r1/ai"} for i in range(XC.DAY_CAP)]
+        XC.save_state(self.st, s)
+        self.plan("2")
+        rc, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        if dt_same_utc_day(now - 3600, now):
+            self.assertEqual(rc, 3)
+            self.assertIn("daily cap", r["reason"])
+
+    def test_leads_requires_private_root_and_appends(self):
+        self.plan()
+        with self.assertRaises(SystemExit):
+            XC.main(["leads", "--state", str(self.st)])
+        s = XC.load_state(self.st)
+        s["posts"] = {"1": {"id": "1", "text": "SECRET TEXT", "public_metrics": {"like_count": 50}}}
+        XC.save_state(self.st, s)
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            XC.main(["leads", "--state", str(self.st), "--private-root", str(self.d / "priv")])
+        self.assertNotIn("SECRET TEXT", buf.getvalue())
+        r1 = json.loads(buf.getvalue())
+        r2 = self.leads()
+        day = self.d / "priv/raw/2026-10-12"
+        files = sorted((day / "x").glob("leads-*.json"))
+        self.assertEqual(len(files), 2)                                                  # 每次新建，不覆盖
+        man = (day / "MANIFEST.sha256").read_text()
+        for f in files:
+            self.assertIn("./x/" + f.name, man)
+        self.assertIn("SECRET TEXT", Path(r1["path"]).read_text())
+
+
+def dt_same_utc_day(a, b):
+    import datetime as dt
+    return dt.datetime.fromtimestamp(a, dt.timezone.utc).date() == dt.datetime.fromtimestamp(b, dt.timezone.utc).date()
+
+
+class R4Primary(Primary):
+    def test_no_valid_post_id_no_url(self):
+        items, _, _ = self.run_fp([{"text": "a", "url": "https://evil.example/?tok=SEKRIT"},
+                                   {"id": "abc/../x", "url": "https://evil.example/?tok=SEKRIT2"},
+                                   {"id": "123", "url": "https://evil.example/?tok=SEKRIT3"}], {})
+        self.assertNotIn("url", items[0])
+        self.assertNotIn("url", items[1])
+        self.assertNotIn("id", items[1])
+        self.assertEqual(items[2]["url"], "https://x.com/i/status/123")
+        pub = "".join(p.read_text(errors="replace") for p in self.out.rglob("*") if p.is_file())
+        self.assertNotIn("evil.example", pub)
+
+
+class R4Scraper(unittest.TestCase):
+    def test_multi_sitemap_derived_registers_all_raws(self):
+        import yaml
+        base = tmp(); out, priv = base / "pub", base / "priv"; out.mkdir()
+        idx = (b"<?xml version='1.0'?><sitemapindex><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>"
+               b"<sitemap><loc>https://www.anthropic.com/s2.xml</loc></sitemap></sitemapindex>")
+        s1 = b"<urlset><url><loc>https://www.anthropic.com/news/a</loc><lastmod>2026-10-10</lastmod></url></urlset>"
+        s2 = b"<urlset><url><loc>https://www.anthropic.com/news/b</loc><lastmod>2026-10-11</lastmod></url></urlset>"
+        routes = {"https://www.anthropic.com/sitemap.xml": Resp(200, idx), "https://www.anthropic.com/s1.xml": Resp(200, s1),
+                  "https://www.anthropic.com/s2.xml": Resp(200, s2)}
+        src = base / "s.yaml"
+        src.write_text(yaml.safe_dump({"sources": [{"id": "anthropic-news", "method": "scraper", "scraper": "anthropic_sitemap",
+                       "url": "https://www.anthropic.com/sitemap.xml", "enabled": True, "approval_status": "approved",
+                       "approval_basis": "b", "license": "url+hash-only"}]}), encoding="utf-8")
+        orig = collect.Fetcher.__init__
+
+        def init(s, *a, **k):
+            k["opener"] = FakeOpener(routes); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+        collect.Fetcher.__init__ = init
+        try:
+            rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
+                          "--private-root", str(priv)])
+        finally:
+            collect.Fetcher.__init__ = orig
+        self.assertEqual(rc, 0)
+        shas = sorted(hashlib.sha256(b).hexdigest() for b in (idx, s1, s2))
+        df = (priv / "raw/2026-10-12/DERIVED-FROM.tsv").read_text().strip().split("\t")[1].split(",")
+        self.assertEqual(sorted(df), shas)
+        pidx = json.loads(next((out / "raw/2026-10-12/anthropic-news").glob("index-*.json")).read_text())
+        self.assertEqual(sorted(pidx[0]["raw_responses"]), shas)
 
 
 if __name__ == "__main__":

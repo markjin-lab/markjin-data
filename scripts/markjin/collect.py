@@ -299,11 +299,13 @@ class Archive:
         self.put(rel, body)
         return rel, sha
 
-    def put_derived(self, sub, sid, src_sha, name, data):
+    def put_derived(self, sub, sid, src_sha, name, data, sources=None):
+        """sources：参与生成的全部原件 sha256（多份 sitemap 等）；DERIVED-FROM.tsv 逐一登记（逗号分隔）。"""
         rel = f"{sub}{sid}/derived/{src_sha}.{name}"
         sha, new = self.put(rel, data, manifest="DERIVED.sha256")
         if new:
-            self._append("DERIVED-FROM.tsv", f"./{rel}\t{src_sha}")
+            srcs = list(dict.fromkeys(sources or [src_sha]))
+            self._append("DERIVED-FROM.tsv", f"./{rel}\t{','.join(srcs)}")
         return rel, sha
 
     def put_json(self, rel, obj):

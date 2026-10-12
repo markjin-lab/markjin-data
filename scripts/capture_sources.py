@@ -181,7 +181,8 @@ def main(argv=None):
                 rec["stored"] = "internal" if internal else "private"
                 raw_logs[where].append({"id": sid, "run": run, "raws": raws, "url": purl})
             if r.ok:
-                raw_ar.put_derived(sub, sid, sha, f"items-{run}.json", r.body)
+                raw_ar.put_derived(sub, sid, sha, f"items-{run}.json", r.body,
+                                   sources=[x["sha256"] for x in raws])   # 登记全部原件
         else:
             req_url, cred_err = request_url(s, url)
             r = collect.Result(False, error=cred_err) if cred_err else fetcher.get(req_url, sid=sid)
@@ -201,7 +202,8 @@ def main(argv=None):
             (int_ar if internal else pub_ar).put_json(
                 f"{sub}{sid}/index-{run}.json",
                 [{"id": sid, "url": rec["url"], "sha256": sha, "fetched_at": t0, "bytes": rec["bytes"],
-                  "license": lic, "round": a.round, "stored": rec["stored"], "method": s["method"]}])
+                  "license": lic, "round": a.round, "stored": rec["stored"], "method": s["method"],
+                  **({"raw_responses": rec["raw_responses"]} if rec.get("raw_responses") else {})}])
             n_ok += 1
             print(f"OK  {sid} {r.status} {len(r.body)}B", file=sys.stderr)
         else:

@@ -21,8 +21,11 @@ Commands:
           重跑 plan 不清零已开始查询的页数（参数不同则报错）。
   hydrate --state S.json                       -> get_posts_by_ids 批次（≤100 id/批，带批次号；每批调用前 reserve --batch）
   ingest-hydrate --state S.json --call-id ID --file RESULT.txt
-  leads   --state S.json                       -> 线索 JSON（按 like≥20 / RT≥5 / 白名单作者过滤；含帖文，只写私有目录），
-                                                  每条固定 label: 线索, source_role: lead
+  leads   --state S.json --private-root DIR    -> 线索（按 like≥20 / RT≥5 / 白名单作者过滤，每条固定 label: 线索,
+                                                  source_role: lead）写入 DIR/raw/DATE/x/leads-<run>.json（只追加私有档案，
+                                                  登记 MANIFEST）；stdout 只输出 {"path", "count", "filtered_out"}
+进度按「日期 + 轮次 + slug」分开存（queries["DATE/rN/slug"]）；ids / posts / calls 两轮共用同一状态文件，
+round2 直接沿用 round1 的状态文件：跨轮按 id 去重，每日 400 次额度两轮共享。
   budget  --state S.json                       -> 今日（UTC 日，00:00Z 重置）已用 / 剩余 / 需等待秒数
 预算：≤400 次 / UTC 日（X 额度 00:00Z 重置，05:00 与 06:00 SGT 两轮在同一额度日），≤25 次 / 滚动 60 秒。
 页数上限（x-queries.md「翻页」节）：账号批次 4 页、主题 2 页（两轮相同）。
@@ -100,13 +103,24 @@ def args_digest(args):
     return hashlib.sha256(json.dumps(args, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def expected_call(s, tool, slug=None, page=None, batch=None):
+def qkey(s, slug, date=None, rnd=None):
+    """查询进度按「日期 + 轮次 + slug」分开存：queries["YYYY-MM-DD/r1/slug"]。缺省取最近一次 plan 的日期与轮次。
+    ids、posts、calls 在同一状态文件里两轮共用（跨轮去重、每日 400 次共享额度）。"""
+    cur = s.get("current") or {}
+    date, rnd = date or cur.get("date"), rnd or cur.get("round")
+    if not date or not rnd:
+        raise UsageError("no plan yet (run plan --date --round first)")
+    return f"{date}/r{rnd}/{slug}"
+
+
+def expected_call(s, tool, slug=None, page=None, batch=None, key=None):
     """预留前核对：search 必须是已计划的 slug、页码必须恰为下一页且不超页数上限、查询未结束；
     补全必须是当前 hydrate 批次之一。返回本次调用应使用的完整参数（预留时绑定其摘要）。"""
     if tool == "search_posts_all":
-        if not slug or slug not in s["queries"]:
-            raise UsageError(f"slug {slug!r} not planned")
-        qs = s["queries"][slug]
+        key = key or (qkey(s, slug) if slug else None)
+        if not slug or key not in s["queries"]:
+            raise UsageError(f"slug {slug!r} not planned for this date/round")
+        qs = s["queries"][key]
         if qs.get("done"):
             raise UsageError(f"slug {slug} finished: {qs['done']}")
         want = qs["pages"] + 1
@@ -132,10 +146,11 @@ def reserve(s, tool, slug=None, page=None, now=None, batch=None, args=None):
     if tool not in TOOLS:
         raise UsageError(f"unknown tool {tool}")
     want, ids = expected_call(s, tool, slug, page, batch)
+    key = qkey(s, slug) if tool == "search_posts_all" else None
     dg = args_digest(want)
     for c in s["calls"]:     # 同一调用（同 slug 同页 / 同补全批次）不能在未入账、未取消时重复预留
         if c.get("tool") == tool and not c.get("ingested") and not c.get("cancelled") and c.get("args_digest") == dg \
-                and c.get("slug") == slug and c.get("page") == page:
+                and c.get("qkey") == key and c.get("page") == page:
             raise UsageError(f"call {c['id']} already reserved for this {'slug/page' if slug else 'batch'}; "
                              "ingest it or cancel it first")
     if args is not None and args_digest(args) != dg:
@@ -147,7 +162,7 @@ def reserve(s, tool, slug=None, page=None, now=None, batch=None, args=None):
     if w > 0:
         return {"allowed": False, "reason": f"per-minute cap {MIN_CAP}", "wait_s": w}
     cid = uuid.uuid4().hex[:12]
-    s["calls"].append({"id": cid, "t": now, "tool": tool, "slug": slug, "page": page, "ingested": False,
+    s["calls"].append({"id": cid, "t": now, "tool": tool, "slug": slug, "qkey": key, "page": page, "ingested": False,
                        "args_digest": dg, "ids": ids})
     return {"allowed": True, "call_id": cid, "args": want, "args_digest": dg}
 
@@ -162,7 +177,7 @@ def _take_call(s, cid, tool):
             if c.get("cancelled"):
                 raise UsageError(f"call {cid} was cancelled")
             if tool == "search_posts_all":     # 入账时核对：该 call 预留的页码仍是下一页、参数摘要与计划一致
-                want, _ = expected_call(s, tool, c.get("slug"), c.get("page"))
+                want, _ = expected_call(s, tool, c.get("slug"), c.get("page"), key=c.get("qkey"))
                 if args_digest(want) != c.get("args_digest"):
                     raise UsageError(f"call {cid} args_digest does not match the planned call")
             c["ingested"] = True
@@ -176,23 +191,25 @@ def cmd_plan(a, s):
     start = window_start(a.date, a.round)
     q = strictjson.loads(Path(a.queries).read_text(encoding="utf-8"))  # [{"slug","kind","query","sort_order"?}]
     out = []
+    s["current"] = {"date": a.date, "round": a.round}
     for e in q:
         if e["kind"] not in PAGE_CAP[1]:
             raise UsageError(f"bad kind {e['kind']}")
         args = dict(BASE_ARGS, query=e["query"], start_time=start, sort_order=e.get(
             "sort_order", "recency" if e["kind"] == "account" else "relevancy"))
-        old = s["queries"].get(e["slug"])
-        started = old and (old.get("pages") or any(c.get("slug") == e["slug"] for c in s["calls"]))
+        key = qkey(s, e["slug"], a.date, a.round)
+        old = s["queries"].get(key)
+        started = old and (old.get("pages") or any(c.get("qkey") == key for c in s["calls"]))
         if started:              # 已开始的查询：重跑 plan 不清零页数/翻页状态；参数变了则拒绝
             if old["args"] != args or old["kind"] != e["kind"] or old.get("round") != a.round:
-                raise UsageError(f"slug {e['slug']} already started with different params; use a new state file")
+                raise UsageError(f"slug {e['slug']} ({key}) already started with different params")
             if not old.get("done"):
                 nxt = old["pages"] + 1
                 out.append({"slug": e["slug"], "kind": e["kind"], "page": nxt, "tool": "search_posts_all",
-                            "args": expected_call(s, "search_posts_all", e["slug"], nxt)[0]
+                            "args": expected_call(s, "search_posts_all", e["slug"], nxt, key=key)[0]
                             if nxt <= PAGE_CAP[a.round][e["kind"]] else None})
             continue
-        s["queries"][e["slug"]] = {"kind": e["kind"], "round": a.round, "date": a.date, "args": args,
+        s["queries"][key] = {"slug": e["slug"], "kind": e["kind"], "round": a.round, "date": a.date, "args": args,
                                    "pages": 0, "posts": 0}
         out.append({"slug": e["slug"], "kind": e["kind"], "page": 1, "tool": "search_posts_all", "args": args})
     return out
@@ -218,9 +235,9 @@ def cmd_reserve(a, s):
 def cmd_ingest(a, s):
     c = _take_call(s, a.call_id, "search_posts_all")
     slug = c["slug"]
-    if slug not in s["queries"]:
+    if c.get("qkey") not in s["queries"]:
         raise UsageError(f"slug {slug} not planned")
-    qs = s["queries"][slug]
+    qs = s["queries"][c["qkey"]]
     j, quota = parse_result(a.file)
     data = j.get("data", []) or []
     known = set(s["ids"])
@@ -311,14 +328,21 @@ def lead_reason(p, wl):
 
 
 def cmd_leads(a, s):
-    """按文档派生过滤规则导出；输出含帖文，只能写入私有目录（fetch_primary 的公开输出不含帖文）。"""
+    """按文档派生过滤规则导出线索。线索含帖文，只写入显式给出的私有目录：
+    PRIVATE/raw/DATE/x/leads-<run>.json（独占创建 + MANIFEST.sha256 只追加）。stdout 只输出路径和条数。"""
+    from markjin import collect
     wl, items, dropped = whitelist(s), [], 0
     for p in s["posts"].values():
         why = lead_reason(p, wl)
         if not why:
             dropped += 1; continue
         items.append(dict(p, label="线索", source_role="lead", lead_reason=why))
-    return {"items": items, "filtered_out": dropped}
+    date = (s.get("current") or {}).get("date") or dt.datetime.now(UTC).date().isoformat()
+    root = Path(a.private_root).resolve()
+    ar = collect.Archive(root / "raw" / date)
+    rel = f"x/leads-{collect.stamp()}.json"
+    ar.put_json(rel, {"items": items})
+    return {"path": str(ar.day / rel), "count": len(items), "filtered_out": dropped}
 
 
 def cmd_budget(a, s):
@@ -340,7 +364,10 @@ def main(argv=None):
     for n, f in (("ingest", cmd_ingest), ("ingest-hydrate", cmd_ingest_hydrate)):
         p = sp.add_parser(n); p.add_argument("--state", required=True); p.add_argument("--call-id", required=True)
         p.add_argument("--file", required=True); p.set_defaults(f=f, mut=True)
-    for n, f in (("hydrate", cmd_hydrate), ("budget", cmd_budget), ("leads", cmd_leads)):
+    p = sp.add_parser("leads"); p.add_argument("--state", required=True)
+    p.add_argument("--private-root", required=True, help="私有输出根目录（必须显式给出）")
+    p.set_defaults(f=cmd_leads, mut=False)
+    for n, f in (("hydrate", cmd_hydrate), ("budget", cmd_budget)):
         p = sp.add_parser(n); p.add_argument("--state", required=True); p.set_defaults(f=f, mut=False)
     a = ap.parse_args(argv)
     try:
