@@ -169,7 +169,8 @@ class XCapture(unittest.TestCase):
         rc, r = self.x("leads", "--state", str(self.st), "--private-root", str(self.d / "priv"))
         self.assertEqual(rc, 0)
         self.assertEqual(set(r), {"path", "count", "filtered_out"})          # stdout 只有路径和条数
-        out = json.loads(Path(r["path"]).read_text())
+        self.assertFalse(Path(r["path"]).is_absolute())                         # 相对私有根目录
+        out = json.loads((self.d / "priv" / r["path"]).read_text())
         self.assertEqual(len(out["items"]), r["count"])
         out["filtered_out"] = r["filtered_out"]
         return out
@@ -404,12 +405,12 @@ class R2XCapture(XCapture):
     def test_leads_filtered_by_engagement_and_whitelist(self):
         self.plan()
         s = XC.load_state(self.st)
-        s["posts"] = {"1": {"id": "1", "text": "a", "public_metrics": {"like_count": 20, "retweet_count": 0}},
-                      "2": {"id": "2", "text": "b", "public_metrics": {"like_count": 3, "retweet_count": 5}},
-                      "3": {"id": "3", "text": "c", "public_metrics": {"like_count": 1}, "username": "A"},
+        s["posts"] = {"1": {"id": "1", "text": "a", "public_metrics": {"like_count": 20, "retweet_count": 0}, "date": "2026-10-12"},
+                      "2": {"id": "2", "text": "b", "public_metrics": {"like_count": 3, "retweet_count": 5}, "date": "2026-10-12"},
+                      "3": {"id": "3", "text": "c", "public_metrics": {"like_count": 1}, "username": "A", "date": "2026-10-12"},
                       "4": {"id": "4", "text": "d", "public_metrics": {"like_count": 19, "retweet_count": 4},
-                            "username": "nobody"},
-                      "5": {"id": "5", "text": "e"}}
+                            "username": "nobody", "date": "2026-10-12"},
+                      "5": {"id": "5", "text": "e", "date": "2026-10-12"}}
         XC.save_state(self.st, s)
         out = self.leads()
         got = {i["id"]: i["lead_reason"] for i in out["items"]}
@@ -630,7 +631,7 @@ class R4XCapture(R3XCapture):
         with self.assertRaises(SystemExit):
             XC.main(["leads", "--state", str(self.st)])
         s = XC.load_state(self.st)
-        s["posts"] = {"1": {"id": "1", "text": "SECRET TEXT", "public_metrics": {"like_count": 50}}}
+        s["posts"] = {"1": {"id": "1", "text": "SECRET TEXT", "public_metrics": {"like_count": 50}, "date": "2026-10-12"}}
         XC.save_state(self.st, s)
         import io, contextlib
         buf = io.StringIO()
@@ -645,7 +646,7 @@ class R4XCapture(R3XCapture):
         man = (day / "MANIFEST.sha256").read_text()
         for f in files:
             self.assertIn("./x/" + f.name, man)
-        self.assertIn("SECRET TEXT", Path(r1["path"]).read_text())
+        self.assertIn("SECRET TEXT", (self.d / "priv" / r1["path"]).read_text())
 
 
 def dt_same_utc_day(a, b):
@@ -696,6 +697,151 @@ class R4Scraper(unittest.TestCase):
         self.assertEqual(sorted(df), shas)
         pidx = json.loads(next((out / "raw/2026-10-12/anthropic-news").glob("index-*.json")).read_text())
         self.assertEqual(sorted(pidx[0]["raw_responses"]), shas)
+
+
+class R5Primary(Primary):
+    """PR #6 审查 r5：公开 index/stderr 默认只写主机 + 完整 URL hash；id 规范正整数。"""
+
+    def setUp(self):
+        self.base = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.out = self.base / "pub"; self.priv = self.base / "priv"; self.out.mkdir()
+
+    def test_path_credentials_not_in_public_index_or_stderr(self):
+        import io, contextlib
+        u = "https://docs.e.org/private/TOKENPATH/document?key=TOKENQUERY"
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            items, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}], {u: Resp(200, b"<p>x</p>")})
+        pub = "".join(p.read_text(errors="replace") for p in self.out.rglob("*") if p.is_file())
+        self.assertNotIn("TOKENPATH", pub + err.getvalue())
+        self.assertNotIn("TOKENQUERY", pub + err.getvalue())
+        self.assertEqual(idx[0]["url"], "https://docs.e.org/#sha256=" + collect.url_sha256(u))
+        self.assertEqual(items[0]["primary_url"], idx[0]["url"])
+
+    def test_licensed_item_shows_verified_path(self):
+        body = b"<p>open</p>"
+        u = "https://e.org/papers/open-1"
+        ev = {"url": u, "license": "CC-BY-4.0", "license_url": "https://creativecommons.org/licenses/by/4.0/",
+              "evidence_url": "https://e.org/about", "attribution": "A", "verified_by": "jw",
+              "verified_at": "2026-10-12", "sha256": hashlib.sha256(body).hexdigest()}
+        _, idx, _ = self.run_fp([{"id": "1", "expanded_url": u}], {u: Resp(200, body)}, evidence=[ev])
+        self.assertEqual(idx[0]["stored"], "public")
+        self.assertEqual(idx[0]["final_url"], u)
+        self.assertEqual(idx[0]["license_evidence"]["url"], u)
+
+    def test_post_id_must_be_canonical_positive_integer(self):
+        items, _, _ = self.run_fp([{"id": "0012"}, {"id": "0"}, {"id": "12"}, {"id": 34}, {"id": "-5"}, {"id": "1e3"}], {})
+        self.assertEqual([i.get("id") for i in items], [None, None, "12", "34", None, None])
+        self.assertEqual([i.get("url") for i in items][2], "https://x.com/i/status/12")
+        self.assertNotIn("url", items[0])
+
+
+class R5Scraper(unittest.TestCase):
+    def run_cs(self, routes):
+        import yaml
+        base = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        out, priv = base / "pub", base / "priv"; out.mkdir()
+        src = base / "s.yaml"
+        src.write_text(yaml.safe_dump({"sources": [{"id": "anthropic-news", "method": "scraper", "scraper": "anthropic_sitemap",
+                       "url": "https://www.anthropic.com/sitemap.xml", "enabled": True, "approval_status": "approved",
+                       "approval_basis": "b", "license": "url+hash-only"}]}), encoding="utf-8")
+        orig = collect.Fetcher.__init__
+        op = FakeOpener(routes)
+
+        def init(s, *a, **k):
+            k["opener"] = op; k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+        collect.Fetcher.__init__ = init
+        try:
+            rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
+                          "--private-root", str(priv)])
+        finally:
+            collect.Fetcher.__init__ = orig
+        return rc, out, op
+
+    IDX = (b"<?xml version='1.0'?><sitemapindex><sitemap><loc>https://www.anthropic.com/s1.xml</loc></sitemap>"
+           b"<sitemap><loc>https://www.anthropic.com/s2.xml</loc></sitemap></sitemapindex>")
+    S1 = b"<urlset><url><loc>https://www.anthropic.com/news/a</loc><lastmod>2026-10-10</lastmod></url></urlset>"
+
+    def _check_failed(self, s2resp):
+        rc, out, op = self.run_cs({"https://www.anthropic.com/sitemap.xml": Resp(200, self.IDX),
+                                   "https://www.anthropic.com/s1.xml": Resp(200, self.S1),
+                                   "https://www.anthropic.com/s2.xml": s2resp})
+        self.assertEqual(rc, 1)
+        day = out / "raw/2026-10-12"
+        self.assertFalse(list(day.rglob("index-*.json")))                            # 不写成功索引
+        self.assertIn("scraper:ScrapeError", next(day.glob("failures-*.json")).read_text())
+
+    def test_subsitemap_403_fails_run(self):
+        self._check_failed(Resp(403))
+
+    def test_subsitemap_challenge_fails_run(self):
+        self._check_failed(Resp(200, b'<div class="cf-turnstile"></div>'))
+
+    def test_subsitemap_disabled_fails_run(self):
+        from scrapers import sitemap_filter, ScrapeError
+        calls = []
+
+        def fetch(u):
+            calls.append(u)
+            return (200, "", self.IDX, None) if u.endswith("sitemap.xml") else \
+                ((200, "", self.S1, None) if u.endswith("s1.xml") else (0, "", b"", "disabled"))
+        with self.assertRaises(ScrapeError):
+            sitemap_filter.scrape(fetch, "https://www.anthropic.com/sitemap.xml", None)
+
+    def test_subsitemap_robots_disallow_still_skipped(self):
+        from scrapers import sitemap_filter
+        fetch = lambda u: (200, "", self.IDX, None) if u.endswith("sitemap.xml") else \
+            ((200, "", self.S1, None) if u.endswith("s1.xml") else (0, "", b"", "robots_disallow"))
+        self.assertEqual(len(sitemap_filter.scrape(fetch, "https://www.anthropic.com/sitemap.xml", None)), 1)
+
+
+class R5XCapture(R4XCapture):
+    def setUp(self):
+        self.d = Path(self.enterContext(tempfile.TemporaryDirectory())); self.st = self.d / "state.json"
+        (self.d / "q.json").write_text(json.dumps([{"slug": "accounts-01", "kind": "account", "query": "from:a"},
+                                                   {"slug": "ai", "kind": "topic", "query": "LLM"}]))
+
+    def test_leads_private_root_overlap_and_git_rejected(self):
+        self.plan()
+        repo = Path(__file__).resolve().parents[1]
+        for bad, out in ((repo / "private-x", "."), (self.d / "pub" / "priv", str(self.d / "pub"))):
+            (self.d / "pub").mkdir(exist_ok=True)
+            rc, _ = self.x("leads", "--state", str(self.st), "--private-root", str(bad), "--out-root", out)
+            self.assertEqual(rc, 2, bad)
+            self.assertFalse((repo / "private-x").exists())
+        g = self.d / "otherrepo"; g.mkdir()
+        import subprocess
+        subprocess.run(["git", "init", "-q", str(g)], check=True)
+        rc, _ = self.x("leads", "--state", str(self.st), "--private-root", str(g / "deep" / "priv"),
+                       "--out-root", str(self.d / "pub"))
+        self.assertEqual(rc, 2)                                                       # 任何 git 工作树内都拒绝
+        self.assertFalse((g / "deep").exists())
+
+    def test_leads_only_current_day_posts(self):
+        self.plan()
+        _, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"],
+               "--file", self.write_result([{"id": "1", "text": "old", "public_metrics": {"like_count": 99}}]))
+        self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-13", "--round", "1")
+        _, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        _, n = self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"],
+                      "--file", self.write_result([{"id": "1", "text": "old"},
+                                                   {"id": "2", "text": "new", "public_metrics": {"like_count": 99}}]))
+        self.assertEqual(n["new_ids"], 1)                                             # ids 跨日仍去重
+        st = XC.load_state(self.st)
+        self.assertEqual((st["posts"]["1"]["date"], st["posts"]["1"]["round"]), ("2026-10-12", 1))
+        self.assertEqual(st["posts"]["2"]["date"], "2026-10-13")
+        out = self.leads()
+        self.assertEqual([i["id"] for i in out["items"]], ["2"])
+        self.assertIn("raw/2026-10-13/x/leads-", out_path := self.x("leads", "--state", str(self.st),
+                      "--private-root", str(self.d / "priv"))[1]["path"])
+        self.assertFalse(out_path.startswith("/"))
+
+    def test_whitelist_only_current_day_queries(self):
+        self.plan()
+        s = XC.load_state(self.st)
+        self.assertIn("a", XC.whitelist(s, "2026-10-12"))
+        self.assertEqual(XC.whitelist(s, "2026-10-13"), set())
 
 
 if __name__ == "__main__":

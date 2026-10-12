@@ -23,7 +23,9 @@ Commands:
   ingest-hydrate --state S.json --call-id ID --file RESULT.txt
   leads   --state S.json --private-root DIR    -> 线索（按 like≥20 / RT≥5 / 白名单作者过滤，每条固定 label: 线索,
                                                   source_role: lead）写入 DIR/raw/DATE/x/leads-<run>.json（只追加私有档案，
-                                                  登记 MANIFEST）；stdout 只输出 {"path", "count", "filtered_out"}
+                                                  登记 MANIFEST）；只导出当天（最近一次 plan 的日期）采集的帖子；
+                                                  DIR 须与 --out-root 不重叠且不在任何 git 工作树内；
+                                                  stdout 只输出 {"path"（相对 DIR）, "count", "filtered_out"}
 进度按「日期 + 轮次 + slug」分开存（queries["DATE/rN/slug"]）；ids / posts / calls 两轮共用同一状态文件，
 round2 直接沿用 round1 的状态文件：跨轮按 id 去重，每日 400 次额度两轮共享。
   budget  --state S.json                       -> 今日（UTC 日，00:00Z 重置）已用 / 剩余 / 需等待秒数
@@ -33,7 +35,7 @@ round2 直接沿用 round1 的状态文件：跨轮按 id 去重，每日 400 �
 Verified 2026-10-12 06:2x SGT: search_posts_all max_results ≤25；翻页参数 next_token；search 不返回 entities，
 需 get_posts_by_ids（≤100 id）补全 entities.urls[].expanded_url/unwound_url；t.co 永不自行解析。
 """
-import argparse, datetime as dt, hashlib, json, re, sys, time, uuid
+import argparse, datetime as dt, hashlib, json, re, subprocess, sys, time, uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -247,6 +249,8 @@ def cmd_ingest(a, s):
     for d in data:
         s["posts"].setdefault(d["id"], {k: d.get(k) for k in ("id", "text", "author_id", "created_at", "public_metrics")})
         s["posts"][d["id"]]["query"] = slug
+        s["posts"][d["id"]].setdefault("date", qs["date"])      # 帖子首次采集所属的日期与轮次
+        s["posts"][d["id"]].setdefault("round", qs["round"])
         if users.get(d.get("author_id")):
             s["posts"][d["id"]]["username"] = users[d.get("author_id")]
     qs["pages"] = c["page"] or qs["pages"] + 1
@@ -307,11 +311,11 @@ def cmd_ingest_hydrate(a, s):
 LIKE_MIN, RT_MIN = 20, 5   # improve/x-queries.md：like_count ≥ 20 或 retweet_count ≥ 5 或作者在白名单
 
 
-def whitelist(s):
-    """白名单 = 状态中全部 account 类（from: 批次）查询里的账号（小写）。"""
+def whitelist(s, date=None):
+    """白名单 = 状态中（当天的）account 类（from: 批次）查询里的账号（小写）。"""
     out = set()
     for q in s["queries"].values():
-        if q.get("kind") == "account":
+        if q.get("kind") == "account" and (date is None or q.get("date") == date):
             out |= {m.lower() for m in re.findall(r"from:(\w+)", q["args"].get("query", ""))}
     return out
 
@@ -327,22 +331,47 @@ def lead_reason(p, wl):
     return None
 
 
+def in_git_worktree(path):
+    """path（或其最近的已存在上级目录）是否位于某个 git 工作树内（git rev-parse --show-toplevel）。"""
+    p = Path(path).resolve()
+    while not p.exists():
+        p = p.parent
+    if p.is_file():
+        p = p.parent
+    try:
+        r = subprocess.run(["git", "-C", str(p), "rev-parse", "--show-toplevel"], capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        raise UsageError("cannot run git to verify --private-root is outside any git work tree")
+    return r.returncode == 0 and bool(r.stdout.strip())
+
+
 def cmd_leads(a, s):
-    """按文档派生过滤规则导出线索。线索含帖文，只写入显式给出的私有目录：
-    PRIVATE/raw/DATE/x/leads-<run>.json（独占创建 + MANIFEST.sha256 只追加）。stdout 只输出路径和条数。"""
+    """按文档派生规则导出*当天*（最近一次 plan 的日期）的线索。线索含帖文，只写入显式给出的私有目录：
+    PRIVATE/raw/DATE/x/leads-<run>.json（独占创建 + MANIFEST.sha256 只追加）。
+    私有根目录：沿用 collect.resolve_private_root 的与公开根目录不重叠检查，并拒绝位于任何 git 工作树内的目录。
+    stdout 只输出相对私有根目录的路径和条数。"""
     from markjin import collect
-    wl, items, dropped = whitelist(s), [], 0
+    try:
+        root = collect.resolve_private_root(a.private_root, a.out_root)
+    except collect.ConfigError as e:
+        raise UsageError(str(e))
+    if in_git_worktree(root):
+        raise UsageError("--private-root is inside a git work tree; refusing to write post text there")
+    date = (s.get("current") or {}).get("date")
+    if not date:
+        raise UsageError("no plan yet (run plan --date --round first)")
+    wl, items, dropped = whitelist(s, date), [], 0
     for p in s["posts"].values():
+        if p.get("date") != date:          # 只导出当天采集的帖子；ids/calls 仍两轮共用做去重与额度
+            continue
         why = lead_reason(p, wl)
         if not why:
             dropped += 1; continue
         items.append(dict(p, label="线索", source_role="lead", lead_reason=why))
-    date = (s.get("current") or {}).get("date") or dt.datetime.now(UTC).date().isoformat()
-    root = Path(a.private_root).resolve()
     ar = collect.Archive(root / "raw" / date)
     rel = f"x/leads-{collect.stamp()}.json"
     ar.put_json(rel, {"items": items})
-    return {"path": str(ar.day / rel), "count": len(items), "filtered_out": dropped}
+    return {"path": f"raw/{date}/{rel}", "count": len(items), "filtered_out": dropped}
 
 
 def cmd_budget(a, s):
@@ -365,7 +394,8 @@ def main(argv=None):
         p = sp.add_parser(n); p.add_argument("--state", required=True); p.add_argument("--call-id", required=True)
         p.add_argument("--file", required=True); p.set_defaults(f=f, mut=True)
     p = sp.add_parser("leads"); p.add_argument("--state", required=True)
-    p.add_argument("--private-root", required=True, help="私有输出根目录（必须显式给出）")
+    p.add_argument("--private-root", required=True, help="私有输出根目录（必须显式给出，不能在 git 工作树内）")
+    p.add_argument("--out-root", default=".", help="公开仓库根目录（与私有根目录互不包含）")
     p.set_defaults(f=cmd_leads, mut=False)
     for n, f in (("hydrate", cmd_hydrate), ("budget", cmd_budget)):
         p = sp.add_parser(n); p.add_argument("--state", required=True); p.set_defaults(f=f, mut=False)

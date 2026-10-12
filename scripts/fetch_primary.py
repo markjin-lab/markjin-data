@@ -94,7 +94,7 @@ def public_lead(lead):
     帖文原文、作者、互动数、原始 URL 字段只进私有 leads 档案。"""
     pid = lead.get("id")
     out = {}
-    if isinstance(pid, (str, int)) and re.fullmatch(r"[0-9]{1,20}", str(pid)):   # 只有合法帖子 id 才写 id / url
+    if isinstance(pid, (str, int)) and re.fullmatch(r"[1-9][0-9]{0,19}", str(pid)):   # 只有合法帖子 id 才写 id / url
         out["id"] = str(pid)
         out["url"] = f"https://x.com/i/status/{pid}"
     if isinstance(lead.get("text"), str):
@@ -104,8 +104,7 @@ def public_lead(lead):
             continue
         if k in lead and k not in out:
             out[k] = lead[k]
-    if out.get("primary_url"):
-        out["primary_url"] = collect.public_url(out["primary_url"])
+    # primary_url 在主循环里已是 public_url 形式（主机 + 完整 URL sha256），不再二次处理
     return out
 
 
@@ -166,7 +165,7 @@ def main(argv=None, fetcher=None):
                 rec["detail"] = "non-public address"
             if r.ok:
                 final = r.final_url or orig
-                fu = collect.public_url(final)
+                fu = collect.public_url(final)                  # 默认：主机 + 完整 URL sha256
                 ext = collect.ext_for(r.ctype, r.body)
                 rel, sha = priv.put_raw("", "primary", r.body, ext)
                 title, txt = extract_text(r.body, r.ctype)
@@ -183,12 +182,15 @@ def main(argv=None, fetcher=None):
                     ev = ev_f if not same else ev_o
                     pub.put_raw("", "primary", r.body, ext)
                     if txt:
-                        head = f"Source: {fu}\nLicense: {ev['license']} ({collect.public_url(ev['license_url'])})\nAttribution: {ev['attribution']}\n\n"
+                        src = collect.public_url(final, public_path=True)   # 逐条许可证据已人工核实该 URL
+                        head = f"Source: {src}\nLicense: {ev['license']} ({collect.public_url(ev['license_url'], public_path=True)})\nAttribution: {ev['attribution']}\n\n"
                         pub.put(f"primary/{sha}.txt", (head + txt + "\n").encode())
                     shown = {k: ev.get(k) for k in collect.EVIDENCE_FIELDS + ("third_party_excluded",)}
-                    shown["url"] = collect.public_url(shown["url"])
-                    shown["evidence_url"] = collect.public_url(shown["evidence_url"])
-                    shown["license_url"] = collect.public_url(shown["license_url"])
+                    # 证据各 URL 经人工核实（逐条确认），才写出路径；查询值仍去掉
+                    shown["url"] = collect.public_url(shown["url"], public_path=True)
+                    shown["evidence_url"] = collect.public_url(shown["evidence_url"], public_path=True)
+                    shown["license_url"] = collect.public_url(shown["license_url"], public_path=True)
+                    rec["final_url"] = collect.public_url(final, public_path=True)
                     # 正文派生字段（title）只在逐条许可通过、stored=public 时才进公开 index
                     rec.update(stored="public", license=ev["license"], license_evidence=shown, title=title[:300])
                 # 私有 fetch-log 也只写脱敏 URL；完整原 URL 只在私有 leads 原始档案里
