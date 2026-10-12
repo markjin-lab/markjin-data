@@ -1,8 +1,15 @@
 # ledger/：分支台账
 
-`branches.csv` 是分支台账，一个分支占一行。分支不只用于宏观：日报里的 AI、能源、太空、生物等条目，只要做了完整分类（写出全部后续分支和触发条件），都要登记，用 domain 列区分领域。
+`branches.csv` 是分支台账：每个分支先有一条登记行，之后的对账和更正只追加新行。分支不只用于宏观：日报里的 AI、能源、太空、生物等条目，只要做了完整分类（写出全部后续分支和触发条件），都要登记，用 domain 列区分领域。
 生产与发布 bot 在发布时登记；观测窗口到期后，审查与治理 bot 追加对账行。
-字段和规则以站点路线图 `docs/roadmap.md` 第六节“分支台账”、第十三节 13.1 为准；本 PR 的扩展（domain、row_id、更正行、整库校验码、门禁只算第一行）为协调 bot 已定（2026-10-12），路线图同步见站点 PR #38。
+字段和规则的基础是站点路线图 `docs/roadmap.md` 第六节“分支台账”和第十三节 13.1。**站点 #46–#53 对齐前以本 README 为准。** 以下扩展为协调 bot 已定（2026-10-12），路线图同步见站点 PR #38：
+- domain 列；row_id 及其生成规则；classification_id；
+- 判定分组：HIT 与互斥判定按 (draft_id, classification_id) 分组，每组至少 2 支，组成员在登记时固定；
+- 登记更正、结论更正两类更正行；registered_at 不可改；
+- 整库校验码 framework_sha256 与内核提交号 framework_commit；
+- 门禁只算第一行；命中率口径见规则第 10 条；
+- 按季读数行只允许 PENDING，读数严格追加；
+- CI 逐提交检查只追加，并核对推送时间。
 路线图中标为“bot 补写，待王总确认”的规则：写明“从严临时执行”的现在照做；写明“确认前不生效”的现在只登记，不据此判定。
 
 稿件公开正文不写内部分类标签；分支和触发条件只进台账。
@@ -50,7 +57,7 @@
 
 | 字段 | 含义 |
 |---|---|
-| actual_value | 实际取值。区间型分支对账出 HIT、MISS、NONE_HIT、MULTI_HIT 时必须是数字 |
+| actual_value | 实际取值。区间型分支对账出 HIT、MISS、NONE_HIT、MULTI_HIT 时必须是数字；脚本按端点开闭算出它落在不在本支区间内，结果必须和 check_result、actual_branch 一致 |
 | quarter_readings | 每个季度的读数，写成 `季度:读数@vintage#raw 路径:sha256`，用英文分号分隔，季度须在 window_quarters 内并按顺序（按季读数型分支） |
 | actual_branch | 是否为实际发生的那一支，填 `是`、`否` 或留空 |
 | check_result | 对账结果：`PENDING`（未到期）、`HIT`、`MISS`、`NONE_HIT`、`MULTI_HIT`、`TRIGGER_UNOBSERVABLE`、`DATA_UNAVAILABLE` |
@@ -64,29 +71,42 @@
 
 ## 登记和对账的规则
 
-**判定分组**：HIT 与互斥判定按 (draft_id, classification_id) 分组，组内只看各分支当前的最终结论：恰有一支 HIT、其余 MISS；全部 NONE_HIT；两支以上 MULTI_HIT、其余 MISS；或全部 TRIGGER_UNOBSERVABLE。组内结论尚未出齐时只查是否矛盾；error_source 在组内必须一致。
+**判定分组**：HIT 与互斥判定按 (draft_id, classification_id) 分组。每组至少 2 支，同组分支必须在同一个提交里、连续地一起登记，之后不得再给这一组加分支（E-BR-GROUP-LATE）。同组分支的 publish_date、registered_at 的日期、window_start、window_end、observed_variable、unit、data_source、data_vintage 必须完全相同。同组如果全是区间型分支，各区间必须两两互斥，并且合起来覆盖全部实数（按端点开闭计算）。对账时，组内组内只看各分支当前的最终结论：恰有一支 HIT、其余 MISS；全部 NONE_HIT；两支以上 MULTI_HIT、其余 MISS；或全部 TRIGGER_UNOBSERVABLE。组内结论尚未出齐时只查是否矛盾；error_source 在组内必须一致。
 
 行分四种：**登记行**（每个分支的第一行）、**对账行**、**登记更正行**、**结论更正行**。
 
-1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。CI 用 `--base` 检查新文件是否以原文件开头（push 取 before，PR 取 base 与 head 的 merge-base）。基线提交不存在或读不出时判失败，不放行。
+1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。
+   - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。基线提交不存在或读不出时判失败，不放行。
+   - **推送时间。** CI 用运行时间作为推送时间（`--now`）。对本次新增的登记行和登记更正行，要求推送时间与 registered_at 相差不超过 6 小时，并且早于 window_start 当日 00:00（SGT）。
 2. **登记行。** check_result 必须是 `PENDING`，quarter_readings 为空；registered_at 的日期等于 publish_date，并早于观测开始（window_start 至少是发布次日）；lu_basis_date 和 lu_evidence 里每个读数的 vintage 都不得晚于 registered_at。
 3. **不可改字段**：全部事先登记字段，加上 registered_at。对账行和结论更正行里，这些字段必须与当前登记（登记行，或最近一条登记更正行）完全一致。
 4. **对账行**：window_end 之后追加，事先登记字段照抄，再填对账字段，checked_at 晚于 window_end。DATA_UNAVAILABLE 可以等数据发布后再追加一行。每个分支只能有一个最终结论（HIT、MISS、NONE_HIT、MULTI_HIT、TRIGGER_UNOBSERVABLE）；要改只能走结论更正。
 5. **登记更正行**（观测开始前）：check_result 为 `PENDING`，corrects_row_id 指向当前登记行，reason 必填。可以改事先登记字段（draft_id、branch_order、publish_date 不能改），registered_at 写更正行自己的真实时间：必须晚于被更正行，日期早于 window_start（更正前后都要早于）。观测开始后就不能再做登记更正。
 6. **结论更正行**（观测开始后）：只能改对账字段，事先登记字段和 registered_at 照抄；corrects_row_id 必须指向当前那条最终结论（第一次是那条对账行，之后是上一条结论更正行），reason 必填，check_result 是最终结论之一。“结论改过”的次数就是这个分支结论更正行的条数，由台账直接推导，不另设字段。
-7. **观测开始后要改条件**，只能用新的 branch_order 作为新分支重新登记（新的登记行，照第 2 条），原分支照原登记对账。
-8. **按季读数型分支**：王总确认判定规则前，所有行的结论都只能是 `PENDING`，error_source 留空。唯一例外是可以追加读数行：仍为 `PENDING`，填 quarter_readings 以及 checked_by、checked_at（写入时间）。quarter_readings 必须以前一条读数为前缀，只能按季度往后追加，已有条目不改不删；季度从 window_quarters 第一个开始按顺序；每个读数写成 `季度:读数@vintage#raw 路径:sha256`，vintage 不早于该季度结束，也不晚于这一行的写入时间；raw 路径不得含 `..`，并与 MANIFEST 一致。
+7. **观测开始后要改条件**，只能用新的 classification_id 另起一组重新登记（新组的登记行照第 2 条，组内至少 2 支），原组照原登记对账。不能在原组里加新的 branch_order。
+8. **按季读数型分支**：王总确认判定规则前，所有行的结论都只能是 `PENDING`，error_source 留空。唯一例外是可以追加读数行：仍为 `PENDING`，填 quarter_readings 以及 checked_by、checked_at（写入时间）。quarter_readings 必须以前一条读数为前缀，并且至少多一个季度（严格变长），已有条目不改不删；季度从 window_quarters 第一个开始按顺序；每个读数写成 `季度:读数@vintage#raw 路径:sha256`，vintage 不早于该季度结束，也不晚于这一行的写入时间；raw 路径不得含 `..`，并与 MANIFEST 一致。
 9. **PENDING 行**（读数行除外）不得填 actual_value、actual_branch、error_source、evidence、checked_by、checked_at。
-10. **门禁计数和命中率**都以每个分支的第一行为准：门禁计第一行 window_end 不晚于 2026-12-31、check_result 为 PENDING 的分支，对账行和更正行不重复计数；门禁不限于宏观。
+10. **门禁计数和命中率。**
+    - 分支身份和分母取每个分支的第一行。
+    - 门禁只算第一行：第一行 window_end 不晚于 2026-12-31、check_result 为 PENDING 的分支计 1，对账行和更正行不重复计数；门禁不限于宏观。
+    - 命中率按更正后的条件算，前提是登记更正发生在观测开始前；没有更正的，按第一行。结果取当前有效的最终结论（结论更正后的最新一条）。一组恰有一支 HIT、其余 MISS，记为对。
+    - 另外单独列出做过登记更正的分支数和结论更正的次数。`--stats` 会输出这几项。
 11. **登记校验**（从严临时执行），任一条不满足就不登记，退回生产与发布 bot：N ≥ 1；L ≤ U；window_quarters 恰好是 N 个连续季度，最后一个不晚于 window_end 所在季度；lu_evidence 非空，每个读数都带 vintage、raw 路径、sha256 和来源链接；按季读数型分支四个区间字段填 `NA`。
-12. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导；台账全文（含自由文本字段）由 check-public 检查，不得含本机路径。
+12. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导；自由文本字段（slug、reason、observed_variable、unit、data_source、data_vintage、trigger_condition、registered_by、checked_by、actual_value）不得含绝对路径、file: URI 或内部目录名，由 check-branches 检查；CI 还对 PR 或 push 的全部新增提交运行 `check-public.py --range`，检查台账全文是否含本机路径。
 
 ## 校验
 
 ```sh
 python3 scripts/check-branches.py --repo . --ref HEAD                                # 格式与登记规则
-python3 scripts/check-branches.py --repo . --ref HEAD --base origin/main             # 另查只追加
-python3 scripts/check-branches.py --repo . --ref HEAD --count-gate [--domain ai]     # 门禁计数
+python3 scripts/check-branches.py --repo . --ref HEAD --base origin/main             # 另逐提交查只追加、组成员固定
+python3 scripts/check-branches.py --repo . --ref HEAD --base B --now <+08:00 时间>    # 另查推送时间
+python3 scripts/check-branches.py --repo . --ref HEAD --count-gate [--domain ai] --stats  # 门禁计数与命中率
 ```
 
-脚本只输出行号、错误码和计数，不判定 HIT 或 MISS。测试在 `tests/test_branches.py`。
+脚本只输出行号、提交短 SHA、错误码和计数。它会核对区间型结论与 actual_value 是否一致，但不从 raw 复算取值。测试在 `tests/test_branches.py`。
+
+## follow-up（尚未实现）
+
+- 从 raw 原件复算读数和 actual_value，并核对 evidence 引用的来源与 data_source 一致；核实之前，结论仍以人工复核为准。
+- 推送时间以 CI 运行时间为准，仍可能受重跑影响；更可信的接收时间记录留待后续。
+- 按季读数的写入时间（checked_at）目前是自报，可信记录留待后续。

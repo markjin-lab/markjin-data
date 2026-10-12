@@ -61,8 +61,30 @@ def csv_of(*rows):
     return HDR + "".join(",".join(r[f] for f in B.HEADER) + "\n" for r in rows)
 
 
+def sibling(r):
+    """测试用：为单支组补一条同组的互补分支（每组至少 2 支），紧跟在登记行之后。"""
+    s = dict(r, branch_order="2", corrects_row_id="", reason="")
+    if B.is_interval(r) and r["interval_high"]:
+        s.update(interval_low=r["interval_high"], interval_low_closed="true" if r["interval_high_closed"] == "false" else "false",
+                 interval_high="", interval_high_closed="false")
+        s["trigger_condition"] = B.canonical_trigger(s)
+    elif B.is_quarterly(r):
+        s["trigger_condition"] = "连续 2 季高于 U"
+    else:
+        s["trigger_condition"] = "其他情形"
+    s["row_id"] = B.expected_row_id(s["draft_id"], s["classification_id"], "2", 1)
+    return s
+
+
+def with_sibling(rows):
+    rows = list(rows)
+    if rows and len({B.branch_key(r) for r in rows if B.group_key(r) == B.group_key(rows[0])}) == 1:
+        rows.insert(1, sibling(rows[0]))
+    return rows
+
+
 def codes(*rows, manifest=None):
-    return [c for _, c in B.parse(csv_of(*rows), manifest)[1]]
+    return [c for _, c in B.parse(csv_of(*with_sibling(rows)), manifest)[1]]
 
 
 def ccodes(*rows, manifest=None):
@@ -197,24 +219,26 @@ class R1Corrections(unittest.TestCase):
         self.assertIn("E-BR-PREREG-CHANGED", ccodes(row(), hit(), corr))
 
     def test_C9_gate_first_row(self):  # 反例 C9：门禁以第一行为准
-        corr = row(corrects_row_id=FIRST, reason="x", window_end="2027-03-31", registered_at="2026-10-13T08:00:00+08:00")
-        rows, errs = B.parse(csv_of(*chain(row(), corr)))
+        r1, r2 = row(), sibling(row())
+        kw = dict(reason="x", window_end="2027-03-31", registered_at="2026-10-13T08:00:00+08:00")
+        c1 = rid(dict(r1, corrects_row_id=r1["row_id"], **kw), 2)
+        c2 = rid(dict(r2, corrects_row_id=r2["row_id"], **kw), 2)
+        rows, errs = B.parse(csv_of(r1, r2, c1, c2))
         self.assertEqual(errs, [])
-        self.assertEqual(B.gate_count(rows), 1)
+        self.assertEqual(B.gate_count(rows), 2)
 
     def test_registered_at_frozen_on_reconciliation(self):
         self.assertIn("E-BR-PREREG-CHANGED", ccodes(row(), hit(registered_at="2026-10-13T08:00:00+08:00")))
 
     def test_ok_registration_correction_before_start(self):
-        corr = row(corrects_row_id=FIRST, reason="上沿登记错", interval_high="6", trigger_condition="x < 6",
+        corr = row(corrects_row_id=FIRST, reason="短名登记错", slug="gdp-q3-fixed",
                    registered_at="2026-10-13T09:00:00+08:00")
-        self.assertEqual(ccodes(row(), corr, hit(interval_high="6", trigger_condition="x < 6",
-                                                 registered_at="2026-10-13T09:00:00+08:00")), [])
+        self.assertEqual(ccodes(row(), corr, hit(slug="gdp-q3-fixed", registered_at="2026-10-13T09:00:00+08:00")), [])
 
     def test_ok_conclusion_correction_and_count(self):
         corr = miss(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="对账取错数据",
                     check_result="NONE_HIT", error_source="采集")
-        rows, errs = B.parse(csv_of(*chain(row(), hit(), corr)))
+        rows, errs = B.parse(csv_of(*with_sibling(chain(row(), hit(), corr))))
         self.assertEqual(errs, [])
         self.assertEqual(B.conclusion_changes(rows), {("2026-10-13-macro", "c1", "1"): 1})
         # 第二次结论更正必须指向当前最终结论（第 3 行），指向第 2 行失败
@@ -287,7 +311,8 @@ class R6Evidence(unittest.TestCase):
 
     def test_r1_6c_trigger_mismatch(self):  # 反例 r1-6c
         self.assertIn("E-BR-TRIGGER-MISMATCH", codes(row(trigger_condition="x > 100")))
-        self.assertEqual(codes(row(interval_low="1", interval_low_closed="true", trigger_condition="1 <= x < 5")), [])
+        self.assertNotIn("E-BR-TRIGGER-MISMATCH",
+                         codes(row(interval_low="1", interval_low_closed="true", trigger_condition="1 <= x < 5")))
         self.assertIn("E-BR-TRIGGER-MISMATCH", codes(row(interval_high="", trigger_condition="x")))
 
 
@@ -296,7 +321,7 @@ class R5Cli(unittest.TestCase):
         self.d = Path(tempfile.mkdtemp())
         self.run_git = lambda *a: subprocess.run(["git", "-C", str(self.d), *a], check=True, capture_output=True)
         self.run_git("init", "-q"); self.run_git("config", "user.email", "t@t"); self.run_git("config", "user.name", "t")
-        (self.d / "ledger").mkdir(); (self.d / B.LEDGER_PATH).write_text(csv_of(row()), encoding="utf-8")
+        (self.d / "ledger").mkdir(); (self.d / B.LEDGER_PATH).write_text(csv_of(*with_sibling([row()])), encoding="utf-8")
         self.run_git("add", "."); self.run_git("commit", "-qm", "a")
         self.script = Path(__file__).resolve().parents[1] / "scripts/check-branches.py"
 
@@ -304,7 +329,7 @@ class R5Cli(unittest.TestCase):
         return subprocess.run(["python3", str(self.script), "--repo", str(self.d), *a], capture_output=True, text=True)
 
     def test_not_append_only(self):
-        (self.d / B.LEDGER_PATH).write_text(csv_of(row(slug="changed")), encoding="utf-8")
+        (self.d / B.LEDGER_PATH).write_text(csv_of(*with_sibling([row(slug="changed")])), encoding="utf-8")
         self.run_git("commit", "-qam", "b")
         p = self.cli("--base", "HEAD~1")
         self.assertEqual(p.returncode, 1); self.assertIn("E-BR-NOT-APPEND-ONLY", p.stdout)
@@ -316,7 +341,7 @@ class R5Cli(unittest.TestCase):
     def test_base_without_file_ok(self):
         self.run_git("rm", "-q", B.LEDGER_PATH); self.run_git("commit", "-qm", "rm")
         (self.d / "ledger").mkdir(exist_ok=True)
-        (self.d / B.LEDGER_PATH).write_text(csv_of(row()), encoding="utf-8")
+        (self.d / B.LEDGER_PATH).write_text(csv_of(*with_sibling([row()])), encoding="utf-8")
         self.run_git("add", "."); self.run_git("commit", "-qm", "re")
         self.assertEqual(self.cli("--base", "HEAD~1").returncode, 0)
 
@@ -329,7 +354,7 @@ class R7Public(unittest.TestCase):
         g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
         (d / "review/ledger").mkdir(parents=True); (d / "review/ledger/.gitkeep").write_text("")
         (d / "ledger").mkdir()
-        (d / B.LEDGER_PATH).write_text(csv_of(row(observed_variable="见 /workspace/notes.md")), encoding="utf-8")
+        (d / B.LEDGER_PATH).write_text(csv_of(row(observed_variable="见 " + "/" + "workspace" + "/notes.md")), encoding="utf-8")
         g("add", "."); g("commit", "-qm", "a")
         script = Path(__file__).resolve().parents[1] / "scripts/check-public.py"
         p = subprocess.run(["python3", str(script)], cwd=d, capture_output=True, text=True)
@@ -340,12 +365,17 @@ class Groups(unittest.TestCase):
     """site38-r2 HIGH：一篇日报多个完成分类的条目，按 (draft_id, classification_id) 分组判定。"""
 
     def b(self, cid, order, **kw):
-        return row(classification_id=cid, branch_order=order, **kw)
+        r = row(classification_id=cid, branch_order=order, **kw)
+        if order == "2":
+            r.update(interval_low="5", interval_low_closed="true", interval_high="", interval_high_closed="false",
+                     trigger_condition="5 <= x")
+        return r
 
     def test_two_items_each_one_hit(self):
+        H = dict(check_result="HIT", actual_branch="是", actual_value="4", evidence=EVID, **DONE)
+        M = dict(check_result="MISS", actual_branch="否", actual_value="4", evidence=EVID, **DONE)
         rows = [self.b("c1", "1"), self.b("c1", "2"), self.b("c2", "1"), self.b("c2", "2"),
-                hit(classification_id="c1", branch_order="1"), miss(classification_id="c1", branch_order="2"),
-                hit(classification_id="c2", branch_order="1"), miss(classification_id="c2", branch_order="2")]
+                self.b("c1", "1", **H), self.b("c1", "2", **M), self.b("c2", "1", **H), self.b("c2", "2", **M)]
         self.assertEqual(ccodes(*rows), [])
 
     def test_two_hits_in_one_group(self):
@@ -366,6 +396,109 @@ class Groups(unittest.TestCase):
         self.assertIn("E-BR-ROW-ID", codes(row(classification_id="c2")))
         self.assertIn("E-BR-CLASSIFICATION-ID", codes(row(classification_id="X1")))
         self.assertIn("E-BR-EMPTY:classification_id", codes(row(classification_id="")))
+
+
+class R3Review(unittest.TestCase):
+    """r3 反例（data20-r3/counterexamples.txt）。"""
+
+    def b2(self, **kw):
+        return row(**{**dict(branch_order="2", interval_low="5", interval_low_closed="true", interval_high="",
+                             interval_high_closed="false", trigger_condition="5 <= x"), **kw})
+
+    def test_N1_correction_moves_window_start_before_itself(self):
+        corr = row(corrects_row_id=FIRST, reason="x", window_start="2026-10-14", registered_at="2026-10-14T01:00:00+08:00")
+        self.assertIn("E-BR-REGISTERED-AFTER-START", ccodes(row(), self.b2(), corr))
+
+    def test_N2_branch_added_after_observation(self):
+        rows = chain(row(), miss(), self.b2(), self.b2(check_result="HIT", actual_branch="是", actual_value="6",
+                                                       evidence=EVID, **DONE))
+        self.assertIn("E-BR-GROUP-LATE", codes(*rows))
+
+    def test_N2_added_in_later_commit_before_any_result(self):
+        # 文本上紧跟在登记行后，但组在更早的提交里已登记：由逐提交检查拦截（见 R5Cli.test_group_late_commit）
+        rows = chain(row(), row(classification_id="c2", row_id="x"), self.b2())
+        self.assertIn("E-BR-GROUP-LATE", codes(*rows))
+
+    def test_N3_N4_single_branch_group(self):
+        for r in (miss(), miss(check_result="NONE_HIT", error_source="框架")):
+            errs = [c for _, c in B.parse(csv_of(*chain(row(), r)))[1]]
+            self.assertIn("E-BR-GROUP-SIZE", errs)
+
+    def test_N5_group_different_windows(self):
+        self.assertIn("E-BR-GROUP-MISMATCH", ccodes(row(), self.b2(window_end="2027-03-31")))
+        for f, v in (("observed_variable", "CPI"), ("unit", "pp"), ("data_source", "FRED:Y"), ("data_vintage", "首发值"),
+                     ("window_start", "2026-10-15"), ("registered_at", "2026-10-14T07:00:00+08:00")):
+            self.assertIn("E-BR-GROUP-MISMATCH" if f != "registered_at" else "E-BR-REGISTERED-DATE",
+                          ccodes(row(), self.b2(**{f: v})), f)
+
+    def test_N6_overlap(self):
+        self.assertIn("E-BR-GROUP-OVERLAP", ccodes(row(interval_high="6", trigger_condition="x < 6"), self.b2()))
+
+    def test_N7_gap(self):
+        self.assertIn("E-BR-GROUP-GAP", ccodes(row(), self.b2(interval_low_closed="false", trigger_condition="5 < x")))
+        self.assertEqual(ccodes(row(), self.b2()), [])
+
+    def test_hit_outside_interval(self):  # r2-6：区间外宣称 HIT
+        self.assertIn("E-BR-ACTUAL-MISMATCH", ccodes(row(), self.b2(), hit(actual_value="6")))
+        self.assertIn("E-BR-ACTUAL-MISMATCH", ccodes(row(), self.b2(), miss(actual_value="4")))
+        self.assertIn("E-BR-ACTUAL-MISMATCH", ccodes(row(), self.b2(), hit(actual_value="5")))  # 开端点
+
+    def test_M3_readings_not_longer(self):
+        rd = lambda r, at: quarterly(quarter_readings=r, checked_by="审查与治理", checked_at=at)  # noqa: E731
+        self.assertIn("E-BR-READINGS-NOT-LONGER", ccodes(quarterly(), rd(QR1, "2027-02-01T10:00:00+08:00"),
+                                                          rd(QR1, "2027-02-02T10:00:00+08:00")))
+
+    def test_private_text(self):
+        for v in ("见 /opt/private/x", "markjin-internal/framework.md", "file:x", "~/notes"):
+            self.assertIn("E-BR-PRIVATE-TEXT:observed_variable", codes(row(observed_variable=v)), v)
+        self.assertEqual(codes(row(unit="km/s")), [])
+
+    def test_stats(self):
+        rows, errs = B.parse(csv_of(*chain(row(), self.b2(), hit(), self.b2(check_result="MISS", actual_branch="否",
+                                                                              actual_value="4", evidence=EVID, **DONE))))
+        self.assertEqual(errs, [])
+        st = B.hit_stats(rows)
+        self.assertEqual((st["groups"], st["groups_judged"], st["groups_correct"], st["branches"]), (1, 1, 1, 2))
+
+
+class R3Cli(unittest.TestCase):
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp())
+        self.g = lambda *a: subprocess.run(["git", "-C", str(self.d), *a], check=True, capture_output=True)  # noqa: E731
+        self.g("init", "-q"); self.g("config", "user.email", "t@t"); self.g("config", "user.name", "t")
+        (self.d / "ledger").mkdir()
+        self.commit(HDR, "base")
+        self.script = Path(__file__).resolve().parents[1] / "scripts/check-branches.py"
+
+    def commit(self, text, msg):
+        (self.d / B.LEDGER_PATH).write_text(text, encoding="utf-8"); self.g("add", "."); self.g("commit", "-qm", msg)
+
+    def cli(self, *a):
+        return subprocess.run(["python3", str(self.script), "--repo", str(self.d), *a], capture_output=True, text=True)
+
+    def test_rewrite_inside_pr_caught_per_commit(self):  # H：同一 PR 内 A 新增、B 改写
+        r1, r2 = row(), sibling(row())
+        self.commit(csv_of(r1, r2), "A")
+        self.commit(csv_of(dict(r1, interval_high="6", trigger_condition="x < 6"), dict(r2, interval_low="6",
+                    trigger_condition="6 <= x")), "B")
+        p = self.cli("--base", "HEAD~2")
+        self.assertEqual(p.returncode, 1); self.assertIn("E-BR-NOT-APPEND-ONLY", p.stdout)
+
+    def test_group_late_commit(self):
+        r1, r2 = row(), sibling(row())
+        self.commit(csv_of(r1), "A")
+        self.commit(csv_of(r1, r2), "B")
+        p = self.cli("--base", "HEAD~2")
+        self.assertIn("E-BR-GROUP-LATE", p.stdout)
+
+    def test_push_time(self):
+        self.commit(csv_of(row(), sibling(row())), "A")
+        ok = self.cli("--base", "HEAD~1", "--now", "2026-10-13T09:00:00+08:00")
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        late = self.cli("--base", "HEAD~1", "--now", "2026-10-13T14:00:00+08:00")
+        self.assertIn("E-BR-PUSH-SKEW", late.stdout)
+        after = self.cli("--base", "HEAD~1", "--now", "2026-10-14T00:30:00+08:00")
+        self.assertIn("E-BR-PUSH-AFTER-START", after.stdout)
 
 
 if __name__ == "__main__":

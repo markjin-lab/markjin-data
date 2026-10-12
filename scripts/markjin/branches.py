@@ -51,6 +51,12 @@ LU_RE = re.compile(r"^(\d{4}Q[1-4]):(-?\d+(?:\.\d+)?)@(\d{4}-\d{2}-\d{2})#([^:|;
 EVIDENCE_RE = re.compile(r"^([^|]+)\|(scripts/[A-Za-z0-9._/\-]+)@([0-9a-f]{40})\|(\S+)$")
 
 
+# 自由文本字段：不得出现绝对路径（网址除外）、file: URI、内部目录名
+FREE_TEXT = ["slug", "reason", "observed_variable", "unit", "data_source", "data_vintage", "trigger_condition",
+             "registered_by", "checked_by", "actual_value"]
+PRIVATE_RE = re.compile(r"(?i)(?<![\w:/.%-])/(?!/)[\w.~-]+|file:|\\\\|[a-z]:\\|markjin-internal|markjin-core|topics-private|~/")
+
+
 def blank(v):
     return v in ("", "NA")
 
@@ -126,6 +132,15 @@ def canonical_trigger(row):
     if hi:
         parts.append(f" {'<=' if row['interval_high_closed'] == 'true' else '<'} {hi}")
     return "".join(parts) if (lo or hi) else None
+
+
+def in_interval(row, v):
+    lo, hi = row["interval_low"], row["interval_high"]
+    if lo and (v < float(lo) or (v == float(lo) and row["interval_low_closed"] != "true")):
+        return False
+    if hi and (v > float(hi) or (v == float(hi) and row["interval_high_closed"] != "true")):
+        return False
+    return True
 
 
 def is_quarterly(row):
@@ -279,6 +294,10 @@ def check_row(row, manifest=None):
         if cr in ("HIT", "MISS", "NONE_HIT", "MULTI_HIT"):
             if is_interval(row) and not NUM_RE.match(row["actual_value"]):
                 e.append("E-BR-ACTUAL-VALUE")
+            elif is_interval(row) and not any(c.startswith("E-BR-INTERVAL") for c in e):
+                inside = in_interval(row, float(row["actual_value"]))
+                if inside != (cr in ("HIT", "MULTI_HIT")) or inside != (row["actual_branch"] == "是"):
+                    e.append("E-BR-ACTUAL-MISMATCH")  # 按开闭端点算出的归属与 check_result / actual_branch 不符
             elif not row["actual_value"].strip():
                 e.append("E-BR-ACTUAL-VALUE")
         if cr != "DATA_UNAVAILABLE" or not blank(row["evidence"]):
@@ -301,6 +320,9 @@ def check_row(row, manifest=None):
         parts = es.split(";")
         if cr not in WRONG or any(p not in ERROR_SOURCES for p in parts) or len(set(parts)) != len(parts):
             e.append("E-BR-ERROR-SOURCE")
+    for f in FREE_TEXT:
+        if PRIVATE_RE.search(row[f]):
+            e.append(f"E-BR-PRIVATE-TEXT:{f}")
     if bool(row["corrects_row_id"]) != bool(row["reason"].strip()):
         e.append("E-BR-CORRECTION-REASON")
     return e
@@ -329,9 +351,20 @@ def parse(text, manifest=None):
         errs += [(i, c) for c in check_row(row, manifest)]
     # 行间规则
     seq, ids, reg, final, last_readings, seen = {}, {}, {}, {}, {}, set()
+    group_closed, prev_group = set(), None
     for i, row in rows:
         key = branch_key(row)
         seq[key] = seq.get(key, 0) + 1
+        g = group_key(row)
+        if seq[key] == 1:
+            # 组的分支集合在登记时固定：同组登记行必须连续出现，组内一旦出现别的行或别的组的行，就不能再加新分支
+            if g in group_closed:
+                errs.append((i, "E-BR-GROUP-LATE"))
+        else:
+            group_closed.add(g)
+        if prev_group is not None and prev_group != g:
+            group_closed.add(prev_group)
+        prev_group = g
         if row["row_id"] != expected_row_id(row["draft_id"], row["classification_id"], row["branch_order"], seq[key]):
             errs.append((i, "E-BR-ROW-ID"))
         if row["row_id"] in ids:
@@ -386,11 +419,57 @@ def parse(text, manifest=None):
             cur_r = _readings(row)
             if cur_r[:len(last_readings[key])] != last_readings[key] or len(cur_r) < len(last_readings[key]):
                 errs.append((i, "E-BR-READINGS-REWRITE"))
+            elif is_quarterly(row) and len(cur_r) <= len(last_readings[key]):
+                errs.append((i, "E-BR-READINGS-NOT-LONGER"))  # 不带更正的读数行须至少多一个季度
             if cur_r:
                 last_readings[key] = cur_r
         ids[row["row_id"]] = row
     errs += _group_errors(rows, final)
+    errs += _group_shape_errors(rows, reg)
     return rows, errs
+
+
+GROUP_SAME = ["publish_date", "window_start", "window_end", "observed_variable", "unit", "data_source", "data_vintage"]
+
+
+def _group_shape_errors(rows, reg):
+    """每组至少 2 支；同组分支（按当前登记）的观测口径完全相同。"""
+    errs, members, line = [], {}, {}
+    for i, row in rows:
+        members.setdefault(group_key(row), []).append(branch_key(row))
+        line.setdefault(group_key(row), i)
+    for g, keys in members.items():
+        ks = list(dict.fromkeys(keys))
+        if len(ks) < 2:
+            errs.append((line[g], "E-BR-GROUP-SIZE"))
+        regs = [reg[k] for k in ks if k in reg]
+        if any(tuple(x[f] for f in GROUP_SAME) + (x["registered_at"][:10],) !=
+               tuple(regs[0][f] for f in GROUP_SAME) + (regs[0]["registered_at"][:10],) for x in regs):
+            errs.append((line[g], "E-BR-GROUP-MISMATCH"))
+        if len(regs) >= 2 and all(is_interval(x) for x in regs):
+            code = _partition_error(regs)
+            if code:
+                errs.append((line[g], code))
+    return errs
+
+
+def _partition_error(regs):
+    """同组区间型分支须两两互斥并覆盖全部实数（按端点开闭）。返回错误码或 None。"""
+    INF = float("inf")
+    try:
+        iv = sorted(((float(x["interval_low"]) if x["interval_low"] else -INF, x["interval_low_closed"] == "true",
+                      float(x["interval_high"]) if x["interval_high"] else INF, x["interval_high_closed"] == "true")
+                     for x in regs), key=lambda t: (t[0], not t[1]))
+    except ValueError:
+        return None
+    if iv[0][0] != -INF or iv[-1][2] != INF:
+        return "E-BR-GROUP-GAP"
+    for (l1, lc1, h1, hc1), (l2, lc2, h2, hc2) in zip(iv, iv[1:]):
+        if h1 > l2 or (h1 == l2 and hc1 and lc2):
+            return "E-BR-GROUP-OVERLAP"
+        if h1 < l2 or (h1 == l2 and not hc1 and not lc2):
+            return "E-BR-GROUP-GAP"
+    return None
 
 
 def _group_errors(rows, final):
@@ -434,6 +513,30 @@ def conclusion_changes(rows):
         if row["corrects_row_id"] and row["check_result"] in FINAL:
             k = branch_key(row); out[k] = out.get(k, 0) + 1
     return out
+
+
+def hit_stats(rows):
+    """命中率口径：分支身份与分母取每个分支的第一行（按组计）；事先条件取观测开始前的最后一次登记更正（没有则第一行）；
+    结果取当前有效最终结论（结论更正后的最新一条）。另列做过登记更正的分支数和结论更正次数。"""
+    final, reg_corr, members = {}, set(), {}
+    for _, row in rows:
+        k = branch_key(row)
+        members.setdefault(group_key(row), set()).add(k)
+        if row["corrects_row_id"] and row["check_result"] == "PENDING":
+            reg_corr.add(k)
+        elif row["check_result"] in FINAL:
+            final[k] = row
+    judged = correct = 0
+    for g, ks in members.items():
+        fs = [final[k] for k in ks if k in final]
+        if len(fs) != len(ks):
+            continue
+        judged += 1
+        res = [x["check_result"] for x in fs]
+        correct += int(res.count("HIT") == 1 and res.count("MISS") == len(res) - 1)
+    return {"groups": len(members), "groups_judged": judged, "groups_correct": correct,
+            "branches": sum(len(v) for v in members.values()), "registration_corrected_branches": len(reg_corr),
+            "conclusion_corrections": sum(conclusion_changes(rows).values())}
 
 
 def gate_count(rows, cutoff="2026-12-31", domain=None):

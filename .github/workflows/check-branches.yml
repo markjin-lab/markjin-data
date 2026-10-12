@@ -37,4 +37,7 @@ jobs:
               BASE=$(git merge-base origin/main HEAD)
             fi
           fi
-          python3 scripts/check-branches.py --repo . --ref "$REF" --base "$BASE" --count-gate
+          NOW=$(TZ=Asia/Singapore date +%Y-%m-%dT%H:%M:%S+08:00)
+          python3 scripts/check-branches.py --repo . --ref "$REF" --base "$BASE" --now "$NOW" --count-gate --stats
+          # 公开检查覆盖本次 PR / push 的全部新增提交（含台账自由文本的本机路径检查）
+          python3 scripts/check-public.py --range "$BASE..$REF"
