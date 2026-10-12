@@ -1,0 +1,26 @@
+name: check-branches
+# 分支台账 ledger/macro-branches.csv：格式、登记规则、只追加。只用 Python 标准库。
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: unit tests
+        run: cd tests && python3 -m unittest test_branches
+      - name: check ledger
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            python3 scripts/check-branches.py --repo . --ref "${{ github.event.pull_request.head.sha }}" --base "${{ github.event.pull_request.base.sha }}"
+          else
+            python3 scripts/check-branches.py --repo . --ref HEAD
+          fi
