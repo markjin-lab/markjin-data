@@ -11,7 +11,7 @@ Usage:
     429/5xx 有上限退避、超过 25 MiB 明确失败（不存半截）。
   - 原字节 → PRIVATE/raw/DATE/primary/<sha256>.<ext>（独占创建 + MANIFEST.sha256）；提取文本 → 私有派生物。
   - 目标地址：初始 URL、DNS 解析结果、每一跳都经 collect.AddressPolicy，拒绝本机/内网/链路本地/保留地址。
-    出站经透明代理（DNS 返回 198.18.0.0/15 假 IP）时用 --proxy-fakeip-cidr / MARKJIN_PROXY_FAKEIP_CIDR 显式声明，
+    出站经透明代理（DNS 返回 RFC 2544 基准网段 198.18.0.0/15 内的假 IP）时用 --proxy-fakeip-cidr / MARKJIN_PROXY_FAKEIP_CIDR 显式声明，
     只对主机名解析结果放行该网段；IP 字面量永远拒绝。
   - 许可：默认 url+hash-only。域名（arXiv、NASA、.gov/.mil 等）一律不构成许可。只有 --license-evidence 中
     针对*完整* URL（含全部查询参数）并绑定响应 sha256 的逐条目证据通过 collect.public_fulltext_ok——
@@ -111,14 +111,16 @@ def main(argv=None, fetcher=None):
     ap.add_argument("--date", required=True)
     ap.add_argument("--private-root"); ap.add_argument("--license-evidence")
     ap.add_argument("--interval", type=float, default=collect.HOST_INTERVAL)
-    ap.add_argument("--proxy-fakeip-cidr", default=os.environ.get("MARKJIN_PROXY_FAKEIP_CIDR"),
+    ap.add_argument("--proxy-fakeip-cidr", default=os.environ.get(collect.FAKEIP_ENV),
                     help="仅当出站经透明代理且 DNS 返回假 IP 时设置（必须在 198.18.0.0/15 内，见 README）")
     ap.add_argument("--max", type=int, default=50)
     a = ap.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a.date):
         print("bad --date", file=sys.stderr); return 2
-    if a.interval < collect.HOST_INTERVAL:
-        print(f"--interval must be >= {collect.HOST_INTERVAL}", file=sys.stderr); return 2
+    try:
+        collect.check_interval(a.interval)          # 先 isfinite（拒绝 nan/inf），再要求 >= 2s
+    except collect.ConfigError as e:
+        print(f"--interval: {e}", file=sys.stderr); return 2
     try:
         priv_root = collect.resolve_private_root(a.private_root, a.out_root)
         evidence = collect.load_license_evidence(a.license_evidence)
@@ -131,9 +133,11 @@ def main(argv=None, fetcher=None):
     pub = collect.Archive(Path(a.out_root) / "raw" / a.date)
     priv = collect.Archive(priv_root / "raw" / a.date)
     f = fetcher or collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"),
-                                   interval=a.interval, addr_policy=policy)
-    if f.addr_policy is None:      # 外部传入的 Fetcher 也必须带地址策略
-        f.addr_policy = policy
+                                   interval=a.interval, fakeip_cidr=a.proxy_fakeip_cidr or "")
+    # 外部传入的 Fetcher：其自带策略与本次强制策略合取（两边都放行才放行），不能用宽松策略绕过
+    # （强制策略沿用该 Fetcher 的解析器，保证检查的是它实际会连接的解析结果）
+    policy = collect.AddressPolicy(a.proxy_fakeip_cidr, resolver=f.resolver)
+    f.addr_policy = collect.AllOf(policy, f.addr_policy)
     cache, index, plog, n = {}, [], [], 0
     for lead in items:
         lead["label"] = "线索"
@@ -169,20 +173,22 @@ def main(argv=None, fetcher=None):
                 ok1, why = collect.public_fulltext_ok(ev_o, orig, sha)
                 same = collect.full_url_key(final) == key
                 ok2, why2 = (ok1, why) if same else collect.public_fulltext_ok(ev_f, final, sha)
-                rec.update(final_url=fu, sha256=sha, bytes=len(r.body), title=title[:300], stored="private",
+                rec.update(final_url=fu, sha256=sha, bytes=len(r.body), stored="private",
                            license_decision=why or why2 or "per-item evidence verified (url + sha256)")
                 if ok1 and ok2:
                     ev = ev_f if not same else ev_o
                     pub.put_raw("", "primary", r.body, ext)
                     if txt:
-                        head = f"Source: {fu}\nLicense: {ev['license']} ({ev['license_url']})\nAttribution: {ev['attribution']}\n\n"
+                        head = f"Source: {fu}\nLicense: {ev['license']} ({collect.public_url(ev['license_url'])})\nAttribution: {ev['attribution']}\n\n"
                         pub.put(f"primary/{sha}.txt", (head + txt + "\n").encode())
                     shown = {k: ev.get(k) for k in collect.EVIDENCE_FIELDS + ("third_party_excluded",)}
                     shown["url"] = collect.public_url(shown["url"])
                     shown["evidence_url"] = collect.public_url(shown["evidence_url"])
-                    rec.update(stored="public", license=ev["license"], license_evidence=shown)
+                    shown["license_url"] = collect.public_url(shown["license_url"])
+                    # 正文派生字段（title）只在逐条许可通过、stored=public 时才进公开 index
+                    rec.update(stored="public", license=ev["license"], license_evidence=shown, title=title[:300])
                 # 私有 fetch-log 也只写脱敏 URL；完整原 URL 只在私有 leads 原始档案里
-                plog.append({"url": cu, "final_url": fu, "hops": r.hops, "raw": rel})
+                plog.append({"url": cu, "final_url": fu, "hops": r.hops, "raw": rel, "title": title[:300]})
             index.append(rec)
             print(f"{rec['fetch_status']} {r.status} {rec['stored'] or '-'} {cu}", file=sys.stderr)
             cache[key] = rec

@@ -6,7 +6,7 @@ from markjin import collect, strictjson
 import capture_sources as CS
 import fetch_primary as FP
 import x_capture as XC
-from test_collect import Resp, FakeOpener, mk
+from test_collect import Resp, FakeOpener, mk, PUBLIC_DNS
 
 
 def tmp():
@@ -31,7 +31,7 @@ class ScraperCapture(unittest.TestCase):
         op = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = op; k["sleep"] = lambda x: None; orig(s, *a, **k)
+            k["opener"] = op; k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS); orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -225,6 +225,7 @@ class XCapture(unittest.TestCase):
         now = time.time()
         for _ in range(XC.MIN_CAP):
             self.assertTrue(XC.reserve(s, "search_posts_all", "ai", 1, now=now)["allowed"])
+            s["calls"][-1]["cancelled"] = True                       # 同页重复预留须先取消
         r = XC.reserve(s, "search_posts_all", "accounts-01", 1, now=now)
         self.assertFalse(r["allowed"]); self.assertGreater(r["wait_s"], 0)
         # 每日窗口按 UTC：前一 UTC 日 23:59Z 的调用不计入今天
@@ -424,10 +425,147 @@ class R2Sources(unittest.TestCase):
         import yaml
         p = Path(__file__).resolve().parents[1] / "improve" / "sources.yaml"
         by = {s["id"]: s for s in yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]}
-        for sid in ("qwen-blog-rss", "nbs-releases"):
+        for sid in ("qwen-blog-rss",):
             self.assertEqual(by[sid]["approval_status"], "pending", sid)
             self.assertFalse(by[sid]["enabled"], sid)
             self.assertFalse(collect.approval_gate(by[sid])[0], sid)
+
+
+class R3Primary(Primary):
+    """PR #6 审查 r3 修复：私有条目不公开 title、license_url 脱敏、注入 Fetcher 策略合取、子 sitemap 地址策略。"""
+
+    def test_private_item_title_not_in_public_index(self):
+        _, idx, _ = self.run_fp([{"id": "1", "expanded_url": "https://e.org/a"}],
+                                {"https://e.org/a": Resp(200, b"<html><title>SECRET TITLE</title><p>x</p>", {"Content-Type": "text/html"})})
+        self.assertEqual(idx[0]["stored"], "private")
+        self.assertNotIn("title", idx[0])
+        pub = "".join(p.read_text(errors="replace") for p in self.out.rglob("*") if p.is_file())
+        self.assertNotIn("SECRET TITLE", pub)
+        flog = next((self.priv / "raw/2026-10-12/primary").glob("fetch-log-*.jsonl")).read_text()
+        self.assertIn("SECRET TITLE", flog)                                   # 标题留在私有日志
+
+    def test_public_item_has_title_and_redacted_license_url(self):
+        body = b"<html><title>Open T</title><p>open</p></html>"
+        ev = {"url": "https://e.org/a", "license": "CC-BY-4.0",
+              "license_url": "https://creativecommons.org/licenses/by/4.0/?tok=LICSECRET",
+              "evidence_url": "https://e.org/about?k=EVSECRET", "attribution": "A", "verified_by": "jw",
+              "verified_at": "2026-10-12", "sha256": hashlib.sha256(body).hexdigest()}
+        _, idx, _ = self.run_fp([{"id": "1", "expanded_url": "https://e.org/a"}],
+                                {"https://e.org/a": Resp(200, body, {"Content-Type": "text/html"})}, evidence=[ev])
+        self.assertEqual(idx[0]["stored"], "public")
+        self.assertEqual(idx[0]["title"], "Open T")
+        self.assertEqual(idx[0]["license_evidence"]["license_url"], "https://creativecommons.org/licenses/by/4.0/")
+        pub = "".join(p.read_text(errors="replace") for p in self.out.rglob("*") if p.is_file())
+        self.assertNotIn("LICSECRET", pub)
+        self.assertNotIn("EVSECRET", pub)
+
+    def test_injected_permissive_policy_cannot_bypass(self):
+        lp = self.base / "l.json"
+        lp.write_text(json.dumps({"items": [{"id": "1", "expanded_url": "https://lo.example/x"},
+                                            {"id": "2", "expanded_url": "http://127.0.0.1/y"}]}))
+        f, _ = mk({"https://lo.example/x": Resp(200, b"x"), "http://127.0.0.1/y": Resp(200, b"y")},
+                  resolver=lambda h: {"127.0.0.1"}, addr_policy=lambda u: None)
+        rc = FP.main(["--leads", str(lp), "--date", "2026-10-12", "--out-root", str(self.out),
+                      "--private-root", str(self.priv)], fetcher=f)
+        self.assertEqual(rc, 0)
+        self.assertEqual(f.opener.calls, [])
+
+    def test_injected_strict_policy_is_respected(self):
+        lp = self.base / "l.json"
+        lp.write_text(json.dumps({"items": [{"id": "1", "expanded_url": "https://e.org/x"}]}))
+        f, _ = mk({"https://e.org/x": Resp(200, b"x")}, addr_policy=lambda u: "caller policy refuses")
+        FP.main(["--leads", str(lp), "--date", "2026-10-12", "--out-root", str(self.out),
+                 "--private-root", str(self.priv)], fetcher=f)
+        self.assertEqual(f.opener.calls, [])
+
+    def test_interval_nan_rejected(self):
+        lp = self.base / "l.json"; lp.write_text('{"items": []}')
+        for bad in ("nan", "inf", "1"):
+            self.assertEqual(FP.main(["--leads", str(lp), "--date", "2026-10-12", "--out-root", str(self.out),
+                                      "--private-root", str(self.priv), f"--interval={bad}"], fetcher=mk({})[0]), 2)
+
+
+class R3Scraper(unittest.TestCase):
+    def test_subsitemap_to_private_address_blocked(self):
+        import yaml
+        base = tmp(); out, priv = base / "pub", base / "priv"; out.mkdir()
+        idx = b"<?xml version='1.0'?><sitemapindex><sitemap><loc>http://10.0.0.8/s1.xml</loc></sitemap></sitemapindex>"
+        routes = {"https://www.anthropic.com/sitemap.xml": Resp(200, idx), "http://10.0.0.8/s1.xml": Resp(200, b"<urlset/>")}
+        src = base / "s.yaml"
+        src.write_text(yaml.safe_dump({"sources": [{"id": "anthropic-news", "method": "scraper", "scraper": "anthropic_sitemap",
+                       "url": "https://www.anthropic.com/sitemap.xml", "enabled": True, "approval_status": "approved",
+                       "approval_basis": "b", "license": "url+hash-only"}]}), encoding="utf-8")
+        orig = collect.Fetcher.__init__
+        op = FakeOpener(routes)
+
+        def init(s, *a, **k):
+            k["opener"] = op; k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+        collect.Fetcher.__init__ = init
+        try:
+            CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
+                     "--private-root", str(priv)])
+        finally:
+            collect.Fetcher.__init__ = orig
+        self.assertFalse(any("10.0.0.8" in u for u, _ in op.calls))
+
+    def test_scrapers_share_collector_challenge(self):
+        import scrapers
+        self.assertIs(scrapers.CHALLENGE, collect.CHALLENGE)
+        with self.assertRaises(scrapers.ScrapeError):
+            scrapers.check_body(200, b'<div class="g-recaptcha"></div>', None)
+
+
+class R3XCapture(R2XCapture):
+    def test_same_page_cannot_be_reserved_twice(self):
+        self.plan()
+        rc, r = self.res("search_posts_all", "--slug", "accounts-01", "--page", "1")
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.res("search_posts_all", "--slug", "accounts-01", "--page", "1")[0], 2)
+        self.x("cancel", "--state", str(self.st), "--call-id", r["call_id"])
+        rc, r2 = self.res("search_posts_all", "--slug", "accounts-01", "--page", "1")
+        self.assertEqual(rc, 0)                                              # 取消后可重新预留
+        self.assertEqual(self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"],
+                                "--file", self.result(["1"]))[0], 2)        # 已取消的不能入账
+        _, b = self.x("budget", "--state", str(self.st))
+        self.assertEqual(b["used_today_utc"], 2)                             # 取消的仍计入额度
+
+    def test_ingest_checks_page_and_digest(self):
+        self.plan()
+        _, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        st = XC.load_state(self.st)
+        st["calls"][-1]["args_digest"] = "0" * 64                            # 被改动的预留
+        XC.save_state(self.st, st)
+        self.assertEqual(self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"],
+                                "--file", self.result(["1"], "T"))[0], 2)
+        st = XC.load_state(self.st)
+        self.assertFalse(st["calls"][-1]["ingested"])
+        st["calls"][-1]["args_digest"] = r["args_digest"]; st["calls"][-1]["page"] = 2
+        XC.save_state(self.st, st)
+        self.assertEqual(self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"],
+                                "--file", self.result(["1"], "T"))[0], 2)   # 页码不是下一页
+
+    def test_replan_keeps_started_query_pages(self):
+        self.plan()
+        _, r = self.res("search_posts_all", "--slug", "ai", "--page", "1")
+        self.x("ingest", "--state", str(self.st), "--call-id", r["call_id"], "--file", self.result(["1"], "TOK"))
+        rc, plan = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-12", "--round", "1")
+        self.assertEqual(rc, 0)
+        st = XC.load_state(self.st)
+        self.assertEqual(st["queries"]["ai"]["pages"], 1)
+        self.assertEqual(st["queries"]["ai"]["next_token"], "TOK")
+        self.assertEqual({p["slug"]: p["page"] for p in plan}["ai"], 2)
+        self.assertEqual(self.res("search_posts_all", "--slug", "ai", "--page", "1")[0], 2)
+        rc, _ = self.x("plan", "--queries", str(self.d / "q.json"), "--state", str(self.st), "--date", "2026-10-13", "--round", "1")
+        self.assertEqual(rc, 2)                                              # 已开始的查询换参数 → 拒绝
+
+
+class R3Sources(unittest.TestCase):
+    def test_nbs_releases_restored(self):
+        import yaml
+        p = Path(__file__).resolve().parents[1] / "improve" / "sources.yaml"
+        by = {s["id"]: s for s in yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]}
+        self.assertTrue(collect.approval_gate(by["nbs-releases"])[0])
+        self.assertFalse(collect.approval_gate(by["qwen-blog-rss"])[0])
 
 
 if __name__ == "__main__":

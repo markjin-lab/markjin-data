@@ -8,14 +8,17 @@ and the raw response bytes are archived privately (MANIFEST) before the scraper 
 Scrapers never open network connections themselves. No cookies, no JS, no challenge handling: a challenge
 page is detected by the Fetcher (host disabled persistently) and surfaces here as err -> ScrapeError.
 """
-import importlib, re
+import importlib, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from markjin.collect import CHALLENGE  # noqa: E402,F401  验证页识别只维护 collect.CHALLENGE 这一份
 
 
 class ScrapeError(Exception):
     pass
 
 
-CHALLENGE = re.compile(rb"Just a moment\.\.\.|challenges\.cloudflare\.com|Access Denied</TITLE>|captcha", re.I)
 
 
 def check_body(st, body, err):

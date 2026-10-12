@@ -16,6 +16,9 @@ Commands:
              {"allowed": false, "reason", "wait_s"}（退出码 3）；未计划 slug、错页码、超页数、错批次 → 退出码 2
   ingest  --state S.json --call-id ID --file RESULT.txt
           -> {"next": {...完整参数（从状态恢复）+ next_token...}} 或 {"next": null, "reason"}
+  cancel  --state S.json --call-id ID          -> 调用失败时取消预留（额度仍计入），之后可重新预留同一页/批次
+          同一 slug 同页（或同一补全批次）在未入账、未取消前不能重复预留；ingest 时核对页码与 args_digest；
+          重跑 plan 不清零已开始查询的页数（参数不同则报错）。
   hydrate --state S.json                       -> get_posts_by_ids 批次（≤100 id/批，带批次号；每批调用前 reserve --batch）
   ingest-hydrate --state S.json --call-id ID --file RESULT.txt
   leads   --state S.json                       -> 线索 JSON（按 like≥20 / RT≥5 / 白名单作者过滤；含帖文，只写私有目录），
@@ -130,6 +133,11 @@ def reserve(s, tool, slug=None, page=None, now=None, batch=None, args=None):
         raise UsageError(f"unknown tool {tool}")
     want, ids = expected_call(s, tool, slug, page, batch)
     dg = args_digest(want)
+    for c in s["calls"]:     # 同一调用（同 slug 同页 / 同补全批次）不能在未入账、未取消时重复预留
+        if c.get("tool") == tool and not c.get("ingested") and not c.get("cancelled") and c.get("args_digest") == dg \
+                and c.get("slug") == slug and c.get("page") == page:
+            raise UsageError(f"call {c['id']} already reserved for this {'slug/page' if slug else 'batch'}; "
+                             "ingest it or cancel it first")
     if args is not None and args_digest(args) != dg:
         raise UsageError("args do not match the planned call for this slug/page/batch")
     now = now or time.time()
@@ -151,6 +159,12 @@ def _take_call(s, cid, tool):
                 raise UsageError(f"call {cid} was reserved for {c['tool']}")
             if c["ingested"]:
                 raise UsageError(f"call {cid} already ingested")
+            if c.get("cancelled"):
+                raise UsageError(f"call {cid} was cancelled")
+            if tool == "search_posts_all":     # 入账时核对：该 call 预留的页码仍是下一页、参数摘要与计划一致
+                want, _ = expected_call(s, tool, c.get("slug"), c.get("page"))
+                if args_digest(want) != c.get("args_digest"):
+                    raise UsageError(f"call {cid} args_digest does not match the planned call")
             c["ingested"] = True
             return c
     raise UsageError(f"call {cid} was never reserved (every X call must be reserved first)")
@@ -167,10 +181,32 @@ def cmd_plan(a, s):
             raise UsageError(f"bad kind {e['kind']}")
         args = dict(BASE_ARGS, query=e["query"], start_time=start, sort_order=e.get(
             "sort_order", "recency" if e["kind"] == "account" else "relevancy"))
+        old = s["queries"].get(e["slug"])
+        started = old and (old.get("pages") or any(c.get("slug") == e["slug"] for c in s["calls"]))
+        if started:              # 已开始的查询：重跑 plan 不清零页数/翻页状态；参数变了则拒绝
+            if old["args"] != args or old["kind"] != e["kind"] or old.get("round") != a.round:
+                raise UsageError(f"slug {e['slug']} already started with different params; use a new state file")
+            if not old.get("done"):
+                nxt = old["pages"] + 1
+                out.append({"slug": e["slug"], "kind": e["kind"], "page": nxt, "tool": "search_posts_all",
+                            "args": expected_call(s, "search_posts_all", e["slug"], nxt)[0]
+                            if nxt <= PAGE_CAP[a.round][e["kind"]] else None})
+            continue
         s["queries"][e["slug"]] = {"kind": e["kind"], "round": a.round, "date": a.date, "args": args,
                                    "pages": 0, "posts": 0}
         out.append({"slug": e["slug"], "kind": e["kind"], "page": 1, "tool": "search_posts_all", "args": args})
     return out
+
+
+def cmd_cancel(a, s):
+    """调用失败（未拿到结果）时取消预留，以便重新预留同一页；已消耗的额度仍计入预算。"""
+    for c in s["calls"]:
+        if c.get("id") == a.call_id:
+            if c.get("ingested"):
+                raise UsageError(f"call {a.call_id} already ingested")
+            c["cancelled"] = True
+            return {"cancelled": a.call_id}
+    raise UsageError(f"call {a.call_id} was never reserved")
 
 
 def cmd_reserve(a, s):
@@ -299,6 +335,8 @@ def main(argv=None):
     p.add_argument("--tool", choices=TOOLS, required=True); p.add_argument("--slug"); p.add_argument("--page", type=int)
     p.add_argument("--batch", type=int); p.add_argument("--args", help="可选：本次实际调用参数 JSON，须与计划一致")
     p.set_defaults(f=cmd_reserve, mut=True)
+    p = sp.add_parser("cancel"); p.add_argument("--state", required=True); p.add_argument("--call-id", required=True)
+    p.set_defaults(f=cmd_cancel, mut=True)
     for n, f in (("ingest", cmd_ingest), ("ingest-hydrate", cmd_ingest_hydrate)):
         p = sp.add_parser(n); p.add_argument("--state", required=True); p.add_argument("--call-id", required=True)
         p.add_argument("--file", required=True); p.set_defaults(f=f, mut=True)
