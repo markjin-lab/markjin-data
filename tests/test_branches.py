@@ -1,4 +1,4 @@
-import subprocess, tempfile, unittest
+import json, subprocess, tempfile, unittest
 from pathlib import Path
 import helpers  # noqa: F401
 from markjin import branches as B
@@ -515,13 +515,6 @@ class R3Cli(unittest.TestCase):
         after = self.cli("--base", "HEAD~1", "--now", "2026-10-14T00:30:00+08:00")
         self.assertIn("E-BR-PUSH-AFTER-START", after.stdout)
 
-    def test_merge_time_main(self):  # main 只核对合并早于 window_start，不查 6 小时
-        self.commit(csv_of(row(), sibling(row())), "A")
-        ok = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-13T15:00:00+08:00")
-        self.assertEqual(ok.returncode, 0, ok.stdout)
-        bad = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-14T08:00:00+08:00")
-        self.assertIn("E-BR-MERGE-AFTER-START", bad.stdout)
-
     def commit_at(self, text, msg, when):
         import os
         (self.d / B.LEDGER_PATH).write_text(text, encoding="utf-8"); self.g("add", ".")
@@ -532,34 +525,6 @@ class R3Cli(unittest.TestCase):
         r1, r2 = row(), sibling(row())
         v = lambda r: rid(dict(r, check_result="VOID", corrects_row_id=r["row_id"], reason="合并晚于观测开始"), 2)  # noqa: E731
         return r1, r2, v(r1), v(r2)
-
-    def test_old_commit_fast_forwarded_late(self):  # r5 HIGH 2：旧提交（10-13）在 10-15 快进推上 main
-        self.commit_at(csv_of(row(), sibling(row())), "old web commit", "2026-10-13T07:30:00+08:00")
-        p = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-15T09:00:00+08:00")  # CI 运行时间
-        self.assertIn("E-BR-MERGE-AFTER-START", p.stdout)
-        wf = (Path(__file__).resolve().parents[1] / ".github/workflows/check-branches.yml").read_text(encoding="utf-8")
-        self.assertNotIn("%cd", wf); self.assertNotIn("noreply@github.com", wf)
-        self.assertIn('--merge-time $NOW', wf)
-
-    def test_void_verified_by_main_history(self):
-        r1, r2, v1, v2 = self.voids()
-        self.commit_at(csv_of(r1, r2), "late merge", "2026-10-14T09:00:00+08:00")
-        self.commit(csv_of(r1, r2, v1, v2), "void")
-        ok = self.cli("--base", "HEAD~1", "--main-ref", "HEAD")
-        self.assertEqual(ok.returncode, 0, ok.stdout)
-        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli("--base", "HEAD~1").stdout)  # 不给 main 就不能核验
-
-    def test_V8_void_on_group_merged_in_time(self):
-        r1, r2, v1, v2 = self.voids()
-        self.commit_at(csv_of(r1, r2), "in time", "2026-10-13T08:00:00+08:00")
-        self.commit(csv_of(r1, r2, v1, v2), "void")
-        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli("--base", "HEAD~1", "--main-ref", "HEAD").stdout)
-
-    def test_V7_void_long_after_window_end(self):
-        r1, r2, v1, v2 = self.voids()
-        self.commit_at(csv_of(r1, r2), "in time", "2026-10-13T08:00:00+08:00")
-        self.commit_at(csv_of(r1, r2, v1, v2), "void 2027-06", "2027-06-01T10:00:00+08:00")
-        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli("--base", "HEAD~1", "--main-ref", "HEAD").stdout)
 
     def test_void_split_across_commits(self):
         r1, r2, v1, v2 = self.voids()
@@ -653,9 +618,12 @@ class R4Review(unittest.TestCase):
     def test_void_whole_group(self):
         rs, errs = B.parse(csv_of(*chain(row(), self.b2(), self.void(), self.void2())))
         self.assertEqual(errs, [])
-        self.assertEqual(B.gate_count(rs), 0)
-        st = B.hit_stats(rs)
-        self.assertEqual((st["voided_groups"], st["voided_branches"]), (1, 2))
+        # r6：VOID 只留痕，不决定排除；排除只看可信时间算出的晚合并组
+        self.assertEqual(B.gate_count(rs), 2)
+        g = {B.group_key(row())}
+        self.assertEqual(B.gate_count(rs, excluded=g), 0)
+        self.assertEqual(B.hit_stats(rs, g)["excluded_late_groups"], 1)
+        self.assertEqual(B.complete_void_groups(rs), g)
         self.assertIn("E-BR-AFTER-VOID", ccodes(row(), self.b2(), self.void(), self.void2(), hit()))
         self.assertIn("E-BR-CORRECTION-REASON", ccodes(row(), self.b2(), self.void(reason=""), self.void2()))
         self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), self.b2(), self.void(corrects_row_id="x"), self.void2()))
@@ -670,14 +638,22 @@ class R4Review(unittest.TestCase):
         c = ccodes(row(), self.b2(), self.void())
         self.assertIn("E-BR-VOID-PARTIAL", c)
         rs, _ = B.parse(csv_of(*chain(row(), self.b2(), self.void())))
-        self.assertEqual(B.gate_count(rs), 0)
-        self.assertEqual(B.hit_stats(rs)["voided_groups"], 1)
+        self.assertEqual(B.gate_count(rs), 2)          # r6 反例 V3：无效 VOID 不得改变统计
+        self.assertEqual(B.complete_void_groups(rs), set())
 
-    def test_V2p_void_after_conclusion(self):  # 合法 NONE_HIT 之后作废以隐藏错误组
-        gap = self.b2(interval_low="7", trigger_condition="7 <= x")
-        rows = [row(), gap, self.fin(row(), "NONE_HIT", "6"), self.fin(gap, "NONE_HIT", "6"),
-                self.void(), self.void2(interval_low="7", trigger_condition="7 <= x")]
-        self.assertIn("E-BR-VOID-LATE", ccodes(*rows))
+    def test_void_revoked(self):
+        v1 = rid(self.void(), 2)
+        rev = self.void(check_result="VOID_REVOKED", corrects_row_id=v1["row_id"], reason="误作废")
+        rows = chain(row(), self.b2(), self.void(), rev)
+        rs, errs = B.parse(csv_of(*rows))
+        self.assertEqual(errs, [])                      # 撤销后不再报 VOID-PARTIAL
+        self.assertEqual(B.active_voids(rs), [])
+        self.assertIn("E-BR-CORRECTION-REASON", ccodes(row(), self.b2(), self.void(), dict(rev, reason="")))
+        self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), self.b2(), self.void(), dict(rev, corrects_row_id=FIRST)))
+        self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), self.b2(), self.void(), rev, rev))
+        self.assertIn("E-BR-VOID-FILLED", ccodes(row(), self.b2(), self.void(), dict(rev, checked_by="x")))
+        # 撤销后可以继续正常对账
+        self.assertEqual(ccodes(row(), self.b2(), self.void(), rev, hit(), self.fin(self.b2(), "MISS", "4")), [])
 
     def test_T1_trigger_unobservable_with_value(self):
         self.assertIn("E-BR-TU-VALUE", self.two("TRIGGER_UNOBSERVABLE", "4", "TRIGGER_UNOBSERVABLE", "4",
@@ -690,10 +666,143 @@ class R4Review(unittest.TestCase):
             self.assertTrue(B.private_text("data_source", v), v)
             self.assertTrue(B.private_text("unit", v), v)
         self.assertTrue(B.private_text("unit", "/data/private/report"))
-        for v in ("/年", "亿元 /年", "亿元/年", "人/km2", "美元/桶", "bp /月", "x /5"):
+        for root in ("opt", "home", "workspace", "Users", "var", "etc", "tmp", "root", "private", "mnt", "srv", "usr",
+                     "Volumes", "Library"):
+            for v in (f"见/{root}", f"详见/{root}。", f"见/{root} 下", f"见/{root}中", f"见/{root}/x"):
+                self.assertTrue(B.private_text("data_source", v), v)
+                self.assertTrue(B.private_text("unit", v), v)
+        for v in ("见/optimal", "/年", "亿元 /年", "亿元/年", "人/km2", "美元/桶", "bp /月", "x /5"):
             self.assertFalse(B.private_text("unit", v), v)
             self.assertFalse(B.private_text("data_source", v), v)
         self.assertFalse(B.private_text("data_source", "https://fred.stlouisfed.org/series/X|FRED:X"))
+
+class R6Trust(unittest.TestCase):
+    """r6：可信合并时间 = 这组行首次进入 main 的那次 push 运行的 created_at（反例 B、C、D、E、V3、V7）。"""
+
+    def setUp(self):
+        import os
+        self.os = os
+        self.d = Path(tempfile.mkdtemp())
+        self.g = lambda *a: subprocess.run(["git", "-C", str(self.d), *a], check=True, capture_output=True, text=True)  # noqa: E731
+        self.g("init", "-q", "-b", "main"); self.g("config", "user.email", "t@t"); self.g("config", "user.name", "t")
+        (self.d / "ledger").mkdir()
+        self.commit(HDR, "base", "2026-10-01T00:00:00+08:00")
+        self.script = Path(__file__).resolve().parents[1] / "scripts/check-branches.py"
+        self.runs = []
+
+    def commit(self, text, msg, when="2026-10-13T07:30:00+08:00"):
+        (self.d / B.LEDGER_PATH).write_text(text, encoding="utf-8"); self.g("add", ".")
+        subprocess.run(["git", "-C", str(self.d), "commit", "-qm", msg], check=True, capture_output=True,
+                       env={**self.os.environ, "GIT_COMMITTER_DATE": when, "GIT_AUTHOR_DATE": when})
+        return self.g("rev-parse", "HEAD").stdout.strip()
+
+    def push(self, sha, created_at, run_id):
+        self.runs.append({"id": run_id, "head_sha": sha, "created_at": created_at})
+
+    def cli(self, runs=True, main_ref="HEAD"):
+        a = ["--main-ref", main_ref, "--count-gate", "--stats"]
+        if runs:
+            f = self.d / "runs.json"; f.write_text(json.dumps(self.runs)); a += ["--push-runs", str(f)]
+        return subprocess.run(["python3", str(self.script), "--repo", str(self.d), *a], capture_output=True, text=True)
+
+    def grp(self):
+        r1, r2 = row(), sibling(row())
+        v = lambda r, reason: rid(dict(r, check_result="VOID", corrects_row_id=r["row_id"], reason=reason), 2)  # noqa: E731
+        return r1, r2, v
+
+    def test_C_old_commit_pushed_late(self):  # 旧提交（10-13）10-15 才推上 main：按 push 运行时间判晚合并
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "old")
+        self.push(c, "2026-10-15T01:00:00Z", 901)
+        p = self.cli()
+        self.assertIn("E-BR-LATE-UNHANDLED", p.stdout)
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("stats INVALID", p.stdout)
+        # 下一次无关 push 仍然持续报错（全量复核）
+        (self.d / "x.txt").write_text("x"); self.g("add", "."); self.g("commit", "-qm", "unrelated")
+        self.assertIn("E-BR-LATE-UNHANDLED", self.cli().stdout)
+        # 整组 VOID 留痕（reason 写运行 ID）后恢复通过，组被自动排除
+        c3 = self.commit(csv_of(r1, r2, v(r1, "晚合并 run:901"), v(r2, "晚合并 run:901")), "void", "2026-10-16T00:00:00+08:00")
+        self.push(c3, "2026-10-16T01:00:00Z", 902)
+        ok = self.cli()
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        self.assertIn("gate_count 0", ok.stdout); self.assertIn('"excluded_late_groups": 1', ok.stdout)
+
+    def test_void_reason_must_cite_run(self):
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "old"); self.push(c, "2026-10-15T01:00:00Z", 901)
+        self.commit(csv_of(r1, r2, v(r1, "晚合并 run:900"), v(r2, "晚合并 run:900")), "void")
+        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli().stdout)
+
+    def test_E_future_committer_date_pushed_in_time(self):  # 按时推送、提交时间伪造到未来：不能作废
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "future", "2027-01-05T00:00:00+08:00")
+        self.push(c, "2026-10-13T00:00:00Z", 801)
+        ok = self.cli()
+        self.assertEqual(ok.returncode, 0, ok.stdout); self.assertIn("gate_count 2", ok.stdout)
+        self.commit(csv_of(r1, r2, v(r1, "x run:801"), v(r2, "x run:801")), "void", "2027-01-06T00:00:00+08:00")
+        p = self.cli()
+        self.assertIn("E-BR-VOID-UNVERIFIED", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
+
+    def test_D_V7_late_group_excluded_automatically(self):  # 晚合并组不靠作者 VOID，自动排除；结果已知后挑着作废无效
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "late"); self.push(c, "2026-10-14T03:00:00Z", 701)
+        rs, _ = B.parse(csv_of(r1, r2))
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cb", self.script); cb = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cb)
+        errs, late = cb.trust_errors(str(self.d), rs, "HEAD", cb.load_runs(self._runs_file()))
+        self.assertEqual(late, {B.group_key(r1)})
+        self.assertEqual(B.gate_count(rs, excluded=late), 0)
+        # V7：按时合并的组在结果已知后（2027-06）作废 → 无效，统计不变
+        d2 = R6Trust("test_C_old_commit_pushed_late"); d2.setUp()
+        c = d2.commit(csv_of(r1, r2), "in time"); d2.push(c, "2026-10-13T00:00:00Z", 702)
+        d2.commit(csv_of(r1, r2, v(r1, "x run:702"), v(r2, "x run:702")), "void", "2027-06-01T00:00:00+08:00")
+        p = d2.cli()
+        self.assertIn("E-BR-VOID-UNVERIFIED", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
+
+    def _runs_file(self):
+        f = self.d / "runs.json"; f.write_text(json.dumps(self.runs)); return str(f)
+
+    def test_B_invalid_void_then_revoked(self):  # 无效 VOID 不改变统计；撤销后恢复通过
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "in time"); self.push(c, "2026-10-13T00:00:00Z", 601)
+        v1 = v(r1, "x run:601")
+        self.commit(csv_of(r1, r2, v1), "single void")
+        self.assertIn("gate_count INVALID", self.cli().stdout)
+        rev = rid(dict(r1, check_result="VOID_REVOKED", corrects_row_id=v1["row_id"], reason="误作废"), 3)
+        self.commit(csv_of(r1, r2, v1, rev), "revoke")
+        ok = self.cli()
+        self.assertEqual(ok.returncode, 0, ok.stdout); self.assertIn("gate_count 2", ok.stdout)
+
+    def test_strict_when_times_unavailable(self):
+        r1, r2, _ = self.grp()
+        c = self.commit(csv_of(r1, r2), "x")
+        p = self.cli(runs=False)
+        self.assertIn("E-BR-PUSH-TIME-UNAVAILABLE", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
+        (self.d / "bad.json").write_text("{")
+        p = subprocess.run(["python3", str(self.script), "--repo", str(self.d), "--main-ref", "HEAD",
+                            "--push-runs", str(self.d / "bad.json")], capture_output=True, text=True)
+        self.assertIn("E-BR-PUSH-TIME-UNAVAILABLE", p.stdout)
+        self.push("f" * 40, "2026-10-13T00:00:00Z", 1)   # 有运行列表但找不到这次 push
+        p = self.cli()
+        self.assertIn("E-BR-PUSH-TIME-MISSING", p.stdout); self.assertIn("E-BR-LATE-UNHANDLED", p.stdout)
+        self.assertIsNotNone(c)
+
+    def test_multi_commit_push_uses_descendant_run(self):
+        r1, r2, _ = self.grp()
+        self.commit(csv_of(r1, r2), "rows")
+        (self.d / "x.txt").write_text("x"); self.g("add", "."); self.g("commit", "-qm", "later")
+        head = self.g("rev-parse", "HEAD").stdout.strip()
+        self.push(head, "2026-10-13T00:10:00Z", 501)
+        ok = self.cli()
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+
+    def test_not_on_main_yet(self):  # PR 阶段：组还没进 main，不做合并时间判定
+        r1, r2, _ = self.grp()
+        self.commit(csv_of(r1, r2), "pr rows")
+        p = self.cli(main_ref="HEAD~1")
+        self.assertEqual(p.returncode, 0, p.stdout); self.assertIn("gate_count 2", p.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

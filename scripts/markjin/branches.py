@@ -31,7 +31,7 @@ FROZEN = [
 PRE_REGISTERED = FROZEN  # 兼容旧名
 INTERVAL = ["interval_low", "interval_low_closed", "interval_high", "interval_high_closed"]
 QUARTERLY = ["n_quarters", "window_quarters", "lu_basis_date", "l_value", "u_value", "lu_evidence"]
-CHECK_RESULTS = {"VOID", "PENDING", "HIT", "MISS", "NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE", "DATA_UNAVAILABLE"}
+CHECK_RESULTS = {"VOID", "VOID_REVOKED", "PENDING", "HIT", "MISS", "NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE", "DATA_UNAVAILABLE"}
 FINAL = {"HIT", "MISS", "NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE"}
 WRONG = {"NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE"}
 ERROR_SOURCES = {"采集", "解读", "框架"}
@@ -61,19 +61,22 @@ URL_RE = re.compile(r"(?i)https?://[A-Za-z0-9\-._~:/?#@!$&*+=%]+")
 # 冒号后直接跟的绝对路径（a:/opt/x）要算
 ABS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/[A-Za-z_.~][\w.~-]*")
 # 斜杠前是中文（如「见/opt/private/x」）：后面是 ASCII 路径词并且还有下一段，才算路径（「亿元/年」「人/km2」不算）
+ROOT_NAMES = "opt|home|workspace|Users|var|etc|tmp|root|private|mnt|srv|usr|Volumes|Library"
+# 中文紧贴「/名单里的根目录」，后面是结尾、空白、标点、中文或下一段：算路径（见/opt、见/Users）
+CJK_ROOT_RE = re.compile(r"(?<=[\u3000-\u9fff\uff00-\uffef])/(?:" + ROOT_NAMES + r")(?![A-Za-z0-9_.~-])")
 CJK_PATH_RE = re.compile(r"(?<=[\u3000-\u9fff\uff00-\uffef])/[A-Za-z_.~][A-Za-z0-9_.~-]*/")
 # unit：只要出现「斜杠 + ASCII 词 + 斜杠」就算路径（如 /data/private/report）
 UNIT_PATH_RE = re.compile(r"/[A-Za-z_.~][A-Za-z0-9_.~-]*/")
 COMMON_RE = re.compile(r"(?i)file:|\\\\|\b[a-z]:[\\/]|markjin-internal|markjin-core|topics-private|(?<![\w])~/")
 # unit 放宽：只认已知的本机根目录
-ROOTS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/(?:workspace|home|opt|Users|tmp|etc|var|root|private|mnt|srv|usr)(?:/|\b)")
+ROOTS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/(?:" + ROOT_NAMES + r")(?![A-Za-z0-9_.~-])")
 
 
 def private_text(field, v):
     v = URL_RE.sub(" ", v)
     if COMMON_RE.search(v):
         return True
-    if CJK_PATH_RE.search(v):
+    if CJK_PATH_RE.search(v) or CJK_ROOT_RE.search(v):
         return True
     if field == "unit":
         return bool(ROOTS_RE.search(v) or UNIT_PATH_RE.search(v))
@@ -192,8 +195,8 @@ def check_row(row, manifest=None):
             e.append(f"E-BR-PRIVATE-TEXT:{f}")
     if bool(row["corrects_row_id"]) != bool(row["reason"].strip()):
         e.append("E-BR-CORRECTION-REASON")
-    if row["check_result"] == "VOID":
-        # 作废行：只追加，指向该分支第一行，reason 必填，不填任何对账字段
+    if row["check_result"] in ("VOID", "VOID_REVOKED"):
+        # 作废行 / 撤销作废行：只追加，reason 必填，不填任何对账字段
         if not row["corrects_row_id"] and "E-BR-CORRECTION-REASON" not in e:
             e.append("E-BR-CORRECTION-REASON")
         if any(not blank(row[f]) for f in ("actual_value", "actual_branch", "error_source", "evidence", "quarter_readings",
@@ -394,7 +397,10 @@ def parse(text, manifest=None):
         errs += [(i, c) for c in check_row(row, manifest)]
     # 行间规则
     seq, ids, reg, final, last_readings, seen = {}, {}, {}, {}, {}, set()
-    first_id, voided, void_groups, recon_groups = {}, set(), set(), set()
+    first_id, voided, void_groups = {}, set(), set()
+    # 被 VOID_REVOKED 撤销的作废行不再生效
+    revoked = {r["corrects_row_id"] for _, r in rows if r["check_result"] == "VOID_REVOKED"}
+    revoked_seen = set()
     group_closed, prev_group = set(), None
     for i, row in rows:
         key = branch_key(row)
@@ -429,23 +435,28 @@ def parse(text, manifest=None):
             continue
         cur = reg[key]
         changed = [f for f in FROZEN if row[f] != cur[f]]
+        if row["check_result"] == "VOID_REVOKED":
+            # 撤销作废：指向本分支一条作废行，每条作废行只能撤销一次
+            t = ids.get(row["corrects_row_id"])
+            if t is None or t["check_result"] != "VOID" or branch_key(t) != key or row["corrects_row_id"] in revoked_seen:
+                errs.append((i, "E-BR-CORRECTS-TARGET"))
+            revoked_seen.add(row["corrects_row_id"])
+            if changed:
+                errs.append((i, "E-BR-PREREG-CHANGED"))
+            ids[row["row_id"]] = row
+            continue
         if key in voided or (g in void_groups and row["check_result"] != "VOID"):
             errs.append((i, "E-BR-AFTER-VOID"))
         if row["check_result"] == "VOID":
-            # 作废不能晚于该组第一条对账行
-            if g in recon_groups:
-                errs.append((i, "E-BR-VOID-LATE"))
-            void_groups.add(g)
-            # 作废行：指向该分支第一行，事先登记字段照抄当前登记；作废后该分支不计入门禁和命中率
+            # 作废行只留痕：指向该分支第一行，事先登记字段照抄当前登记；排除与否由可信合并时间决定
             if row["corrects_row_id"] != first_id[key]:
                 errs.append((i, "E-BR-CORRECTS-TARGET"))
             if changed:
                 errs.append((i, "E-BR-PREREG-CHANGED"))
-            voided.add(key)
+            if row["row_id"] not in revoked:
+                void_groups.add(g); voided.add(key)
             ids[row["row_id"]] = row
             continue
-        if not (row["corrects_row_id"] and row["check_result"] == "PENDING"):
-            recon_groups.add(g)
         if row["corrects_row_id"]:
             target = row["corrects_row_id"]
             if row["check_result"] == "PENDING":
@@ -491,7 +502,7 @@ def parse(text, manifest=None):
     # 作废按整组：组内每一支都要有作废行，且全组作废行连续出现（同一个提交由逐提交检查核对）
     for g in void_groups:
         ks = {branch_key(r) for _, r in rows if group_key(r) == g}
-        vl = [i for i, r in rows if group_key(r) == g and r["check_result"] == "VOID"]
+        vl = [i for i, r in rows if group_key(r) == g and r["check_result"] == "VOID" and r["row_id"] not in revoked]
         if not ks <= voided or vl != list(range(vl[0], vl[0] + len(vl))):
             errs.append((vl[0], "E-BR-VOID-PARTIAL"))
     return rows, errs
@@ -589,14 +600,22 @@ def _reg_of(rows, key):
     return cur
 
 
-def voided_groups(rows):
-    return {group_key(r) for _, r in rows if r["check_result"] == "VOID"}
+def active_voids(rows):
+    """未被撤销的作废行。"""
+    revoked = {r["corrects_row_id"] for _, r in rows if r["check_result"] == "VOID_REVOKED"}
+    return [(i, r) for i, r in rows if r["check_result"] == "VOID" and r["row_id"] not in revoked]
 
 
-def voided_branches(rows):
-    """含作废行的组，其全部分支都视为作废。"""
-    vg = voided_groups(rows)
-    return {branch_key(r) for _, r in rows if group_key(r) in vg}
+def complete_void_groups(rows):
+    """作废完整的组：组内每一支都有未撤销的作废行，且这些行连续。"""
+    av = active_voids(rows)
+    out = set()
+    for g in {group_key(r) for _, r in av}:
+        ks = {branch_key(r) for _, r in rows if group_key(r) == g}
+        vl = [i for i, r in av if group_key(r) == g]
+        if {branch_key(r) for _, r in av if group_key(r) == g} == ks and vl == list(range(vl[0], vl[0] + len(vl))):
+            out.add(g)
+    return out
 
 
 def partition_warnings(rows):
@@ -629,7 +648,7 @@ def conclusion_changes(rows):
     return out
 
 
-def hit_stats(rows):
+def hit_stats(rows, excluded=frozenset()):
     """命中率口径：分支身份与分母取每个分支的第一行（按组计）；事先条件取观测开始前的最后一次登记更正（没有则第一行）；
     结果取当前有效最终结论（结论更正后的最新一条）。另列做过登记更正的分支数和结论更正次数。"""
     final, reg_corr, members = {}, set(), {}
@@ -640,10 +659,9 @@ def hit_stats(rows):
             reg_corr.add(k)
         elif row["check_result"] in FINAL:
             final[k] = row
-    void = voided_branches(rows)
     judged = correct = 0
     for g, ks in members.items():
-        if ks & void:
+        if g in excluded:
             continue
         fs = [final[k] for k in ks if k in final]
         if len(fs) != len(ks):
@@ -654,15 +672,14 @@ def hit_stats(rows):
     return {"groups": len(members), "groups_judged": judged, "groups_correct": correct,
             "branches": sum(len(v) for v in members.values()), "registration_corrected_branches": len(reg_corr),
             "conclusion_corrections": sum(conclusion_changes(rows).values()),
-            "voided_branches": len(void), "voided_groups": len(voided_groups(rows)), "partition_warnings": partition_warnings(rows)}
+            "excluded_late_groups": len(excluded), "partition_warnings": partition_warnings(rows)}
 
 
-def gate_count(rows, cutoff="2026-12-31", domain=None):
+def gate_count(rows, cutoff="2026-12-31", domain=None, excluded=frozenset()):
     """门禁计数：每个分支（draft_id + classification_id + branch_order）只按第一行算：
     第一行 window_end 不晚于 cutoff 且 check_result 为 PENDING 的计 1。"""
-    void = voided_branches(rows)
     return sum(1 for k, r in first_rows(rows).items()
-               if k not in void and r["check_result"] == "PENDING" and r["window_end"] <= cutoff and (domain is None or r["domain"] == domain))
+               if group_key(r) not in excluded and r["check_result"] == "PENDING" and r["window_end"] <= cutoff and (domain is None or r["domain"] == domain))
 
 
 def append_only(old_text, new_text):

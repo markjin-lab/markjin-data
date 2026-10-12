@@ -5,6 +5,7 @@ on:
   pull_request:
 permissions:
   contents: read
+  actions: read
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -17,6 +18,18 @@ jobs:
           python-version: "3.12"
       - name: unit tests
         run: cd tests && python3 -m unittest test_branches
+      - name: fetch trusted push times
+        # 可信合并时间：用 GITHUB_TOKEN 只读查询 main 上 push 事件的运行（id、head_sha、created_at）。
+        # 取不到时不写文件，下一步的脚本从严处理（E-BR-PUSH-TIME-UNAVAILABLE）。
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/check-branches.yml/runs?event=push&branch=main&per_page=100" \
+            --jq '.workflow_runs[] | {id, head_sha, created_at}' > "$RUNNER_TEMP/runs.jsonl"
+          jq -s . "$RUNNER_TEMP/runs.jsonl" > "$RUNNER_TEMP/push-runs.json.tmp"
+          mv "$RUNNER_TEMP/push-runs.json.tmp" "$RUNNER_TEMP/push-runs.json"
       - name: check ledger
         env:
           EVENT: ${{ github.event_name }}
@@ -41,14 +54,13 @@ jobs:
           TIME_ARGS=""
           if [ "$EVENT" = pull_request ]; then
             TIME_ARGS="--now $NOW"
-          elif [ "$GITHUB_REF" = refs/heads/main ]; then
-            # main push 一律按 CI 运行时间算合并时间（提交时间不可信：旧提交快进推上来会偏早）
-            TIME_ARGS="--merge-time $NOW"
           fi
-          # 核验 VOID 用的 main：PR 取 base，main push 取 HEAD，其他分支取 origin/main
+          RUNS_ARG=""
+          if [ -s "$RUNNER_TEMP/push-runs.json" ]; then RUNS_ARG="--push-runs $RUNNER_TEMP/push-runs.json"; fi
+          # 找每组首次进入 main 的提交用的 main：PR 取 base，main push 取 HEAD，其他分支取 origin/main
           if [ "$EVENT" = pull_request ]; then MAIN_REF=$PR_BASE
           elif [ "$GITHUB_REF" = refs/heads/main ]; then MAIN_REF=HEAD
           else MAIN_REF=origin/main; fi
-          python3 scripts/check-branches.py --repo . --ref "$REF" --base "$BASE" --main-ref "$MAIN_REF" $TIME_ARGS --count-gate --stats
+          python3 scripts/check-branches.py --repo . --ref "$REF" --base "$BASE" --main-ref "$MAIN_REF" $RUNS_ARG $TIME_ARGS --count-gate --stats
           # 公开检查覆盖本次 PR / push 的全部新增提交（含台账自由文本的本机路径检查）
           python3 scripts/check-public.py --range "$BASE..$REF"

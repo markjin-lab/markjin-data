@@ -78,8 +78,11 @@
 1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。
    - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。例外是台账还没有任何数据行（只有表头）时，可以调整表头；第一条数据行进入 main 之后，这个例外永久失效。push 时 before 必须是 HEAD 的祖先（否则 E-BR-NOT-FAST-FORWARD），并直接比较 before 与 HEAD 两个版本的台账，确认只是追加；main 已在分支保护里禁止强推和删除；但还没有要求必须通过状态检查、也没有要求必须经 PR 合入，所以 main 上的台账检查目前是推送之后才运行、事后报警，失败的行在作废前可能已经落地。基线提交不存在或读不出时判失败，不放行。
    - **推送时间。** PR 上 CI 用运行时间（`--now`），只对本次 PR 新登记的行和登记更正行核对：与 registered_at 相差不超过 6 小时，并且早于 window_start 当日 00:00（SGT）。
-   - **合并时间。** main 上只核对合并时间早于 window_start（`--merge-time`）。main 上的 push 一律以 CI 运行时间作为合并时间，不取提交时间：提交时间（包括 GitHub 网页生成的提交）是提交创建的时间，旧提交晚些快进推上 main 时会偏早。脚本不验证提交签名。
-   - **作废行（整组）。** 只用于脚本能核验的失败：这组登记行首次出现在 main（按 first-parent 历史）的那个提交，提交时间不早于 window_start（`--main-ref`；核验不了报 E-BR-VOID-UNVERIFIED）。作废按整组：组内每一支各追加一条作废行，check_result 为 `VOID`，corrects_row_id 指向该支第一行，reason 必填，事先登记字段照抄，对账字段（含 checked_by、checked_at）全空（E-BR-VOID-FILLED）；全组作废行必须连续、在同一个提交里完成（E-BR-VOID-PARTIAL / E-BR-VOID-SPLIT）；不能晚于该组第一条对账行（E-BR-VOID-LATE）。作废后该组不能再追加任何行（E-BR-AFTER-VOID）；门禁计数和命中率都整组排除，`--stats` 另列 voided_groups。
+   - **可信合并时间。** 登记是否有效、作废能否成立，都只用同一个时间：这组行第一次进入 main 的那次 push 的时间。CI 先单独一步用 GITHUB_TOKEN 只读查询 GitHub Actions API，取 main 上 push 事件运行的 id、head_sha、created_at，写成 JSON 交给 `--push-runs`；脚本沿 main 的 first-parent 历史找到这组第一支登记行首次出现的提交，再取 head_sha 等于它（一次推多个提交时取以它为祖先）的最早一次 push 运行的 created_at。提交时间（committer date）一律不用。取不到运行列表时报 E-BR-PUSH-TIME-UNAVAILABLE；有列表但找不到对应运行时报 E-BR-PUSH-TIME-MISSING，并按晚合并从严处理。每次检查都全量复核所有已进 main 的组。
+   - **晚合并的组自动排除。** 可信时间不早于 window_start（或取不到）的组，由脚本自动排除出门禁计数和命中率，`--stats` 列出 excluded_late_groups；在用整组作废行留痕之前，每次检查都持续报 E-BR-LATE-UNHANDLED。
+   - **作废行（整组，只留痕）。** VOID 不再决定排不排除。组内每一支各追加一条：check_result 为 `VOID`，corrects_row_id 指向该支第一行，reason 必填并写明 `run:<运行 ID>`（即上面那次 push 运行），事先登记字段照抄，对账字段（含 checked_by、checked_at）全空（E-BR-VOID-FILLED）；全组作废行必须连续、在同一个提交里完成（E-BR-VOID-PARTIAL / E-BR-VOID-SPLIT）。组不是晚合并、或 reason 里的运行 ID 不对，报 E-BR-VOID-UNVERIFIED。作废后该组不能再追加对账行（E-BR-AFTER-VOID）。
+   - **撤销作废。** 已经落地的无效 VOID 只能追加 `VOID_REVOKED` 行撤销：corrects_row_id 指向那条 VOID，reason 必填，事先登记字段照抄，对账字段全空；每条 VOID 只能撤销一次。撤销后的 VOID 不再生效，CI 可恢复通过。
+   - **检查失败时**，`--count-gate` 和 `--stats` 输出 `INVALID`，不给出看起来有效的计数。
 2. **登记行。** check_result 必须是 `PENDING`，quarter_readings 为空；registered_at 的日期等于 publish_date，并早于观测开始（window_start 至少是发布次日）；lu_basis_date 和 lu_evidence 里每个读数的 vintage 都不得晚于 registered_at。
 3. **不可改字段**：全部事先登记字段，加上 registered_at。对账行和结论更正行里，这些字段必须与当前登记（登记行，或最近一条登记更正行）完全一致。
 4. **对账行**：window_end 之后追加，事先登记字段照抄，再填对账字段，checked_at 晚于 window_end。DATA_UNAVAILABLE 可以等数据发布后再追加一行。每个分支只能有一个最终结论（HIT、MISS、NONE_HIT、MULTI_HIT、TRIGGER_UNOBSERVABLE）；要改只能走结论更正。TRIGGER_UNOBSERVABLE 的 actual_value 必须为空（E-BR-TU-VALUE）；区间组只要有数值读数，就照常按共同读数判定。
@@ -94,7 +97,7 @@
     - 命中率按更正后的条件算，前提是登记更正发生在观测开始前；没有更正的，按第一行。结果取当前有效的最终结论（结论更正后的最新一条）。一组恰有一支 HIT、其余 MISS，记为对。
     - 另外单独列出做过登记更正的分支数和结论更正的次数。`--stats` 会输出这几项。
 11. **登记校验**（从严临时执行），任一条不满足就不登记，退回生产与发布 bot：N ≥ 1；L ≤ U；window_quarters 恰好是 N 个连续季度，最后一个不晚于 window_end 所在季度；lu_evidence 非空，每个读数都带 vintage、raw 路径、sha256 和来源链接；按季读数型分支四个区间字段填 `NA`。
-12. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导；自由文本字段（slug、reason、observed_variable、unit、data_source、data_vintage、trigger_condition、registered_by、checked_by、actual_value）不得含绝对路径、file: URI 或内部目录名，由 check-branches 检查（先按明确边界去掉 http(s) 网址，网址遇到 `|`、逗号、分号、引号、括号、空白或中文即止，所以 `https://x.org|/opt/x` 里的路径仍会检出；斜杠后跟 ASCII 字母、下划线、点或 ~ 才算路径，冒号后直接跟的路径如 a:/opt/x 也算；斜杠前是中文时，后面是 ASCII 路径词且还有下一段（如「见/opt/private/x」）就算；`/年`、`亿元 /年`、`bp /月`、`x /5`、`人/km2` 不算；unit 认已知本机根目录，以及任何「斜杠 + ASCII 词 + 斜杠」，如 /data/private/report）；CI 还对 PR 或 push 的全部新增提交运行 `check-public.py --range`，检查台账全文是否含本机路径。
+12. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导；自由文本字段（slug、reason、observed_variable、unit、data_source、data_vintage、trigger_condition、registered_by、checked_by、actual_value）不得含绝对路径、file: URI 或内部目录名，由 check-branches 检查（先按明确边界去掉 http(s) 网址，网址遇到 `|`、逗号、分号、引号、括号、空白或中文即止，所以 `https://x.org|/opt/x` 里的路径仍会检出；斜杠后跟 ASCII 字母、下划线、点或 ~ 才算路径，冒号后直接跟的路径如 a:/opt/x 也算；斜杠前是中文时，后面是 ASCII 路径词且还有下一段（如「见/opt/private/x」）就算；`/年`、`亿元 /年`、`bp /月`、`x /5`、`人/km2` 不算；unit 认已知本机根目录，以及任何「斜杠 + ASCII 词 + 斜杠」，如 /data/private/report；根目录名单：opt、home、workspace、Users、var、etc、tmp、root、private、mnt、srv、usr、Volumes、Library，中文紧贴「/名单里的词」且后面是结尾、空白、标点、中文或下一段时（如「见/opt」「见/Users」）算路径）；CI 还对 PR 或 push 的全部新增提交运行 `check-public.py --range`，检查台账全文是否含本机路径。
 
 ## 校验
 
