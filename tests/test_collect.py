@@ -357,8 +357,8 @@ class R2Fixes(unittest.TestCase):
         st = collect.HostState(None)
         st.disable("a.org", None, "manual")
         f, _ = mk({"http://a.org/robots.txt": Resp(301, headers={"Location": "https://a.org/robots.txt"})}, state=st)
-        f.robots("http://a.org/x")                       # 同主机跳转，但目标主机已停用
-        self.assertEqual([u for u, _ in f.opener.calls], ["http://a.org/robots.txt"])
+        f.robots("http://a.org/x")                       # r12：已停用主机，robots() 入口直接禁止
+        self.assertEqual([u for u, _ in f.opener.calls], [])
 
     def test_robots_same_host_redirect_ok(self):
         f, _ = mk({"http://a.org/robots.txt": Resp(301, headers={"Location": "https://a.org/robots.txt"}),
@@ -1328,7 +1328,7 @@ class R10Fixes(unittest.TestCase):
                 b'<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script>',
                 b'<script src="/_Incapsula_Resource?SWJIYLWA=1"></script>',          # r11：只认 script src
                 b"<script>window._cf_chl_opt={cType:'managed'}</script>",
-                b"<script>var a=document.createElement('script');a.src = '/cdn-cgi/challenge-platform/h/g/x';</script>"]
+                b"<script>var a=document.createElement('script');a.src = '/cdn-cgi/challenge-platform/h/g/orchestrate/x';</script>"]
         for b in real:
             self.assertEqual(collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>"), "vendor", b)
 
@@ -1414,7 +1414,7 @@ class R11Fixes(unittest.TestCase):
         self.assertIsNone(self.cls(b"<div id='px-captcha'></div>" + b"<p>long article text here</p>" * 100))
         for b in (b"<script>window._cf_chl_opt={cType:'managed'}</script>", b"<script>;window._cf_chl_opt = {a: 1};</script>",
                   b"<script src='/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1'></script>",
-                  b"<script>var a=document.createElement('script');a.src = \"/cdn-cgi/challenge-platform/h/g/x\";</script>"):
+                  b"<script>var a=document.createElement('script');a.src = \"/cdn-cgi/challenge-platform/h/g/orchestrate/x\";</script>"):
             self.assertEqual(self.cls(b + b"<p>a</p>" * 100), "vendor", b)
 
     def test_stale_process_does_not_rewrite_manually_enabled_host(self):
@@ -1457,6 +1457,136 @@ class R11Fixes(unittest.TestCase):
                 os.environ.pop(collect.SEC_UA_ENV, None)
             else:
                 os.environ[collect.SEC_UA_ENV] = old
+
+
+class R12Fixes(unittest.TestCase):
+    """PR #3 审查 r12 REJECTED 修复的针对性测试。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(dir="/workspace"); self.addCleanup(d.cleanup); return Path(d.name)
+
+    INCAP_IFRAME = (b"<html style='height:100%'><head><META NAME='ROBOTS' CONTENT='NOINDEX, NOFOLLOW'><meta name='format-detection' "
+                    b"content='telephone=no'></head><body style='margin:0px;height:100%'><iframe id='main-iframe' "
+                    b"src='/_Incapsula_Resource?CWUDNSAI=9&xinfo=6-1&incident_id=165-68&edet=12&cinfo=04000000' frameborder=0 "
+                    b"width='100%' height='100%' marginheight='0px' marginwidth='0px'>Request unsuccessful. Incapsula incident ID: "
+                    b"165001010055460724-68720833956480598</iframe></body></html>")
+    PX_TEMPLATE = (Path(__file__).parent / "fixtures" / "px_blocking_template.html").read_bytes()   # PerimeterX 官方拦截模板
+
+    def run_get(self, st, body, url="https://a.org/p"):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk({url: Resp(st, body)}, state=collect.HostState(p))
+        return f.get(url, sid="s"), collect.HostState(p).data
+
+    def cls(self, b, url="https://a.org/p"):
+        return collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>", {}, url)
+
+    def test_incapsula_iframe_block_page_200_and_403(self):
+        self.assertEqual(collect.classify_page("text/html", self.INCAP_IFRAME, {}, "https://a.org/p"), "vendor")
+        r, d = self.run_get(200, self.INCAP_IFRAME)
+        self.assertEqual(r.error, "challenge"); self.assertIn("a.org", d["hosts"])
+        r, d = self.run_get(403, self.INCAP_IFRAME)
+        self.assertEqual(r.error, "http_403"); self.assertIn("a.org", d["hosts"])
+        # 组合证据：只有 iframe、没有 incident ID → 不算；别的主机的 iframe → 不算
+        self.assertNotEqual(self.cls(b"<iframe src='/_Incapsula_Resource?CWUDNSAI=9'></iframe>"), "vendor")
+        self.assertNotEqual(collect.classify_page("text/html", self.INCAP_IFRAME.replace(b"src='/_", b"src='https://b.org/_"),
+                                                  {}, "https://a.org/p"), "vendor")
+
+    def test_same_origin_resolution_via_response_url(self):
+        CF = b"/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1"
+        for src in (CF, b"https://a.org" + CF, b"//a.org" + CF):
+            self.assertEqual(self.cls(b"<script src='" + src + b"'></script>"), "vendor", src)
+            self.assertEqual(self.cls(b"<script>var a=document.createElement('script');a.src='" + src + b"';</script>"), "vendor", src)
+        for src in (b"/_Incapsula_Resource?SWJIYLWA=7", b"https://a.org/_Incapsula_Resource?SWJIYLWA=7",
+                    b"//a.org/_Incapsula_Resource?SWJIYLWA=7"):
+            self.assertEqual(self.cls(b"<script src='" + src + b"'></script>"), "vendor", src)
+        for src in (b"https://b.org" + CF, b"//b.org" + CF, b"http://a.org" + CF, b"https://a.org:8443" + CF,
+                    b"https://b.org/_Incapsula_Resource?x=1", b"//evil.example.org/_Incapsula_Resource?x=1"):
+            self.assertIsNone(self.cls(b"<script src='" + src + b"'></script>"), src)          # 其他主机/协议/端口不认
+        r, d = self.run_get(200, b"<html><head><script src='//a.org" + CF + b"'></script></head></html>")
+        self.assertEqual(r.error, "challenge"); self.assertIn("a.org", d["hosts"])
+
+    def test_perimeterx_official_template_and_variants(self):
+        self.assertEqual(collect.classify_page("text/html", self.PX_TEMPLATE, {}, "https://a.org/p"), "vendor")
+        for st in (200, 403):
+            r, d = self.run_get(st, self.PX_TEMPLATE)
+            self.assertIn("a.org", d["hosts"], st)
+        filler = b"<p>a</p>" * 300
+        self.assertEqual(self.cls(b"<script>window._pxAppId = 'PXabc';</script>" + filler), "vendor")
+        self.assertEqual(self.cls(b"<script src='https://captcha.px-cdn.net/PXabc/captcha.js'></script>" + filler), "vendor")
+        self.assertEqual(self.cls(b"<script>var s=document.createElement('script');s.src='//captcha.px-cloud.net/PXabc/captcha.js';"
+                                  b"</script>" + filler), "vendor")
+        meta = (b"<html><head><meta name='description' content='px-captcha'><title>Access to this page has been denied</title>"
+                b"</head><body>" + filler + b"</body></html>")
+        self.assertEqual(collect.classify_page("text/html", meta, {}, "https://a.org/p"), "vendor")
+        # 反例：文档里展示的代码、单独的标题或 meta、字符串里的赋值
+        for b in (b"<pre>window._pxAppId = &#x27;PXabc&#x27;;</pre>", b"<script>var doc = \"window._pxAppId = 'x'\";</script>",
+                  b"<a href='https://captcha.px-cloud.net/x/captcha.js'>link</a>", b"<script>if (window._pxAppId == null) {}</script>"):
+            self.assertIsNone(self.cls(b + filler), b)
+        self.assertNotEqual(collect.classify_page("text/html", meta.replace(b"content='px-captcha'", b"content='news'"), {},
+                                                  "https://a.org/p"), "vendor")
+        self.assertNotEqual(collect.classify_page("text/html", meta.replace(b"Access to this page has been denied", b"PX docs"), {},
+                                                  "https://a.org/p"), "vendor")
+
+    def test_cf_only_orchestrate_path_not_jsd(self):
+        filler = b"<p>news</p>" * 50
+        for src in (b"/cdn-cgi/challenge-platform/scripts/jsd/main.js", b"/cdn-cgi/challenge-platform/scripts/jsd/api.js",
+                    b"/cdn-cgi/challenge-platform/h/gg/orchestrate/x", b"/cdn-cgi/challenge-platform/x.js"):
+            self.assertIsNone(self.cls(b"<script src='" + src + b"'></script>" + filler), src)
+            self.assertIsNone(self.cls(b"<script>var a=document.createElement('script');a.src='" + src + b"';</script>" + filler), src)
+        jsd = (b"<article>" + filler + b"</article><script>(function(){var d=b.createElement('script');d.innerHTML=\"window.__CF$cv$params="
+               b"{r:'8'};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';\";})();</script>")
+        r, d = self.run_get(200, b"<html><body>" + jsd + b"</body></html>")
+        self.assertTrue(r.ok); self.assertEqual(d["hosts"], {})                              # Cloudflare 注入正常页面的 JSD
+        self.assertEqual(self.cls(b"<script src='/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1'></script>"), "vendor")
+
+    def test_unclosed_script_single_marker_suspect_two_markers_vendor(self):
+        one = b"<html><body><script>var x=1;\n<pre>\nwindow._cf_chl_opt = {}\n</pre>"
+        self.assertEqual(collect.classify_page("text/html", one, {}, "https://a.org/p"), "phrase")
+        r, d = self.run_get(200, one)
+        self.assertEqual(r.error, "suspected_challenge"); self.assertEqual(d["hosts"], {})
+        two = (b"<html><body><script>window._cf_chl_opt={cType:'managed'};var a=document.createElement('script');"
+               b"a.src='/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1';")
+        self.assertEqual(collect.classify_page("text/html", two, {}, "https://a.org/p"), "vendor")
+        r, d = self.run_get(200, two)
+        self.assertEqual(r.error, "challenge"); self.assertIn("a.org", d["hosts"])
+        closed = b"<html><body><script>window._cf_chl_opt={cType:'managed'};</script></body></html>"
+        self.assertEqual(collect.classify_page("text/html", closed, {}, "https://a.org/p"), "vendor")
+
+    def test_state_file_strict_schema_refuses_requests(self):
+        bad = ["{bad", "", "[]", '{"hosts": [], "sources": {}}', '{"hosts": {}, "sources": []}',
+               '{"hosts": {"a.org": {}}, "sources": {}}', '{"hosts": {"a.org": "x"}, "sources": {}}',
+               '{"hosts": {}, "sources": {"s": {"reason": ""}}}']
+        for txt in bad:
+            p = self.tmpdir() / "state" / "collector-hosts.json"; p.parent.mkdir()
+            p.write_text(txt)
+            hs = collect.HostState(p)
+            self.assertTrue(hs.disabled("b.org", "t"), txt)                                 # 任何主机都拒绝
+            f, _ = mk({"https://b.org/robots.txt": Resp(200, b""), "https://b.org/x": Resp(200, b"ok")}, state=hs)
+            r = f.get("https://b.org/x", sid="t")
+            self.assertEqual(r.error, "disabled", txt)
+            self.assertEqual(f.opener.calls, [], txt)                                         # 不发请求
+            self.assertFalse(f.robots("https://b.org/x").can_fetch(collect.UA_TOKEN, "https://b.org/x"))
+            with self.assertRaises(collect.StateError):
+                hs.disable("c.org", None, "x")                                                # 不改写损坏的文件
+            self.assertEqual(p.read_text(), txt)
+        p = self.tmpdir() / "ok.json"
+        p.write_text('{"hosts": {"a.org": {"reason": "http_403"}}, "sources": {}}')
+        self.assertFalse(collect.HostState(p).disabled("b.org"))
+        self.assertTrue(collect.HostState(p).disabled("a.org"))
+
+    def test_robots_checks_disabled_before_cache(self):
+        p = self.tmpdir() / "state" / "h.json"
+        hs = collect.HostState(p)
+        f, _ = mk({"https://a.org/robots.txt": Resp(200, b"User-agent: *\nAllow: /\n")}, state=hs)
+        self.assertTrue(f.robots("https://a.org/x").can_fetch(collect.UA_TOKEN, "https://a.org/x"))    # 已缓存
+        collect.HostState(p).disable("a.org", None, "http_403")
+        n = len(f.opener.calls)
+        self.assertFalse(f.robots("https://a.org/x").can_fetch(collect.UA_TOKEN, "https://a.org/x"))   # 缓存前先查停用
+        self.assertEqual(len(f.opener.calls), n)
+        hs2 = collect.HostState(None); hs2.disable("b.org", "s", "x")
+        f, _ = mk({"https://b.org/robots.txt": Resp(200, b"")}, state=hs2)
+        self.assertFalse(f.robots("https://b.org/x", sid="s").can_fetch(collect.UA_TOKEN, "https://b.org/x"))
+        self.assertEqual(f.opener.calls, [])
 
 
 if __name__ == "__main__":

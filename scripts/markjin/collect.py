@@ -64,35 +64,55 @@ REFUSED_HOSTS = {"t.co"}
 REDIRECT_CODES = {301, 302, 303, 307, 308}
 # 验证页识别（collector 与 scrapers 共用这一份）。总原则：只有 403 和高置信的验证页（命中厂商标记）才持久停用；
 # 格式不对、只命中泛用短语，只记本轮失败/可疑，不停用。
-# 高置信厂商标记：用 html.parser 逐个标签解析，只看精确属性（class、src、id），不用字节正则：
-#  - <script src>（只认 script 元素）：urlsplit 核对——主机 challenges.cloudflare.com；hcaptcha.com 下的 …/api.js；
-#    google.com / recaptcha.net 下的 /recaptcha/…api.js；相对地址（无主机）且路径以 /cdn-cgi/challenge-platform/ 开头，
-#    或路径含 _Incapsula_Resource（这两种只认 script，且不认别的主机）
-#  - form#challenge-form；元素 class（按空白切分）含 cf-turnstile 或 g-recaptcha
-#  - div#px-captcha，且整页可见文本很短（≤ PX_TEXT_MAX 字符）
-#  - script 内容：先去掉 JS 字符串字面量和注释，只认不在引号里的 window._cf_chl_opt 赋值语句、X.src = '…' 赋值
-#    （src 按 script src 规则核对）；script 里的其他文字（如 JS 字符串 '<div class="g-recaptcha">'）不解析为标签
-#  - 免检：<textarea>/<xmp>/<plaintext>/<title> 内（按 HTML 规范这些是纯文本）；注释、可见文本。<pre>/<code> 照常检查
-#    （其中的 script 一样执行）。data-class / data-src 等不是 class / src
+# 高置信厂商标记：用 html.parser 逐个标签解析，只看精确属性（class、src、id、meta），不用字节正则。
+# 地址一律用 urljoin(响应 URL, src) 补全后比对：同源（scheme + 主机 + 端口与响应一致）的才算本站资源。
+#  - Cloudflare：<script src> 或脚本里 X.src = '…' 指向 challenges.cloudflare.com，或本站
+#    /cdn-cgi/challenge-platform/h/<字母>/orchestrate/（验证页专属；/cdn-cgi/challenge-platform/scripts/jsd/ 是往正常页面
+#    注入的检测脚本，不算）；不在引号里的 window._cf_chl_opt 赋值语句；元素 class 含 cf-turnstile
+#  - reCAPTCHA / hCaptcha：class 含 g-recaptcha；script src 指向 google.com/recaptcha.net 的 /recaptcha/…api.js、hcaptcha 的 api.js
+#  - Incapsula：<script src> 指向本站 /_Incapsula_Resource；或 <iframe src> 指向本站 /_Incapsula_Resource?…
+#    且正文含 "Incapsula incident ID"（组合证据）
+#  - PerimeterX：不在引号里的 window._pxAppId 赋值；script src（含 X.src 赋值）指向 captcha.px-cdn.net / captcha.px-cloud.net；
+#    meta description 为 px-captcha 且标题为 "Access to this page has been denied"；div#px-captcha 且整页可见文本很短
+#  - form#challenge-form
+#  - 没闭合的 <script>（一直到文末）：只命中一个标记 → 只记本轮可疑；要有第二个独立标记才算高置信
+#  - 免检：<textarea>/<xmp>/<plaintext>/<title> 内（HTML 规范里的纯文本元素）、注释、可见文本；<pre>/<code> 照常检查。
+#    script 内容先去掉 JS 字符串字面量和注释，其余文字不解析为标签。data-class / data-src 等不是 class / src
 #  - 响应头 cf-mitigated: challenge（见 classify_page）
 _LITERAL_TAGS = frozenset({"textarea", "xmp", "plaintext", "title"})
 PX_TEXT_MAX = 1000
 _CF_CHL_OPT = re.compile(r"(?:^|[;{}()\s,])window\s*\.\s*_cf_chl_opt\s*=(?!=)")
+_PX_APPID = re.compile(r"(?:^|[;{}()\s,])window\s*\.\s*_pxAppId\s*=(?!=)")
 _JS_SRC = re.compile(r"""\.\s*src\s*=\s*(['"])""")
+_CF_ORCH = re.compile(r"^/cdn-cgi/challenge-platform/h/[a-z]/orchestrate/", re.I)
+_PX_CAPTCHA_HOSTS = frozenset({"captcha.px-cdn.net", "captcha.px-cloud.net"})
+PX_DENIED_TITLE = "access to this page has been denied"
 
 
-def vendor_src(src, script=True):
-    """<script src> 是否指向已知验证组件（urlsplit 核对主机与路径）。script=False（非 script 元素）一律不算。"""
-    if not script:
-        return False
+def _origin(u):
+    p = urlsplit(u)
+    port = p.port or {"http": 80, "https": 443}.get((p.scheme or "").lower())
+    return (p.scheme or "").lower(), (p.hostname or "").lower(), port
+
+
+def vendor_src(src, script=True, base=None, iframe=False):
+    """src 是否指向已知验证组件。base = 响应 URL：用 urljoin 补成完整地址，同源的本站资源才认（没有 base 时只认相对地址）。
+    返回 'incapsula-iframe'（iframe 指向本站 /_Incapsula_Resource?…，须再配合 incident ID）、True 或 False。"""
+    raw = (src or "").strip()
     try:
-        u = urlsplit((src or "").strip())
+        full = urljoin(base, raw) if base else raw
+        u = urlsplit(full)
+        same = (_origin(full) == _origin(base)) if base else not urlsplit(raw).netloc
     except ValueError:
         return False
     host, path = (u.hostname or "").lower(), u.path or ""
-    if not u.netloc and (path.startswith("/cdn-cgi/challenge-platform/") or "_Incapsula_Resource" in path):
+    if iframe:
+        return "incapsula-iframe" if same and path.startswith("/_Incapsula_Resource") and u.query else False
+    if not script:
+        return False
+    if same and (_CF_ORCH.match(path) or path.startswith("/_Incapsula_Resource")):
         return True
-    if host == "challenges.cloudflare.com":
+    if host == "challenges.cloudflare.com" or host in _PX_CAPTCHA_HOSTS:
         return True
     if (host == "hcaptcha.com" or host.endswith(".hcaptcha.com")) and path.endswith("/api.js"):
         return True
@@ -129,47 +149,54 @@ def _js_mask(js):
     return "".join(out)
 
 
-def _script_hit(js):
-    m = _js_mask(js)
+def _script_markers(js, base=None):
+    """脚本内容里的独立标记集合：cf_chl_opt / px_appid / src（X.src = '…' 指向验证组件）。"""
+    m, found = _js_mask(js), set()
     if _CF_CHL_OPT.search(m):
-        return True
+        found.add("cf_chl_opt")
+    if _PX_APPID.search(m):
+        found.add("px_appid")
     for x in _JS_SRC.finditer(m):          # 赋值本身在代码里；值是紧随其后的字符串字面量
         q, start = x.group(1), x.end()
         end = js.find(q, start)
-        if end > start and vendor_src(js[start:end]):
-            return True
-    return False
+        if end > start and vendor_src(js[start:end].replace("\\/", "/"), base=base) is True:
+            found.add("src")
+    return found
 
 
-def _vendor_scan(text):
+def _vendor_scan(text, base=None):
+    """返回 'vendor'（高置信）、'suspect'（没闭合的 script 里只有单一标记）或 None。"""
     from html.parser import HTMLParser
 
     class Scan(HTMLParser):
         def __init__(self):
             super().__init__(convert_charrefs=True)
-            self.hit, self.px, self.lit, self.in_script, self.visible = False, False, 0, 0, 0
-            self.sbuf = []
+            self.hit, self.px, self.lit, self.in_script, self.visible = False, False, [], 0, 0
+            self.sbuf, self.title, self.meta_px, self.incap_iframe, self.text = [], [], False, False, []
 
         def handle_starttag(self, tag, attrs):
             if tag in _LITERAL_TAGS:
-                self.lit += 1
+                self.lit.append(tag)
                 return
             if self.lit:
                 return
             if tag in ("script", "style"):
                 self.in_script = tag
                 self.sbuf = []
-            if self.hit:
-                return
             a = {}
             for k, v in attrs:                 # 精确属性名；同名重复取第一个
                 a.setdefault(k, v or "")
-            if tag == "script" and "src" in a and vendor_src(a["src"]):
+            if tag == "script" and "src" in a and vendor_src(a["src"], base=base) is True:
                 self.hit = True
+            elif tag == "iframe" and "src" in a and vendor_src(a["src"], base=base, iframe=True):
+                self.incap_iframe = True
             elif tag == "form" and a.get("id", "").strip() == "challenge-form":
                 self.hit = True
             elif tag == "div" and a.get("id", "").strip() == "px-captcha":
                 self.px = True                 # 还要整页可见文本很短（见末尾）
+            elif tag == "meta" and a.get("name", "").strip().lower() == "description" and \
+                    a.get("content", "").strip() == "px-captcha":
+                self.meta_px = True
             elif {"cf-turnstile", "g-recaptcha"} & set(a.get("class", "").split()):
                 self.hit = True
 
@@ -179,38 +206,49 @@ def _vendor_scan(text):
                 self.in_script = 0
 
         def handle_endtag(self, tag):
-            if tag in _LITERAL_TAGS and self.lit:
-                self.lit -= 1
+            if self.lit and tag == self.lit[-1]:
+                self.lit.pop()
             elif tag in ("script", "style") and self.in_script == tag:
-                if tag == "script" and not self.hit and _script_hit("".join(self.sbuf)):
+                if tag == "script" and _script_markers("".join(self.sbuf), base):
                     self.hit = True
                 self.in_script = 0
 
         def handle_data(self, data):
             if self.lit:
+                if self.lit[-1] == "title":
+                    self.title.append(data)
                 return
             if self.in_script:
                 self.sbuf.append(data)
             else:
                 self.visible += len(" ".join(data.split()))
+                self.text.append(data)
     sc = Scan()
     try:
         sc.feed(text)
         sc.close()
     except Exception:        # 解析异常不当作高置信证据
         pass
-    if sc.in_script == "script" and not sc.hit and _script_hit("".join(sc.sbuf)):
-        sc.hit = True        # 未闭合的 script 也照样检查
-    return sc.hit or (sc.px and sc.visible <= PX_TEXT_MAX)
+    title = " ".join("".join(sc.title).split()).lower()
+    if sc.hit or (sc.px and sc.visible <= PX_TEXT_MAX) or (sc.meta_px and title == PX_DENIED_TITLE) or \
+            (sc.incap_iframe and "incapsula incident id" in " ".join("".join(sc.text).split()).lower()):
+        return "vendor"
+    if sc.in_script == "script":                       # 没闭合的 script：要两个独立标记才算高置信
+        n = len(_script_markers("".join(sc.sbuf), base))
+        if n >= 2:
+            return "vendor"
+        if n == 1:
+            return "suspect"
+    return None
 
 
 class _VendorMatcher:
-    """兼容旧接口：CHALLENGE.search(body_bytes) → 是否命中真正的验证组件。"""
+    """兼容旧接口：CHALLENGE.search(body_bytes, url=None) → 是否命中高置信验证组件。"""
 
-    def search(self, body):
+    def search(self, body, url=None):
         if isinstance(body, bytes):
             body = body.decode("utf-8", "replace")
-        return _vendor_scan(body[:200000]) or None
+        return (_vendor_scan(body[:200000], url) == "vendor") or None
 
 
 CHALLENGE = _VendorMatcher()
@@ -253,22 +291,25 @@ def phrase_hit(body):
     return _dominant(title) or (len(vis) <= SHORT_VISIBLE and _dominant(vis))
 
 
-def classify_page(ctype, body, headers=None):
-    """返回 'vendor'（厂商标记，高置信 → 持久停用）、'phrase'（只命中泛用短语 → 本轮可疑，不停用）或 None。
-    响应头 cf-mitigated: challenge 不论正文都算 vendor；正文只对 HTML 形态判断（JSON / XML / 普通文本交给格式校验）。"""
+def classify_page(ctype, body, headers=None, url=None):
+    """返回 'vendor'（厂商标记，高置信 → 持久停用）、'phrase'（只命中泛用短语或单一弱标记 → 本轮可疑，不停用）或 None。
+    url = 响应 URL，用来把相对 / 协议相对 / 同主机绝对地址补全并核对同源。响应头 cf-mitigated: challenge 不论正文都算 vendor；
+    正文只对 HTML 形态判断（JSON / XML / 普通文本交给格式校验）。"""
     for k, v in (headers or {}).items():
         if str(k).lower() == "cf-mitigated" and str(v).strip().lower() == "challenge":
             return "vendor"
     if not body or not htmlish(ctype, body):
         return None
-    if CHALLENGE.search(body):
+    t = body[:200000].decode("utf-8", "replace") if isinstance(body, bytes) else body[:200000]
+    v = _vendor_scan(t, url)
+    if v == "vendor":
         return "vendor"
-    return "phrase" if phrase_hit(body) else None
+    return "phrase" if (v == "suspect" or phrase_hit(body)) else None
 
 
-def is_challenge(body, ctype="", headers=None):
+def is_challenge(body, ctype="", headers=None, url=None):
     """高置信验证页（厂商标记）——scrapers.check_body 等用；只命中短语不算。"""
-    return classify_page(ctype, body, headers) == "vendor"
+    return classify_page(ctype, body, headers, url) == "vendor"
 
 
 def plain_html(ctype, body):
@@ -633,8 +674,12 @@ def ext_for(ctype, body):
 
 
 # ---------------------------------------------------------------- 持久停用状态
+class StateError(ValueError):
+    """停用状态文件损坏或结构不对。"""
+
+
 class HostState:
-    """{"hosts": {host: {...}}, "sources": {sid: {...}}}。只由采集器写入停用；恢复须人工（enable() 或 enable-host 命令）。
+    """{"hosts": {host: {...}}, "sources": {sid: {...}}}。只由采集器写入停用；恢复只能用 enable()（人工手改文件不受支持，结构不对即拒绝请求）。
     磁盘为准：refresh() 用磁盘快照直接替换缓存（人工删掉的条目立即生效）；disable()/enable() 在 fcntl 排他锁
     （状态文件同目录 locks/<name>.lock，即私有 state/locks/）内重读磁盘，只合并/删除本次这一条，再写唯一命名的临时文件，
     最后 os.replace。旧进程不会把人工恢复的主机写回。disabled() 每次请求前都 refresh()。"""
@@ -642,13 +687,32 @@ class HostState:
     def __init__(self, path):
         self.path = Path(path) if path else None
         self.data = {"hosts": {}, "sources": {}}
-        self.refresh()
+        try:
+            self.refresh()
+        except StateError:
+            pass                       # 损坏时不抛：disabled() 会对每次请求返回拒绝；disable()/enable() 拒绝改写
 
     def _read(self):
-        if self.path and self.path.exists():
+        """严格读取：顶层、hosts、sources 都必须是对象，每条记录是对象且带非空字符串 reason；否则 StateError。
+        文件不存在 = 空状态；空文件、坏 JSON、结构不对都算损坏（不能当成人工恢复）。"""
+        if not (self.path and self.path.exists()):
+            return {}, {}
+        try:
             d = strictjson.loads(self.path.read_text(encoding="utf-8"))
-            return dict(d.get("hosts") or {}), dict(d.get("sources") or {})
-        return {}, {}
+        except (ValueError, UnicodeDecodeError) as e:
+            raise StateError(f"host state unreadable: {type(e).__name__}")
+        if not isinstance(d, dict):
+            raise StateError("host state top level must be an object")
+        out = []
+        for k in ("hosts", "sources"):
+            m = d.get(k, {})
+            if not isinstance(m, dict):
+                raise StateError(f"host state '{k}' must be an object")
+            for name, rec in m.items():
+                if not isinstance(rec, dict) or not isinstance(rec.get("reason"), str) or not rec["reason"].strip():
+                    raise StateError(f"host state '{k}' entry without reason")
+            out.append(dict(m))
+        return out[0], out[1]
 
     def refresh(self):
         if self.path:
@@ -656,7 +720,10 @@ class HostState:
             self.data = {"hosts": h, "sources": src}
 
     def disabled(self, host, sid=None):
-        self.refresh()                 # 每次请求前重读：别的进程停用、人工恢复都立即生效
+        try:
+            self.refresh()             # 每次请求前重读：别的进程停用、人工恢复都立即生效
+        except StateError as e:        # 状态文件损坏 → 一律拒绝发请求
+            return f"host state invalid ({e}); refusing requests"
         if sid and sid in self.data["sources"]:
             return f"source disabled: {self.data['sources'][sid]['reason']}"
         if host in self.data["hosts"]:
@@ -901,7 +968,7 @@ class Fetcher:
         for attempt in range(MAX_RETRIES + 1):
             st, h, body, ec, det = self._raw(url, accept)
             ct = ((h or {}).get("Content-Type") or "")
-            challenged = st in (401, 403) or classify_page(ct, body, h) is not None
+            challenged = st in (401, 403) or classify_page(ct, body, h, url) is not None
             if html_is_challenge and suspect_status(st) and body and looks_html(h, body):
                 challenged = True     # robots 的 401/429/5xx HTML：不重试（本轮按禁止处理，不停用）
             retryable = (ec == "network" or st == 429 or 500 <= st < 600) and not challenged
@@ -923,6 +990,10 @@ class Fetcher:
         p = urlsplit(url)
         host = (p.hostname or "").lower()
         base = f"{p.scheme}://{p.netloc}"
+        if self.state.disabled(host, sid):      # 先查停用（含状态文件损坏），再读缓存：直接返回禁止，不发请求
+            rp = urllib.robotparser.RobotFileParser()
+            rp.disallow_all = True
+            return rp
         if base in self._robots:
             return self._robots[base]
         rp = urllib.robotparser.RobotFileParser()
@@ -947,7 +1018,7 @@ class Fetcher:
             h = h or {}
             if st in (401, 403):
                 break                    # 先按状态码：403/401 → 持久停用（见下），不看正文
-            kind = classify_page(h.get("Content-Type") or "", body, h)
+            kind = classify_page(h.get("Content-Type") or "", body, h, cur)
             if kind:
                 break                    # 再查验证页（含带验证内容的 3xx），不再跟随 Location
             if st in REDIRECT_CODES:
@@ -958,7 +1029,7 @@ class Fetcher:
                 st, ec = 0, "too_many_redirects"
                 continue
             break
-        kind = classify_page(h.get("Content-Type") or "", body, h)
+        kind = classify_page(h.get("Content-Type") or "", body, h, cur)
         if st in (401, 403):            # 先按状态码：403/401 持久停用（不论正文）
             self.state.disable(host, sid, f"robots.txt HTTP {st}")
             rp.disallow_all = True
@@ -1027,7 +1098,7 @@ class Fetcher:
             if st in (401, 403):
                 self.state.disable(host, sid, f"HTTP {st}")
                 return Result(False, st, ctype, b"", cur, hops, f"http_{st}")
-            kind = classify_page(ctype, body, h)
+            kind = classify_page(ctype, body, h, cur)
             if kind == "vendor":
                 self.state.disable(host, sid, f"bot challenge page: vendor marker (HTTP {st})")
                 return Result(False, st, ctype, b"", cur, hops, "challenge")
