@@ -14,6 +14,19 @@
 - 更正以新文件追加（如 `cs.AI.r2.xml`），并在 MANIFEST 追加新行；旧行保留。
 - `MANIFEST.sha256` 是唯一允许变更的已提交文件，且只能追加行。
 - 规则自 `scripts/verify-raw.sh` 引入的提交起强制执行（此前 2026-10-10 目录在 d0dbcaf、6189d95 中有删改，已按当时状态作为基线）。
+- 只认精确路径 `raw/<日期>/MANIFEST.sha256` 与 `raw/<日期>/RETRACTIONS.md` 为可追加文件；嵌套在子目录里的同名文件按普通 raw 文件处理（须登记、不可改、删除须撤回登记）。
+- 撤回：删除文件的同一提交在 `RETRACTIONS.md` 追加一行，sha256 必须等于父提交中被删除那份 blob；登记的文件若仍存在，照常按 MANIFEST 校验 sha256（撤回行不能掩盖假 sha）。
+
+## 可信基线（verify-raw 检查起点）
+- 可信基线起点：`224fd88`（规则与 MANIFEST 登记补齐之后的 main）。`d6f88b5` 那批（2026-10-12 round1/round2 采集，含 `03ffe25`、`d6f88b5`）
+  是规则生效前的历史违规：文件在后续提交 `224fd88` 才补登记，从 `03ffe25` 起扫会在 `d6f88b5` 失败，这是已知历史，不回溯、不改写。
+- 日常检查只从 PR 基线或推送前的远端 sha 往后逐提交查：CI 用 PR 的 merge-base；pre-push 用远端 ref 的旧 sha；
+  新分支（远端无此 ref）用 `git merge-base origin/main <target>`；本地无 origin/main 时回退 `<target>^`。不要用早于可信基线的提交作 BASE。
+
+## 不可变 ref（pre-push 强制）
+- 清单：`refs/heads/main` 与全部 `refs/tags/*`。
+- 禁止删除；已有 tag 不得改指到别的提交（即使是子孙提交）；main 只能快进（基线必须是目标的祖先）。
+- 推送目标不是提交（树、blob 等）或任何 git 调用失败 → 拒绝推送。
 
 ## MANIFEST 格式
 每天目录下 `MANIFEST.sha256`，`sha256sum` 标准格式，一行一个文件：
@@ -32,6 +45,6 @@
 
 ## 校验
 ```
-scripts/verify-raw.sh            # 全部日期 sha256sum -c + 对照 git 历史检查只追加
+scripts/verify-raw.sh [BASE] [--target REV]   # 从 git 对象逐提交检查 BASE..target 的快照与只追加规则
 cd raw/YYYY-MM-DD && sha256sum -c MANIFEST.sha256   # 单日
 ```

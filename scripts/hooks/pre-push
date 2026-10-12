@@ -12,16 +12,39 @@ input=$(cat) || exit 1
 if [ -z "$input" ]; then
   echo "pre-push: stdin 为空（E-CHECK-STDIN），推送已拒绝" >&2; exit 1
 fi
-printf '%s\n' "$input" | python3 "$root/scripts/check-internal.py" --pre-push --remote "$remote" --remote-url "$url" || { echo "pre-push: 内部主题检查未通过，推送已拒绝" >&2; exit 1; }
-# verify-raw：逐条 ref 独立检查。以远端 sha 为基线、local_sha 为目标，逐提交从 git 对象读取（不看工作树、不要求是 HEAD）。
-# 远端无此 ref（新分支）时由脚本回退 origin/main（须为祖先）/ target^。删除受保护 ref（main、tag）一律拒绝。
+# 第一步：不可变 ref 与推送目标守卫（逐条 ref，任何 git 调用失败即 exit 1，fail-closed）。
+# 不可变 ref 清单：refs/heads/main 与 refs/tags/*。禁止删除；已有 tag 不得改指（含子孙提交）；main 只能快进（由 verify-raw 祖先检查保证）。
 printf '%s\n' "$input" | while read -r lref lsha rref rsha; do
+  [ -n "$lref" ] || continue
+  immutable=
+  case "$rref" in refs/heads/main|refs/tags/*) immutable=1 ;; esac
   case "$lsha" in 0000000000000000000000000000000000000000)
-    case "$rref" in refs/heads/main|refs/tags/*) echo "pre-push: 禁止删除受保护 ref $rref" >&2; exit 1 ;; esac
+    [ -n "$immutable" ] && { echo "pre-push: 禁止删除不可变 ref $rref" >&2; exit 1; }
     continue ;; esac
   case "$rsha" in 0000000000000000000000000000000000000000) rsha= ;; esac
+  case "$rref" in refs/tags/*)
+    if [ -n "$rsha" ] && [ "$rsha" != "$lsha" ]; then echo "pre-push: 禁止改指已有 tag $rref（$rsha → $lsha）" >&2; exit 1; fi ;; esac
+  typ=$(git cat-file -t "$lsha") || { echo "pre-push: git cat-file 失败（$lref），推送已拒绝" >&2; exit 1; }
+  case "$typ" in commit|tag) ;; *) echo "pre-push: $lref 推送目标不是提交（$typ），推送已拒绝" >&2; exit 1 ;; esac
+  git rev-parse -q --verify "$lsha^{commit}" >/dev/null || { echo "pre-push: git rev-parse 失败或 $lref 不指向提交，推送已拒绝" >&2; exit 1; }
+done || { echo "pre-push: ref 守卫未通过，推送已拒绝" >&2; exit 1; }
+printf '%s\n' "$input" | python3 "$root/scripts/check-internal.py" --pre-push --remote "$remote" --remote-url "$url" || { echo "pre-push: 内部主题检查未通过，推送已拒绝" >&2; exit 1; }
+# 第二步 verify-raw：逐条 ref 独立检查，以 local_sha 为目标，逐提交从 git 对象读取（不看工作树、不要求是 HEAD）。
+# 基线：远端 sha（已有 ref）；新 ref 且有 origin/main → git merge-base origin/main target；无 origin/main → 交给脚本回退 target^。
+printf '%s\n' "$input" | while read -r lref lsha rref rsha; do
+  [ -n "$lref" ] || continue
+  case "$lsha" in 0000000000000000000000000000000000000000) continue ;; esac
+  case "$rsha" in 0000000000000000000000000000000000000000) rsha= ;; esac
   if [ -n "$rsha" ]; then git cat-file -e "$rsha^{commit}" 2>/dev/null || { echo "pre-push: 本地缺少远端提交 $rsha，请先 fetch" >&2; exit 1; }; fi
-  target=$(git rev-parse -q --verify "$lsha^{commit}") || { echo "pre-push: $lref 不是提交，跳过 verify-raw" >&2; continue; }
-  VERIFY_RAW_BASE= python3 "$root/scripts/verify-raw.py" ${rsha:+"$rsha"} --target "$target" >/dev/null || { echo "pre-push: verify-raw 未通过（$lref，基线 ${rsha:-默认}）" >&2; exit 1; }
+  target=$(git rev-parse -q --verify "$lsha^{commit}") || { echo "pre-push: git rev-parse 失败（$lref），推送已拒绝" >&2; exit 1; }
+  base=$rsha
+  if [ -z "$base" ]; then
+    om=$(git for-each-ref --format='%(objectname)' refs/remotes/origin/main) || { echo "pre-push: git for-each-ref 失败，推送已拒绝" >&2; exit 1; }
+    if [ -n "$om" ]; then
+      base=$(git merge-base "$om" "$target") || { echo "pre-push: git merge-base origin/main $target 失败，推送已拒绝" >&2; exit 1; }
+    fi
+  fi
+  VERIFY_RAW_BASE= python3 "$root/scripts/verify-raw.py" ${base:+"$base"} --target "$target" >/dev/null || { echo "pre-push: verify-raw 未通过（$lref，基线 ${base:-target^}）" >&2; exit 1; }
 done || { echo "pre-push: verify-raw 检查失败，推送已拒绝" >&2; exit 1; }
 printf '%s\n' "$input" | python3 "$root/scripts/check-public.py" --pre-push --remote "$remote" --remote-url "$url" || { echo "pre-push: 公开仓库守卫未通过，推送已拒绝" >&2; exit 1; }
+
