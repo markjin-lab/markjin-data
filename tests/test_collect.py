@@ -1,5 +1,5 @@
 """PR #3/#6 审查修复：采集公共层与 capture_sources 的针对性测试（全部离线，假 opener）。"""
-import json, os, tempfile, unittest
+import json, os, tempfile, time, unittest
 from pathlib import Path
 import helpers  # noqa: F401
 from markjin import collect, strictjson
@@ -208,9 +208,9 @@ class FetchT(unittest.TestCase):
 
     def test_challenge_page_disables(self):
         p = Path(tempfile.mkdtemp()) / "state.json"
-        f, _ = mk({"https://a.org/x": Resp(200, b"<html><title>Just a moment...</title>")},
+        f, _ = mk({"https://a.org/x": Resp(200, b'<html><div class="cf-turnstile"></div></html>')},
                   state=collect.HostState(p))
-        self.assertEqual(f.get("https://a.org/x", sid="s").error, "challenge")
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "challenge")   # r8：只有厂商标记才停用
         self.assertIn("s", collect.HostState(p).data["sources"])
 
     def test_retry_backoff_and_retry_after(self):
@@ -382,7 +382,7 @@ class R2Fixes(unittest.TestCase):
         self._robots_disables(Resp(403))
 
     def test_robots_200_challenge_disables(self):
-        self._robots_disables(Resp(200, b"<html><title>Just a moment...</title></html>"))
+        self._robots_disables(Resp(200, b'<html><div class="g-recaptcha"></div></html>'))
 
     def test_robots_503_challenge_disables(self):
         self._robots_disables(Resp(503, b"<script src='/cdn-cgi/challenge-platform/x'></script>"))
@@ -527,9 +527,16 @@ class R3Fixes(unittest.TestCase):
     def test_robots_generic_captcha_div_disables(self):
         self._robots_html(b'<html><div id="captcha">verify</div></html>')
 
-    def test_robots_any_html_disables(self):
-        self._robots_html(b"<!DOCTYPE html><html><body>Welcome</body></html>")
-        self._robots_html(b"<html><body>no ctype</body></html>", ctype="text/plain")
+    def test_robots_any_html_disallowed_not_disabled(self):
+        # r8：robots 返回 HTML 但没有厂商标记 = 格式不对 → 本轮按禁止，不持久停用
+        for body, ct in ((b"<!DOCTYPE html><html><body>Welcome</body></html>", "text/html"),
+                         (b"<html><body>no ctype</body></html>", "text/plain")):
+            p = Path(tempfile.mkdtemp()) / "state.json"
+            f, _ = mk({"https://a.org/robots.txt": Resp(200, body, {"Content-Type": ct}),
+                       "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+            self.assertEqual(f.get("https://a.org/p", sid="s").error, "robots_disallow")
+            self.assertNotIn("https://a.org/p", [u for u, _ in f.opener.calls])
+            self.assertEqual(collect.HostState(p).data["hosts"], {})
 
     def test_robots_plain_text_still_parsed(self):
         f, _ = mk({"https://a.org/robots.txt": Resp(200, b"User-agent: *\nDisallow: /x\n", {"Content-Type": "text/plain"}),
@@ -543,9 +550,11 @@ class R3Fixes(unittest.TestCase):
 
     def test_challenge_regex_variants(self):
         for b in (b'<div id="captcha">', b"<div id=captcha>", b'<div class="g-recaptcha" data-sitekey=x>',
-                  b'<script src="https://hcaptcha.com/1/api.js">', b'<div class="h-captcha">'.replace(b"h-", b"h"),
-                  b"<title>Security captcha</title>", b"Just a moment...", b"<TITLE>Access Denied</TITLE>"):
+                  b'<script src="https://hcaptcha.com/1/api.js">', b'<div class="h-captcha">'.replace(b"h-", b"h")):
             self.assertTrue(collect.CHALLENGE.search(b), b)
+        for b in (b"<html><title>Just a moment...</title></html>", b"<html><TITLE>Access Denied</TITLE></html>"):
+            self.assertIsNone(collect.CHALLENGE.search(b), b)                    # r8：泛用短语不是厂商标记
+            self.assertEqual(collect.classify_page("text/html", b), "phrase", b)
         self.assertFalse(collect.CHALLENGE.search(b"<p>We discuss CAPTCHA research in this paper.</p>"))
 
     def test_logs_have_no_query_values(self):
@@ -584,13 +593,14 @@ class R4Fixes(unittest.TestCase):
 
     def test_challenge_new_markers(self):
         for b in (b'<div class="cf-turnstile" data-sitekey=x>', b'<form id="challenge-form" action=/x>',
-                  b"<script src='/_Incapsula_Resource?x'>", b'<div id="px-captcha">', b'<div class="geetest_panel">',
-                  b"<title>Verify you are human</title>", b"<title>Amazon.com - Robot Check</title>"):
+                  b"<script src='/_Incapsula_Resource?x'>", b'<div id="px-captcha">', b'<div class="geetest_panel">'):
             self.assertTrue(collect.CHALLENGE.search(b), b)
+        for b in (b"<html><title>Verify you are human</title></html>", b"<html><title>Robot Check</title></html>"):
+            self.assertEqual(collect.classify_page("text/html", b), "phrase", b)
         self.assertFalse(collect.CHALLENGE.search(b"<p>How to verify you are human: a survey</p>"))
 
     def test_content_page_with_new_markers_disables(self):
-        for b in (b"<html><title>Verify you are human</title></html>", b'<div class="cf-turnstile"></div>',
+        for b in (b'<div class="cf-turnstile"></div>',
                   b'<form id="challenge-form"></form>', b'<div id="px-captcha"></div>', b"<div class=geetest_x>"):
             p = Path(tempfile.mkdtemp()) / "st.json"
             f, _ = mk({"https://a.org/p": Resp(200, b)}, state=collect.HostState(p))   # robots 404
@@ -608,8 +618,8 @@ class R4Fixes(unittest.TestCase):
     def test_robots_401_429_5xx_html_suspected_challenge_no_retry(self):
         for st in (401, 429, 500, 503):
             r, f, d = self._robots(Resp(st, b"<html><body>please wait</body></html>", {"Content-Type": "text/html"}))
-            self.assertEqual(r.error, "disabled", st)
-            self.assertIn("pending manual review", d["hosts"]["a.org"]["reason"])
+            self.assertEqual(r.error, "robots_disallow", st)        # r8：本轮禁止，不停用
+            self.assertEqual(d["hosts"], {}, st)
             calls = [u for u, _ in f.opener.calls]
             self.assertEqual(calls.count("https://a.org/robots.txt"), 1, st)       # 不重复请求
             self.assertNotIn("https://a.org/p", calls)
@@ -744,10 +754,12 @@ class R6Fixes(unittest.TestCase):
     FRAG = b"<div>Check your browser</div>"
 
     def test_is_challenge_short_body_or_title_only(self):
-        self.assertTrue(collect.is_challenge(self.FRAG))
-        self.assertTrue(collect.is_challenge(b"Checking your browser before accessing"))
-        self.assertTrue(collect.is_challenge(b"<title>Checking your browser</title>" + b"x" * 5000))
-        self.assertFalse(collect.is_challenge(b"<p>" + b"long article " * 400 + b"check your browser settings</p>"))
+        cp = collect.classify_page
+        self.assertEqual(cp("text/html", self.FRAG), "phrase")
+        self.assertIsNone(cp("text/plain", b"Checking your browser before accessing"))     # 非 HTML 不查短语
+        self.assertEqual(cp("text/html", b"<title>Checking your browser</title>" + b"x" * 5000), "phrase")
+        self.assertIsNone(cp("text/html", b"<p>" + b"long article " * 400 + b"check your browser settings</p>"))
+        self.assertFalse(collect.is_challenge(self.FRAG))                                 # 短语不算高置信
 
     def test_content_suspect_rules(self):
         cs = collect.content_suspect
@@ -782,7 +794,7 @@ class R6Fixes(unittest.TestCase):
         idx = list(day.rglob("index-*.json")) if day.exists() else []
         return rc, idx, t
 
-    def test_capture_rss_api_suspect_disables_no_index(self):
+    def test_capture_rss_api_suspect_fails_round_not_disabled(self):
         cases = [(dict(CaptureT.S, url="https://f.org/rss"), Resp(200, b"<div>please wait</div>", {"Content-Type": "text/plain"})),
                  (dict(CaptureT.S, url="https://f.org/rss"), Resp(200, b"<?xml version='1.0'?><error/>")),
                  (dict(CaptureT.S, method="api", url="https://f.org/a.json"), Resp(200, b"<root/>")),
@@ -793,21 +805,22 @@ class R6Fixes(unittest.TestCase):
                 rc, idx, t = self._cs(src, resp)
             self.assertEqual(rc, 1, src)
             self.assertEqual(idx, [], src)
-            hs = json.loads((t.priv / "state/collector-hosts.json").read_text())
-            self.assertIn("f.org", hs["hosts"])                                       # 持久停用
-            self.assertIn("challenge", err.getvalue())      # text/plain 标签片段在 Fetcher 层即判验证页
+            hsp = t.priv / "state/collector-hosts.json"
+            self.assertEqual(json.loads(hsp.read_text())["hosts"] if hsp.exists() else {}, {})   # r8：不停用
+            self.assertIn("ERR", err.getvalue())
             fl = next((t.out / "raw/2026-10-12").glob("failures-*.json")).read_text()
-            self.assertIn("challenge", fl)
+            self.assertTrue("suspected_challenge" in fl or "challenge" in fl, fl)
             self.assertTrue(list((t.priv / "raw/2026-10-12").rglob("feed/*")))      # 原字节仍私有存档
 
-    def test_capture_rss_302_vendorless_fragment_disables(self):
+    def test_capture_rss_302_vendorless_fragment_fails_not_disabled(self):
         src = dict(CaptureT.S, url="https://f.org/rss")
         t = CaptureT("test_auth_key_never_logged"); t.setUp()
         rc = t.run_cs([src], {"https://f.org/rss": Resp(302, self.FRAG, {"Location": "https://f.org/rss2"}),
                               "https://f.org/rss2": Resp(200, b"<rss/>")})
         self.assertEqual(rc, 1)
         self.assertFalse(list((t.out / "raw/2026-10-12").rglob("index-*.json")))
-        self.assertIn("f.org", json.loads((t.priv / "state/collector-hosts.json").read_text())["hosts"])
+        hsp = t.priv / "state/collector-hosts.json"
+        self.assertEqual(json.loads(hsp.read_text())["hosts"] if hsp.exists() else {}, {})
 
 
 class R7Fixes(unittest.TestCase):
@@ -820,15 +833,17 @@ class R7Fixes(unittest.TestCase):
     LONG = (b"<html><head><title>One moment</title><style>" + b"x{}" * 300 + b"</style></head><body>"
             b"<div>Checking your browser before accessing the site.</div>" + b"<p>pad</p>" * 400 + b"</body></html>")
 
+    LONGV = LONG.replace(b"</body>", b"<script src='/cdn-cgi/challenge-platform/x.js'></script></body>")   # 长页 + 厂商标记
+
     def test_long_page_phrase_in_visible_window(self):
-        self.assertGreater(len(self.LONG), 2048)
-        self.assertTrue(collect.is_challenge(self.LONG))
+        # r8：长页面里的短语（title 不是短语为主）不算；短页且短语为主才算 phrase（只可疑，不停用）
+        self.assertIsNone(collect.classify_page("text/html", self.LONG))
         for b in (b"<div>Please verify that you are human to continue</div>",
                   b"<p>Please enable JavaScript and cookies to continue</p>",
                   b"<title>Just a moment...</title>"):
-            self.assertTrue(collect.is_challenge(b), b)
+            self.assertEqual(collect.classify_page("text/html", b), "phrase", b)
         late = b"<p>" + b"long article text " * 200 + b"check your browser settings</p>"
-        self.assertFalse(collect.is_challenge(late))                 # 可见文本 2KB 之后的提及不算
+        self.assertIsNone(collect.classify_page("text/html", late))
         self.assertFalse(collect.is_challenge(b"<p>We study CAPTCHA systems</p>"))
 
     def _get(self, routes, url="https://a.org/x"):
@@ -839,23 +854,27 @@ class R7Fixes(unittest.TestCase):
         return r, [u for u, _ in f.opener.calls], collect.HostState(p).data, sink
 
     def test_302_long_challenge_not_followed_and_raw_sunk(self):
-        r, calls, d, sink = self._get({"https://a.org/x": Resp(302, self.LONG, {"Location": "https://a.org/y"}),
+        r, calls, d, sink = self._get({"https://a.org/x": Resp(302, self.LONGV, {"Location": "https://a.org/y"}),
                                        "https://a.org/y": Resp(200, b"ok")})
         self.assertEqual(r.error, "challenge")
         self.assertNotIn("https://a.org/y", calls)
         self.assertIn("a.org", d["hosts"])
-        self.assertEqual(sink, [(302, self.LONG)])                   # 丢弃前已交给私有存档
+        self.assertEqual(sink, [(302, self.LONGV)])                   # 丢弃前已交给私有存档
 
     def test_robots_302_long_challenge_disables(self):
         p = self.tmpdir() / "st.json"
-        f, _ = mk({"https://a.org/robots.txt": Resp(302, self.LONG, {"Location": "https://a.org/r2"}),
+        f, _ = mk({"https://a.org/robots.txt": Resp(302, self.LONGV, {"Location": "https://a.org/r2"}),
                    "https://a.org/x": Resp(200, b"ok")}, state=collect.HostState(p))
         self.assertEqual(f.get("https://a.org/x", sid="s").error, "disabled")
         self.assertIn("a.org", collect.HostState(p).data["hosts"])
 
-    def test_text_plain_tag_start_disables(self):
+    def test_text_plain_tag_start_alone_not_disabled(self):
         r, calls, d, sink = self._get({"https://a.org/x": Resp(200, b"<div>hello</div>", {"Content-Type": "text/plain"})})
-        self.assertEqual(r.error, "challenge")
+        self.assertTrue(r.ok)                                         # r8：plain_html 只是辅助证据
+        self.assertEqual(d["hosts"], {})
+        r, calls, d, sink = self._get({"https://a.org/x": Resp(200, b"<div>Check your browser</div>",
+                                                               {"Content-Type": "text/plain"})})
+        self.assertEqual(r.error, "challenge")                        # 辅助证据 + 短语 → 停用
         self.assertIn("a.org", d["hosts"])
         r, *_ = self._get({"https://a.org/x": Resp(200, b"<?xml version='1.0'?><rss/>", {"Content-Type": "text/plain"})})
         self.assertTrue(r.ok)
@@ -876,13 +895,14 @@ class R7Fixes(unittest.TestCase):
         self.assertIsNone(cs("api", {}, b"<eSearchResult/>", "xml", ["eSearchResult"]))
         self.assertIsNotNone(cs("api", {}, b"<e:eSearchResult xmlns:e='urn:x'/>", "xml", ["eSearchResult"]))
         self.assertEqual(cs("rss", {}, b"<?xml version='1.0'?><!DOCTYPE x [<!ENTITY a 'b'>]><rss>&a;</rss>"),
-                         "xml_doctype_or_entity")
-        self.assertEqual(cs("rss", {}, b"<!DOCTYPE rss><rss/>"), "xml_doctype_or_entity")
+                         "xml_internal_subset_or_entity")
+        self.assertIsNone(cs("rss", {}, b"<!DOCTYPE rss><rss/>"))              # r8：外部/无子集 DOCTYPE 放行
         for b in (b"null", b'"Just a moment"', b"1", b"true"):
             self.assertEqual(cs("api", {}, b), "json_unparseable", b)
         self.assertIsNone(cs("api", {}, b"[]"))
         self.assertIsNone(CS.parse_ok(b"null"))
-        self.assertIsNone(CS.parse_ok(b"<!DOCTYPE x><rss/>"))
+        self.assertEqual(CS.parse_ok(b"<!DOCTYPE x><rss/>"), "xml")
+        self.assertIsNone(CS.parse_ok(b"<!DOCTYPE x [<!ENTITY a 'b'>]><rss/>"))
 
     def test_sec_unconfigured_skipped_no_request_no_disable(self):
         import os
@@ -949,6 +969,148 @@ class R7Fixes(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / "scripts"
         for p in root.rglob("*.py"):
             self.assertIsNone(_re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", p.read_text(encoding="utf-8")), p)
+
+
+class R8Fixes(unittest.TestCase):
+    """PR #3 审查 r8：只有 403 和厂商标记才持久停用；外部 DOCTYPE 放行；短语只在 HTML；标签边界；逐响应存档；SEC 跨进程锁。"""
+
+    def tmpdir(self):
+        return Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    PUBMED = (b'<?xml version="1.0" encoding="UTF-8" ?>\n<!DOCTYPE eSearchResult PUBLIC "-//NLM//DTD esearch 20060628//EN" '
+              b'"https://eutils.ncbi.nlm.nih.gov/eutils/dtd/20060628/esearch.dtd">\n<eSearchResult><Count>2</Count><RetMax>2</RetMax>'
+              b'<RetStart>0</RetStart><IdList>\n<Id>41000001</Id>\n<Id>41000002</Id>\n</IdList><TranslationSet/>'
+              b'<QueryTranslation>"gene editing"[All Fields]</QueryTranslation></eSearchResult>\n')
+    RSS091 = (b'<?xml version="1.0" encoding="ISO-8859-1"?>\n<!DOCTYPE rss PUBLIC "-//Netscape Communications//DTD RSS 0.91//EN" '
+              b'"http://my.netscape.com/publish/formats/rss-0.91.dtd">\n<rss version="0.91"><channel><title>T</title>'
+              b'<link>https://example.org/</link><description>d</description><language>en</language>'
+              b'<item><title>x</title><link>https://example.org/1</link></item></channel></rss>')
+    ARXIV = (b'<?xml version="1.0" encoding="UTF-8"?>\n<rss xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0"><channel>'
+             b'<title>cs.AI updates on arXiv.org</title><item><title>Are You a Robot? Detecting Autonomous Agents</title>'
+             b'<link>https://arxiv.org/abs/2610.00001</link><description>Just a moment... verify you are human</description>'
+             b'</item></channel></rss>')
+
+    def _fetch(self, resp, url="https://a.org/p", extra=None, src="s"):
+        p = self.tmpdir() / "st.json"
+        routes = {url: resp}; routes.update(extra or {})
+        f, _ = mk(routes, state=collect.HostState(p))
+        sunk = []
+        r = f.get(url, sid=src, raw_sink=lambda b, st, ct: sunk.append((st, b)))
+        return r, collect.HostState(p).data, sunk, f
+
+    def test_external_doctype_accepted_internal_subset_refused(self):
+        cs = collect.content_suspect
+        self.assertIsNone(cs("api", {"Content-Type": "text/xml; charset=UTF-8"}, self.PUBMED, "xml", ["eSearchResult"]))
+        self.assertIsNone(cs("rss", {"Content-Type": "application/rss+xml"}, self.RSS091))
+        self.assertEqual(CS.parse_ok(self.PUBMED), "xml")
+        for bad in (b"<!DOCTYPE x [<!ENTITY a 'b'>]><rss>&a;</rss>", b"<!DOCTYPE rss [ ]><rss/>",
+                    b"<?xml version='1.0'?><!ENTITY a 'b'><rss/>"):
+            self.assertIn(cs("rss", {}, bad), ("xml_internal_subset_or_entity", "xml_unparseable"), bad)
+        self.assertEqual(cs("rss", {}, b"<rss>&ext;</rss>"), "xml_unparseable")       # 未声明实体不加载
+
+    def test_real_formats_pass_fetcher_without_disable(self):
+        for body, ct in ((self.PUBMED, "text/xml; charset=UTF-8"), (self.RSS091, "application/rss+xml"),
+                         (self.ARXIV, "application/rss+xml"),
+                         (b'{"items": [{"title": "Robot check list for factory"}, {"title": "Just a moment..."}]}',
+                          "application/json"),
+                         (b'{"title": "Just a moment..."}', "text/plain")):
+            r, d, sunk, _ = self._fetch(Resp(200, body, {"Content-Type": ct}))
+            self.assertTrue(r.ok, body[:60])
+            self.assertEqual(d["hosts"], {}, body[:60])
+            self.assertIsNone(collect.content_suspect("rss" if b"<rss" in body else "api", {"Content-Type": ct}, body,
+                                                      "xml" if b"eSearch" in body else None, ["eSearchResult"]), body[:60])
+
+    def test_normal_html_mentioning_phrases_not_disabled(self):
+        for b in (b"<html><body><h1>Why sites ask: are you a robot?</h1></body></html>",
+                  b"<html><body><p>This app requires you to enable JavaScript to continue.</p></body></html>",
+                  b"<html><head><title>Robot check list for factory</title></head><body><p>steps</p></body></html>",
+                  b"<html><body><noscript>enable javascript and cookies</noscript><p>ok</p></body></html>",
+                  b"<html><head><title>Docs</title></head><body><p>" + b"word " * 200 +
+                  b"Please enable JavaScript and cookies to continue.</p></body></html>"):
+            r, d, *_ = self._fetch(Resp(200, b, {"Content-Type": "text/html"}))
+            self.assertTrue(r.ok, b[:70])
+            self.assertEqual(d["hosts"], {})
+
+    def test_phrase_only_html_suspect_round_fail_no_disable(self):
+        r, d, *_ = self._fetch(Resp(200, b"<html><title>Just a moment...</title></html>", {"Content-Type": "text/html"}))
+        self.assertEqual(r.error, "suspected_challenge")
+        self.assertEqual(d["hosts"], {})
+        r, d, *_ = self._fetch(Resp(302, b"<html><title>Just a moment...</title></html>",
+                                    {"Content-Type": "text/html", "Location": "https://a.org/q"}),
+                               extra={"https://a.org/q": Resp(200, b"ok")})
+        self.assertEqual(r.error, "suspected_challenge")                                 # 不跟随
+        self.assertEqual(d["hosts"], {})
+
+    def test_vendor_marker_disables(self):
+        r, d, *_ = self._fetch(Resp(200, b'<html><body><div class="cf-turnstile"></div></body></html>'))
+        self.assertEqual(r.error, "challenge")
+        self.assertIn("a.org", d["hosts"])
+        r, d, *_ = self._fetch(Resp(200, b'{"note": "g-recaptcha in a JSON string"}', {"Content-Type": "application/json"}))
+        self.assertTrue(r.ok)                                                             # JSON 只做格式校验
+
+    def test_tag_boundary_and_plain_html_aux_only(self):
+        P = "text/plain"
+        for b in (b"<a.b@lists.example.org> wrote:\n> hi\n", b"<https://example.org/x>\nFrom: a", b"<<< begin >>>",
+                  b"<3 robots", b"<-- arrow"):
+            self.assertFalse(collect.plain_html(P, b), b)
+        for b in (b"<p>quoted html in mail</p>", b"<html> tag discussion in plain text", b"<br/>\nmail", b"<br>\nmail"):
+            self.assertTrue(collect.plain_html(P, b), b)
+        for b in (b"<a.b@lists.example.org> wrote:\n> hi\n", b"<p>quoted html in mail</p>",
+                  b"<html> tag discussion in plain text"):
+            r, d, *_ = self._fetch(Resp(200, b, {"Content-Type": P}))
+            self.assertTrue(r.ok, b)                                                      # 只有标签外形：不停用
+            self.assertEqual(d["hosts"], {})
+        r, d, *_ = self._fetch(Resp(200, b"<div>Please verify that you are human to continue</div>", {"Content-Type": P}))
+        self.assertEqual(r.error, "challenge")                                            # 辅助证据 + 短语 → 停用
+        self.assertIn("a.org", d["hosts"])
+
+    def test_raw_sink_every_response_incl_robots_and_retries(self):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk({"https://a.org/robots.txt": Resp(200, b"User-agent: *\nAllow: /\n"),
+                   "https://a.org/p": [Resp(503, b"busy-1"), Resp(503, b"busy-2"), Resp(200, b'{"ok": 1}')]},
+                  state=collect.HostState(p))
+        sunk = []
+        r = f.get("https://a.org/p", sid="s", raw_sink=lambda b, st, ct: sunk.append((st, b)))
+        self.assertTrue(r.ok)
+        self.assertEqual(sunk, [(200, b"User-agent: *\nAllow: /\n"), (503, b"busy-1"), (503, b"busy-2"), (200, b'{"ok": 1}')])
+
+    def test_sec_cross_process_lock_serialises(self):
+        import os, threading
+        old = os.environ.get(collect.SEC_UA_ENV)
+        os.environ[collect.SEC_UA_ENV] = "markjin research (+https://example.org/contact)"
+        try:
+            lock = self.tmpdir()
+            state = {"cur": 0, "max": 0, "times": []}
+            mu = threading.Lock()
+
+            class SlowOpener:
+                def __init__(self): self.calls = []
+                def open(self, req, timeout=None):
+                    with mu:
+                        state["cur"] += 1; state["max"] = max(state["max"], state["cur"]); state["times"].append(time.time())
+                    time.sleep(0.05)
+                    with mu:
+                        state["cur"] -= 1
+                    self.calls.append(req.full_url)
+                    return Resp(200, b"" if req.full_url.endswith("robots.txt") else b"{}")
+
+            def run(host):
+                f = collect.Fetcher(opener=SlowOpener(), lock_dir=lock, resolver=lambda h: {"93.184.216.34"},
+                                    sleep=lambda w: None)
+                f.get(f"https://{host}/x")
+
+            ts = [threading.Thread(target=run, args=(h,)) for h in ("data.sec.gov", "www.sec.gov", "efts.sec.gov")]
+            [t.start() for t in ts]; [t.join() for t in ts]
+            self.assertEqual(state["max"], 1)                                             # 同一时间只有一个请求
+            gaps = [b - a for a, b in zip(state["times"], state["times"][1:])]
+            self.assertTrue(all(g >= collect.RATE_GROUPS["sec.gov"] - 0.02 for g in gaps), gaps)
+            self.assertEqual(len(state["times"]), 6)                                      # robots + 正文 × 3
+            self.assertTrue((lock / "rate-sec.gov.lock").exists())
+        finally:
+            if old is None:
+                os.environ.pop(collect.SEC_UA_ENV, None)
+            else:
+                os.environ[collect.SEC_UA_ENV] = old
 
 
 if __name__ == "__main__":

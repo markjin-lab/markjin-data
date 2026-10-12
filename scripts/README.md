@@ -225,3 +225,12 @@
 - UA 必须从环境变量 `MARKJIN_SEC_USER_AGENT` 读取，且要带联系方式（邮箱或网址）；代码里不写死任何邮箱。
 - 未设置（或不含联系方式）时，SEC 的请求一律不发，源记为 `not_configured`（写进 `skipped-<run>.json`），不算失败，也不停用。
 - SEC 所有主机共用一个全局限速桶：每秒最多 5 次（SEC 公示上限是 10 次/秒，留了余量），同时仍受每主机 2 秒的下限约束。
+
+## 停用原则（r8）
+
+- 只有 HTTP 403 和高置信验证页（命中厂商标记 `collect.CHALLENGE`：Cloudflare challenge/turnstile、reCAPTCHA、hCaptcha、Incapsula、PerimeterX、GeeTest 等）才持久停用主机/源。
+- 泛用短语（`CHALLENGE_PHRASES`）只在 HTML 形态的正文里匹配，且只看 title，或可见文本很短（≤512 字符）且短语占一半以上；只命中短语 → `suspected_challenge`，本轮失败、不跟随跳转、不停用。text/plain 正文以 HTML 标签开头（标签名后必须是空白、`>` 或 `/>`）只作辅助证据，须与短语同时命中才停用。
+- JSON / XML 只做格式校验：格式不对只记本轮失败，不停用。XML 只拒收 DOCTYPE 内部子集（`[`）和 `<!ENTITY`；外部 DOCTYPE（如 pubmed、RSS 0.91）放行但不加载。
+- robots.txt 返回 HTML 但无厂商标记：本轮按禁止处理，不停用。
+- 每收到一次响应（含 robots.txt、重试中的 429/5xx、3xx）都先交给 `raw_sink` 私有存档，再做判定。
+- SEC 主机组限速另有跨进程文件锁（私有目录 `state/locks/rate-sec.gov.lock`，fcntl）：同一时间只有一个实例在请求 SEC，间隔按锁文件里的时间戳控制。

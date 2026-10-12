@@ -62,63 +62,85 @@ BACKOFF_BASE = 2.0
 BACKOFF_CAP = 120.0          # Retry-After 超过此值直接放弃本次（不长时间挂起）
 REFUSED_HOSTS = {"t.co"}
 REDIRECT_CODES = {301, 302, 303, 307, 308}
-# 验证页识别（collector 与 scrapers 共用这一份）
-CHALLENGE = re.compile(rb"Just a moment\.\.\.|challenges\.cloudflare\.com|/cdn-cgi/challenge-platform|cf-chl-|"
-                       rb"Attention Required! \| Cloudflare|<title>\s*Access Denied|Access Denied</title>|"
-                       rb"<title>[^<]*captcha|id\s*=\s*[\"']?captcha\b|class\s*=\s*[\"'][^\"']*\bcaptcha\b|"
+# 验证页识别（collector 与 scrapers 共用这一份）。总原则：只有 403 和高置信的验证页（命中厂商标记）才持久停用；
+# 格式不对、只命中泛用短语，只记本轮失败/可疑，不停用。
+# CHALLENGE = 厂商标记（高置信），只在 HTML 形态的正文里匹配；JSON / XML 只做格式校验。
+CHALLENGE = re.compile(rb"challenges\.cloudflare\.com|/cdn-cgi/challenge-platform|cf-chl-|"
+                       rb"Attention Required! \| Cloudflare|id\s*=\s*[\"']?captcha\b|class\s*=\s*[\"'][^\"']*\bcaptcha\b|"
                        rb"g-recaptcha|hcaptcha|cf-turnstile|id\s*=\s*[\"']?challenge-form\b|_Incapsula_Resource|"
-                       rb"px-captcha|geetest_|<title>[^<]*(?:Verify you are human|Robot Check|Check(?:ing)? your browser)", re.I)
-# 无厂商标记的通用验证语句：在 <title> 文本和可见文本的前 2KB 里匹配（不看整页长度，长页也查）
+                       rb"px-captcha|geetest_", re.I)
+# 泛用短语（低置信）：只在 HTML 里匹配，且只看 title，或页面很短、短语占了主要内容
 CHALLENGE_PHRASES = re.compile(
-    r"check(?:ing)? (?:your|the) browser|checking if the site connection is secure|just a moment\.\.\.|"
+    r"check(?:ing)? (?:your|the) browser|checking if the site connection is secure|just a moment|"
     r"verify(?:ing)? (?:that )?you are (?:a )?human|are you a robot|robot check|"
-    r"(?:please )?(?:enable|turn on) (?:javascript and cookies|cookies and javascript|javascript|cookies) to continue|"
-    r"(?:please )?enable javascript and cookies|ddos protection by|access to this page has been denied|"
+    r"(?:please )?enable javascript and cookies(?: to continue)?|(?:please )?enable cookies and javascript|"
+    r"ddos protection by \w+|access to this page has been denied|access denied|"
     r"unusual traffic from your (?:computer )?network", re.I)
-VISIBLE_WINDOW = 2048
+SHORT_VISIBLE = 512          # 可见文本不超过这么多字符才算“很短”的页面
+PHRASE_SHARE = 0.5           # 短语至少占 title / 可见文本的一半，才算“主要内容”
 _TITLE = re.compile(rb"<title[^>]*>(.*?)</title\s*>", re.I | re.S)
-_INVISIBLE = re.compile(rb"<(script|style|noscript|template)\b.*?</\1\s*>|<!--.*?-->", re.I | re.S)
+_INVISIBLE = re.compile(rb"<(script|style|noscript|template|title)\b.*?</\1\s*>|<!--.*?-->", re.I | re.S)
 _TAGS = re.compile(rb"<[^>]*>")
 
 
-def visible_text(body, limit=VISIBLE_WINDOW):
-    """title 文本 + 去掉脚本/样式/注释/标签后的可见文本前 limit 字节（合并空白）。"""
+def visible_text(body):
+    """(title 文本, 去掉 title/脚本/样式/noscript/注释/标签后的可见文本)，均合并空白。"""
     head = body[:200000]
     t = _TITLE.search(head)
-    title = t.group(1) if t else b""
-    vis = _TAGS.sub(b" ", _INVISIBLE.sub(b" ", head))
-    vis = re.sub(rb"\s+", b" ", vis).strip()[:limit]
     norm = lambda x: re.sub(r"\s+", " ", x.decode("utf-8", "replace")).strip()
-    return norm(title), norm(vis)
+    vis = _TAGS.sub(b" ", _INVISIBLE.sub(b" ", head))
+    return norm(t.group(1) if t else b""), norm(vis)
 
 
-def is_challenge(body):
-    """验证页判定（Fetcher 每一跳、robots、fetch_primary、scrapers.check_body 共用这一套）：厂商标记，或通用短语
-    出现在 title / 可见文本前 2KB 里。"""
-    if not body:
-        return False
-    if CHALLENGE.search(body[:20000]):
-        return True
+def _dominant(text):
+    m = CHALLENGE_PHRASES.search(text or "")
+    return bool(m) and len(m.group(0)) > PHRASE_SHARE * len(text.strip(" .!?:-|"))
+
+
+def htmlish(ctype, body):
+    """HTML 形态：Content-Type 含 html，或正文第一个元素是 HTML 标签 / <!doctype html>（XML 文档不算）。"""
+    return "html" in (ctype or "").lower() or (bool(body) and looks_html({}, body, xml_ok=True))
+
+
+def phrase_hit(body):
+    """泛用短语：title 以短语为主，或可见文本很短且以短语为主。"""
     title, vis = visible_text(body)
-    return bool(CHALLENGE_PHRASES.search(title) or CHALLENGE_PHRASES.search(vis))
+    return _dominant(title) or (len(vis) <= SHORT_VISIBLE and _dominant(vis))
+
+
+def classify_page(ctype, body):
+    """返回 'vendor'（厂商标记，高置信 → 持久停用）、'phrase'（只命中泛用短语 → 本轮可疑，不停用）或 None。
+    只对 HTML 形态的正文判断；JSON / XML / 普通文本一律 None（交给格式校验）。"""
+    if not body or not htmlish(ctype, body):
+        return None
+    if CHALLENGE.search(body[:20000]):
+        return "vendor"
+    return "phrase" if phrase_hit(body) else None
+
+
+def is_challenge(body, ctype=""):
+    """高置信验证页（厂商标记）——scrapers.check_body 等用；只命中短语不算。"""
+    return classify_page(ctype, body) == "vendor"
 
 
 def plain_html(ctype, body):
-    """text/plain 正文却以 HTML 标签开头（XML 文档不算）→ 可疑。"""
+    """text/plain 正文却以 HTML 标签开头（XML 文档不算）。只作辅助证据：须与短语或厂商标记同时命中才停用。"""
     return "text/plain" in (ctype or "").lower() and bool(body) and looks_html({}, body, xml_ok=True)
 
 
 # XML 根元素按完整 QName（ElementTree 的 {namespace}local 写法）比对
 RSS_ROOTS = frozenset({"rss", "{http://www.w3.org/2005/Atom}feed",
                        "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF"})
-_DTD = re.compile(rb"<!DOCTYPE|<!ENTITY", re.I)
+_DTD_INTERNAL = re.compile(rb"<!DOCTYPE[^>\[]*\[|<!ENTITY", re.I)
 
 
 def xml_root(b):
-    """返回 XML 根元素完整 QName；含 DOCTYPE/ENTITY 的一律拒收（ValueError）；解析失败 ET.ParseError。"""
+    """返回 XML 根元素完整 QName。只拒收 DOCTYPE 内部子集（[…]）和 <!ENTITY（ValueError）；外部 DOCTYPE
+    （如 pubmed eSearchResult、RSS 0.91 的 PUBLIC 声明）放行但不加载——ElementTree/expat 不会取外部 DTD，
+    未声明的实体引用直接解析失败。解析失败抛 ET.ParseError。"""
     import xml.etree.ElementTree as ET
-    if _DTD.search(b):
-        raise ValueError("xml_doctype_or_entity")
+    if _DTD_INTERNAL.search(b):
+        raise ValueError("xml_internal_subset_or_entity")
     return ET.fromstring(b).tag
 
 
@@ -145,14 +167,14 @@ def content_suspect(method, headers, body, fmt=None, xml_roots=None):
         except OSError:
             return "gzip_undecodable"
     b = b.lstrip(b"\xef\xbb\xbf \r\n\t")
-    if looks_html(headers, b, xml_ok=True) or is_challenge(b):
+    if looks_html(headers, b, xml_ok=True):
         return "html"
     if method == "rss" or fmt == "xml":
         roots = RSS_ROOTS if method == "rss" else frozenset(xml_roots or ())
         try:
             root = xml_root(b)
         except ValueError:
-            return "xml_doctype_or_entity"
+            return "xml_internal_subset_or_entity"
         except ET.ParseError:
             return "xml_unparseable"
         return None if root in roots else f"xml_root:{root[:80]}"
@@ -481,13 +503,13 @@ def suspect_status(st):
     return st in (401, 429) or 500 <= st < 600
 
 
-_TAG_START = re.compile(rb"<(?:!|\?|/?[a-z][a-z0-9-]*(?:[\s/>]|$))", re.I)
+_TAG_START = re.compile(rb"<(?:!|\?|/?[a-z][a-z0-9-]*(?:\s|>|/>))", re.I)   # 标签名后必须是空白、> 或 />
 
 
 _HTML_TAGS = frozenset(b"html head body div p span script title meta link form iframe noscript style br a img table "
                        b"center main section header footer h1 h2 h3 h4 h5 h6 ul li button input".split())
 _PROLOG = re.compile(rb"(?:\s*(?:<\?[^>]*\?>|<!--.*?-->|<!doctype(?!\s+html)[^>]*>))*\s*", re.I | re.S)
-_FIRST_EL = re.compile(rb"<([a-z][a-z0-9:-]*)", re.I)
+_FIRST_EL = re.compile(rb"<([a-z][a-z0-9:-]*)(?=\s|>|/>)", re.I)
 
 
 def looks_html(headers, body, xml_ok=False):
@@ -537,8 +559,10 @@ def retry_after(headers):
 class Fetcher:
     def __init__(self, state=None, interval=HOST_INTERVAL, timeout=30, opener=None, sleep=time.sleep,
                  clock=time.monotonic, max_bytes=MAX_BYTES, log=None, addr_policy=None, resolver=None,
-                 fakeip_cidr=None):
+                 fakeip_cidr=None, lock_dir=None):
         self.state = state or HostState(None)
+        # 主机组（SEC）跨进程锁目录（私有目录）：同一时间只有一个实例在请求该组，间隔按锁文件里的时间戳控制
+        self.lock_dir = Path(lock_dir) if lock_dir else None
         interval = float(interval)
         if not math.isfinite(interval):
             raise ConfigError("interval must be finite")
@@ -553,9 +577,11 @@ class Fetcher:
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
         self.sleep, self.clock = sleep, clock
         self._last, self._host_interval, self._robots = {}, {}, {}
+        self.robots_note = {}
         self.log = log or (lambda *_: None)
         self.requests = []     # (host, t) — 供测试/审计
         self.sec_ua = sec_user_agent()
+        self._sink = None
         self._group_last = {}
 
     def address_check(self, url):
@@ -563,7 +589,7 @@ class Fetcher:
         return AllOf(self._forced_policy, self.addr_policy)(url)
 
     # -- 每主机限速（所有请求都走这里）
-    def _wait(self, host):
+    def _wait(self, host, skip_group=False):
         gap = max(self.interval, self._host_interval.get(host, 0))
         last = self._last.get(host)
         if last is not None:
@@ -571,7 +597,7 @@ class Fetcher:
             if w > 0:
                 self.sleep(w)
         for g, ggap in RATE_GROUPS.items():      # 主机组全局限速（如 SEC 全部主机合计 ≤5 次/秒）
-            if in_group(host, g):
+            if in_group(host, g) and not skip_group:
                 gl = self._group_last.get(g)
                 if gl is not None:
                     w = ggap - (self.clock() - gl)
@@ -583,7 +609,32 @@ class Fetcher:
 
     def _raw(self, url, accept):
         host = host_of(url)
+        g = next((x for x in RATE_GROUPS if in_group(host, x)), None)
+        if g and self.lock_dir:
+            import fcntl
+            self.lock_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.lock_dir / f"rate-{g}.lock", "a+") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)          # 跨进程互斥：持锁直到本次请求结束
+                try:
+                    self._wait(host, skip_group=True)
+                    lk.seek(0)
+                    try:
+                        last = float(lk.read().strip() or 0)
+                    except ValueError:
+                        last = 0.0
+                    w = RATE_GROUPS[g] - (time.time() - last)
+                    if w > 0:
+                        time.sleep(min(w, RATE_GROUPS[g]))
+                    self._group_last[g] = self.clock()
+                    res = self._raw_inner(url, accept, host)
+                    lk.seek(0); lk.truncate(); lk.write(repr(time.time())); lk.flush()
+                    return res
+                finally:
+                    fcntl.flock(lk, fcntl.LOCK_UN)
         self._wait(host)
+        return self._raw_inner(url, accept, host)
+
+    def _raw_inner(self, url, accept, host):
         ua = self.sec_ua if in_group(host, SEC_SUFFIX) and self.sec_ua else UA
         req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept": accept,
                                                    "Accept-Encoding": "identity"})
@@ -606,15 +657,18 @@ class Fetcher:
                 pass
         if len(buf) > self.max_bytes:
             return status, headers, b"", "too_large", f">{self.max_bytes} bytes"
+        if buf and self._sink:     # 每收到一次响应（含 robots、重试中的 429/5xx）都先交给私有存档，再做任何判定
+            self._sink(buf, status, (headers.get("Content-Type") if headers else "") or "")
         return status, headers, buf, None, None
 
     def _with_retry(self, url, accept, html_is_challenge=False):
         """html_is_challenge（robots 用）：401/429/5xx 返回 HTML 视为疑似验证页，不重试，直接交回调用方停用。"""
         for attempt in range(MAX_RETRIES + 1):
             st, h, body, ec, det = self._raw(url, accept)
-            challenged = is_challenge(body)
+            ct = ((h or {}).get("Content-Type") or "")
+            challenged = classify_page(ct, body) is not None
             if html_is_challenge and suspect_status(st) and body and looks_html(h, body):
-                challenged = True
+                challenged = True     # robots 的 401/429/5xx HTML：不重试（本轮按禁止处理，不停用）
             retryable = (ec == "network" or st == 429 or 500 <= st < 600) and not challenged
             if not retryable or attempt == MAX_RETRIES:
                 return st, h, body, ec, det
@@ -656,8 +710,9 @@ class Fetcher:
                 st, ec, body, h = 0, "robots_blocked_address", b"", {}; break
             st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*", html_is_challenge=True)
             h = h or {}
-            if is_challenge(body):
-                break                    # 先查验证页（含带验证内容的 3xx），命中即停用，不再跟随 Location
+            kind = classify_page(h.get("Content-Type") or "", body)
+            if kind:
+                break                    # 先查验证页（含带验证内容的 3xx），不再跟随 Location
             if st in REDIRECT_CODES:
                 loc = h.get("Location")
                 if not loc:
@@ -666,17 +721,15 @@ class Fetcher:
                 st, ec = 0, "too_many_redirects"
                 continue
             break
-        challenged = is_challenge(body)
-        if st == 200 and not ec and not challenged and looks_html(h, body):
-            challenged = True     # robots.txt 返回 HTML：一律按验证页处理（不当作空规则）
-        if challenged:
-            self.state.disable(host, sid, f"robots.txt bot challenge page (HTTP {st})")
-            rp.disallow_all = True
-        elif suspect_status(st) and body and looks_html(h, body):
-            self.state.disable(host, sid, f"robots.txt suspected challenge: HTTP {st} HTML (pending manual review)")
+        kind = classify_page(h.get("Content-Type") or "", body)
+        if kind == "vendor" or (kind == "phrase" and plain_html(h.get("Content-Type"), body)):
+            self.state.disable(host, sid, f"robots.txt bot challenge page (HTTP {st})")    # 高置信 → 持久停用
             rp.disallow_all = True
         elif st == 403:
             self.state.disable(host, sid, "robots.txt HTTP 403")
+            rp.disallow_all = True
+        elif kind or (body and looks_html(h, body) and st not in (404, 410)):
+            self.robots_note[base] = f"robots.txt suspect/HTML (HTTP {st})"   # 格式不对：本轮按禁止，不停用
             rp.disallow_all = True
         elif st == 200 and not ec:
             rp.parse(body.decode("utf-8", "replace").splitlines())
@@ -696,6 +749,13 @@ class Fetcher:
         return self.robots(url, sid).can_fetch(UA_TOKEN, url)
 
     def get(self, url, sid=None, accept="*/*", raw_sink=None):
+        prev, self._sink = self._sink, raw_sink
+        try:
+            return self._get(url, sid, accept)
+        finally:
+            self._sink = prev
+
+    def _get(self, url, sid, accept):
         """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、停用状态、robots 与限速。
         Result.hops 从一开始只持有 public_url（凭证参数不进任何日志）；final_url 为完整 URL，仅供内存内核对，
         写记录前必须经 public_url。"""
@@ -723,14 +783,16 @@ class Fetcher:
                 return Result(False, final_url=cur, hops=hops, error="robots_disallow")
             st, h, body, ec, det = self._with_retry(cur, accept)
             ctype = (h.get("Content-Type") if h else "") or ""
-            if body and raw_sink:     # 每一跳实际收到的原字节先私有存档，再决定丢弃/跳转/返回
-                raw_sink(body, st, ctype)
-            if is_challenge(body):    # 每一跳先查验证页，再处理 Location
-                self.state.disable(host, sid, f"bot challenge page (HTTP {st})")
+            # 原字节已在 _raw 里交给 raw_sink；每一跳先判验证页，再处理 Location
+            kind = classify_page(ctype, body)
+            if kind == "vendor":
+                self.state.disable(host, sid, f"bot challenge page: vendor marker (HTTP {st})")
                 return Result(False, st, ctype, b"", cur, hops, "challenge")
-            if plain_html(ctype, body):
-                self.state.disable(host, sid, f"suspected challenge: text/plain body starts with HTML tag (HTTP {st})")
+            if kind == "phrase" and plain_html(ctype, body):    # 辅助证据 + 短语同时命中
+                self.state.disable(host, sid, f"bot challenge page: text/plain HTML + phrase (HTTP {st})")
                 return Result(False, st, ctype, b"", cur, hops, "challenge")
+            if kind == "phrase":       # 只命中泛用短语：本轮可疑失败，不跟随、不停用
+                return Result(False, st, ctype, b"", cur, hops, "suspected_challenge")
             if st in REDIRECT_CODES:
                 loc = h.get("Location") if h else None
                 if not loc:
