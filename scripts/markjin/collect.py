@@ -34,7 +34,25 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from . import strictjson
 
-UA = "markjin-collector/0.1 (+https://markjin-lab.github.io; markjin@mail.grokbot.com)"
+UA = "markjin-collector/0.1 (+https://markjin-lab.github.io)"     # 不写死任何邮箱
+# SEC（*.sec.gov）要求 UA 带联系方式：只从环境变量读取；未设置则 SEC 请求一律不发（not_configured），不停用
+SEC_UA_ENV = "MARKJIN_SEC_USER_AGENT"
+SEC_SUFFIX = "sec.gov"
+# 主机组全局限速（跨该组所有主机共用一个桶）：SEC 公示上限 10 次/秒，这里取 5 次/秒留余量
+RATE_GROUPS = {SEC_SUFFIX: 0.2}
+
+
+def in_group(host, suffix):
+    host = (host or "").lower()
+    return host == suffix or host.endswith("." + suffix)
+
+
+def sec_user_agent(env=None):
+    """从环境变量读取 SEC UA；必须含联系方式（邮箱或 http(s) 网址），否则视为未配置，返回 None。"""
+    v = ((env if env is not None else os.environ).get(SEC_UA_ENV) or "").strip()
+    if v and re.search(r"[^\s@]+@[^\s@]+\.[^\s@]+|https?://\S+", v) and "\n" not in v and "\r" not in v:
+        return v
+    return None
 UA_TOKEN = "markjin-collector"
 MAX_BYTES = 25 * 1024 * 1024
 HOST_INTERVAL = 2.0          # 每主机最小请求间隔（秒）；robots Crawl-delay / Request-rate 更严时取更严者
@@ -50,26 +68,76 @@ CHALLENGE = re.compile(rb"Just a moment\.\.\.|challenges\.cloudflare\.com|/cdn-c
                        rb"<title>[^<]*captcha|id\s*=\s*[\"']?captcha\b|class\s*=\s*[\"'][^\"']*\bcaptcha\b|"
                        rb"g-recaptcha|hcaptcha|cf-turnstile|id\s*=\s*[\"']?challenge-form\b|_Incapsula_Resource|"
                        rb"px-captcha|geetest_|<title>[^<]*(?:Verify you are human|Robot Check|Check(?:ing)? your browser)", re.I)
-# 无厂商标记的通用验证语句：只在 <title> 里（见上）或很短的正文里才算，避免误伤正文中提到它的长文章
-_SHORT_CHALLENGE = re.compile(rb"Check(?:ing)? your browser", re.I)
-SHORT_BODY = 2048
+# 无厂商标记的通用验证语句：在 <title> 文本和可见文本的前 2KB 里匹配（不看整页长度，长页也查）
+CHALLENGE_PHRASES = re.compile(
+    r"check(?:ing)? (?:your|the) browser|checking if the site connection is secure|just a moment\.\.\.|"
+    r"verify(?:ing)? (?:that )?you are (?:a )?human|are you a robot|robot check|"
+    r"(?:please )?(?:enable|turn on) (?:javascript and cookies|cookies and javascript|javascript|cookies) to continue|"
+    r"(?:please )?enable javascript and cookies|ddos protection by|access to this page has been denied|"
+    r"unusual traffic from your (?:computer )?network", re.I)
+VISIBLE_WINDOW = 2048
+_TITLE = re.compile(rb"<title[^>]*>(.*?)</title\s*>", re.I | re.S)
+_INVISIBLE = re.compile(rb"<(script|style|noscript|template)\b.*?</\1\s*>|<!--.*?-->", re.I | re.S)
+_TAGS = re.compile(rb"<[^>]*>")
+
+
+def visible_text(body, limit=VISIBLE_WINDOW):
+    """title 文本 + 去掉脚本/样式/注释/标签后的可见文本前 limit 字节（合并空白）。"""
+    head = body[:200000]
+    t = _TITLE.search(head)
+    title = t.group(1) if t else b""
+    vis = _TAGS.sub(b" ", _INVISIBLE.sub(b" ", head))
+    vis = re.sub(rb"\s+", b" ", vis).strip()[:limit]
+    norm = lambda x: re.sub(r"\s+", " ", x.decode("utf-8", "replace")).strip()
+    return norm(title), norm(vis)
 
 
 def is_challenge(body):
+    """验证页判定（Fetcher 每一跳、robots、fetch_primary、scrapers.check_body 共用这一套）：厂商标记，或通用短语
+    出现在 title / 可见文本前 2KB 里。"""
     if not body:
         return False
-    return bool(CHALLENGE.search(body[:20000])) or (len(body.strip()) <= SHORT_BODY and bool(_SHORT_CHALLENGE.search(body)))
+    if CHALLENGE.search(body[:20000]):
+        return True
+    title, vis = visible_text(body)
+    return bool(CHALLENGE_PHRASES.search(title) or CHALLENGE_PHRASES.search(vis))
 
 
-RSS_ROOTS = frozenset({"rss", "feed", "RDF"})
+def plain_html(ctype, body):
+    """text/plain 正文却以 HTML 标签开头（XML 文档不算）→ 可疑。"""
+    return "text/plain" in (ctype or "").lower() and bool(body) and looks_html({}, body, xml_ok=True)
+
+
+# XML 根元素按完整 QName（ElementTree 的 {namespace}local 写法）比对
+RSS_ROOTS = frozenset({"rss", "{http://www.w3.org/2005/Atom}feed",
+                       "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF"})
+_DTD = re.compile(rb"<!DOCTYPE|<!ENTITY", re.I)
+
+
+def xml_root(b):
+    """返回 XML 根元素完整 QName；含 DOCTYPE/ENTITY 的一律拒收（ValueError）；解析失败 ET.ParseError。"""
+    import xml.etree.ElementTree as ET
+    if _DTD.search(b):
+        raise ValueError("xml_doctype_or_entity")
+    return ET.fromstring(b).tag
+
+
+def json_ok(b):
+    """严格 JSON（重复键判失败），且顶层必须是对象或数组。"""
+    from . import strictjson
+    try:
+        v = strictjson.loads(b.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return False
+    return isinstance(v, (dict, list))
 
 
 def content_suspect(method, headers, body, fmt=None, xml_roots=None):
     """按采集方式校验内容（不再逐个加厂商特征）。返回疑似验证页的原因，正常返回 None。
-    任一方式：looks_html 即可疑。rss：XML 根元素必须是 rss / feed / RDF；api：默认应是 JSON，解析不了即可疑；
-    api 源在 sources.yaml 声明 format: xml 时，根元素必须在它的 xml_roots 中。"""
+    任一方式：looks_html 即可疑。rss：XML 根元素的完整 QName 必须是 rss / Atom feed / RDF；api：默认应是
+    顶层为对象或数组的 JSON；api 源在 sources.yaml 声明 format: xml 时，根元素完整 QName 必须在它的 xml_roots 中。
+    含 DOCTYPE / ENTITY 的 XML 一律拒收。"""
     import gzip, xml.etree.ElementTree as ET
-    from . import strictjson
     b = body or b""
     if b[:2] == b"\x1f\x8b":
         try:
@@ -77,20 +145,20 @@ def content_suspect(method, headers, body, fmt=None, xml_roots=None):
         except OSError:
             return "gzip_undecodable"
     b = b.lstrip(b"\xef\xbb\xbf \r\n\t")
-    if looks_html(headers, b, xml_ok=True):
+    if looks_html(headers, b, xml_ok=True) or is_challenge(b):
         return "html"
     if method == "rss" or fmt == "xml":
         roots = RSS_ROOTS if method == "rss" else frozenset(xml_roots or ())
         try:
-            root = ET.fromstring(b).tag.rsplit("}", 1)[-1]
+            root = xml_root(b)
+        except ValueError:
+            return "xml_doctype_or_entity"
         except ET.ParseError:
             return "xml_unparseable"
-        return None if root in roots else f"xml_root:{root[:40]}"
-    try:
-        strictjson.loads(b.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        return "json_unparseable"
-    return None
+        return None if root in roots else f"xml_root:{root[:80]}"
+    return None if json_ok(b) else "json_unparseable"
+
+
 FAKEIP_ENV = "MARKJIN_PROXY_FAKEIP_CIDR"
 APPROVED = "approved"
 
@@ -487,6 +555,8 @@ class Fetcher:
         self._last, self._host_interval, self._robots = {}, {}, {}
         self.log = log or (lambda *_: None)
         self.requests = []     # (host, t) — 供测试/审计
+        self.sec_ua = sec_user_agent()
+        self._group_last = {}
 
     def address_check(self, url):
         """强制策略与外部策略的合取；返回拒绝原因或 None。"""
@@ -500,13 +570,22 @@ class Fetcher:
             w = gap - (self.clock() - last)
             if w > 0:
                 self.sleep(w)
+        for g, ggap in RATE_GROUPS.items():      # 主机组全局限速（如 SEC 全部主机合计 ≤5 次/秒）
+            if in_group(host, g):
+                gl = self._group_last.get(g)
+                if gl is not None:
+                    w = ggap - (self.clock() - gl)
+                    if w > 0:
+                        self.sleep(w)
+                self._group_last[g] = self.clock()
         self._last[host] = self.clock()
         self.requests.append((host, self._last[host]))
 
     def _raw(self, url, accept):
         host = host_of(url)
         self._wait(host)
-        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": accept,
+        ua = self.sec_ua if in_group(host, SEC_SUFFIX) and self.sec_ua else UA
+        req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept": accept,
                                                    "Accept-Encoding": "identity"})
         try:
             r = self.opener.open(req, timeout=self.timeout)
@@ -616,7 +695,7 @@ class Fetcher:
     def allowed(self, url, sid=None):
         return self.robots(url, sid).can_fetch(UA_TOKEN, url)
 
-    def get(self, url, sid=None, accept="*/*"):
+    def get(self, url, sid=None, accept="*/*", raw_sink=None):
         """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、停用状态、robots 与限速。
         Result.hops 从一开始只持有 public_url（凭证参数不进任何日志）；final_url 为完整 URL，仅供内存内核对，
         写记录前必须经 public_url。"""
@@ -631,6 +710,9 @@ class Fetcher:
             why = self.state.disabled(host, sid)
             if why:
                 return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
+            if in_group(host, SEC_SUFFIX) and not self.sec_ua:   # 未配置 SEC UA：不发请求，也不停用
+                return Result(False, final_url=cur, hops=hops, error="not_configured",
+                              detail=f"{SEC_UA_ENV} not set (must include contact info)")
             why = self.address_check(cur)   # 每一跳、子 sitemap 都在任何请求前检查
             if why:
                 return Result(False, final_url=cur, hops=hops, error="blocked_address", detail=why)
@@ -641,8 +723,13 @@ class Fetcher:
                 return Result(False, final_url=cur, hops=hops, error="robots_disallow")
             st, h, body, ec, det = self._with_retry(cur, accept)
             ctype = (h.get("Content-Type") if h else "") or ""
+            if body and raw_sink:     # 每一跳实际收到的原字节先私有存档，再决定丢弃/跳转/返回
+                raw_sink(body, st, ctype)
             if is_challenge(body):    # 每一跳先查验证页，再处理 Location
                 self.state.disable(host, sid, f"bot challenge page (HTTP {st})")
+                return Result(False, st, ctype, b"", cur, hops, "challenge")
+            if plain_html(ctype, body):
+                self.state.disable(host, sid, f"suspected challenge: text/plain body starts with HTML tag (HTTP {st})")
                 return Result(False, st, ctype, b"", cur, hops, "challenge")
             if st in REDIRECT_CODES:
                 loc = h.get("Location") if h else None
