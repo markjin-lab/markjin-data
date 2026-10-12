@@ -31,7 +31,8 @@ def internal_path(p):
 # 2026-10-12 合规撤回：新增 raw/ 文件不得含本机绝对路径（'/workspace/'）。
 # 豁免：本规则引入前已提交的文件（基线 main@224fd88 树中已有的 raw 路径），以及该提交父提交中已存在的同一路径。
 # 前面紧跟主机名/协议（如 https://x/、sam.gov/）的视为 URL 路径段，不算本机路径
-LOCAL_PATH_RE = re.compile(r"(?<![A-Za-z0-9.:/_-])/(?:workspace|home)/[^\s\"'<>]+")
+LOCAL_PATH_RE = re.compile(r"(?:(?<![A-Za-z0-9.:/_#?\\-])|(?<=file://))\\?/(?:workspace|home)\\?/[^\s\"'<>]+")
+# 覆盖：/workspace/…、/home/…、file:///workspace/…、JSON 转义 \/workspace\/…；排除 https://host/…、sam.gov/…、#/… 片段
 LOCAL_PATH_BASELINE = "224fd88fd0321652a184679664fb5bb5e6a1c730"
 
 
