@@ -112,7 +112,8 @@ def main(argv=None):
     run = collect.stamp()
     sub = "round2/" if a.round == 2 else ""
     fetcher = collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"),
-                              interval=a.interval, timeout=a.timeout, fakeip_cidr=a.proxy_fakeip_cidr or "")
+                              interval=a.interval, timeout=a.timeout, fakeip_cidr=a.proxy_fakeip_cidr or "",
+                              lock_dir=priv_root / "state" / "locks")   # SEC 等主机组的跨进程限速锁放在私有目录
     # 地址策略（addr_policy）由 Fetcher 强制安装：每一跳、scraper 的子 sitemap 都在请求前检查
     pub_ar = collect.Archive(day_dir(a.out_root, a.date))
     priv_ar = collect.Archive(day_dir(priv_root, a.date))
@@ -167,9 +168,7 @@ def main(argv=None):
         kind = parse_ok(r.body) if r.ok else None
         suspect = collect.content_suspect(s["method"], {"Content-Type": r.ctype}, r.body,
                                           s.get("format"), s.get("xml_roots")) if r.ok else None
-        if suspect:      # 按采集方式校验不通过 → 疑似验证页：持久停用主机，不写成功索引（原字节仍私有存档）
-            fetcher.state.disable(urlsplit(r.final_url or req_url).hostname, sid,
-                                  f"suspected challenge page ({s['method']}: {suspect})")
+        if suspect:      # 格式校验不通过：只记本轮失败（不停用；高置信验证页已在 Fetcher 层停用），不写成功索引
             kind = None
             r.error = f"suspected_challenge:{suspect}"
         if r.ok:   # 每个成功响应的原字节都先私有存档（不论能否解析）
