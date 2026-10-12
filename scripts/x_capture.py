@@ -377,23 +377,17 @@ def cmd_leads(a, s):
         day_rel = pend["path"].split("/", 2)                # raw / DATE / x/leads-….json
         day = check_target(a, root / day_rel[0] / day_rel[1], "leads output dir")
         f = check_target(a, root / pend["path"], "leads output file")
-        if f.is_file():
+        # 不论导出几条（含 0 条）：先核对哈希，再核对或补登 MANIFEST，最后记 exported_at。
+        # 没有 sha256 的旧状态、或哈希不符：一律不认，这些帖子照常重新导出。
+        if f.is_file() and pend.get("sha256"):
             data = f.read_bytes()
-            sha = hashlib.sha256(data).hexdigest()
-            try:
-                done = {str(x.get("id")) for x in strictjson.loads(data.decode("utf-8")).get("items", [])}
-            except ValueError:
-                done = set()
-            if pend.get("sha256") and sha != pend["sha256"]:
-                done = set()                                 # 档案内容与待导出记录不符 → 不认，照常重导
-            if done:
-                line = f"{sha}  ./{day_rel[2]}"
+            if hashlib.sha256(data).hexdigest() == pend["sha256"]:
+                line = f"{pend['sha256']}  ./{day_rel[2]}"
                 man = day / "MANIFEST.sha256"
-                listed = man.is_file() and line in man.read_text(encoding="utf-8").splitlines()
-                if not listed:                               # 档案已建但 MANIFEST 没登记 → 先补登
-                    collect.Archive(day)._append("MANIFEST.sha256", line)
+                if not (man.is_file() and line in man.read_text(encoding="utf-8").splitlines()):
+                    collect.Archive(day)._append("MANIFEST.sha256", line)      # 档案已建但 MANIFEST 没登记 → 先补登
                 for pid in pend["ids"]:
-                    if pid in done and pid in s["posts"]:
+                    if pid in s["posts"]:
                         s["posts"][pid]["exported_at"] = pend["at"]
     wl, items, ids, dropped = whitelist(s, date), [], [], 0
     ts = collect.now()

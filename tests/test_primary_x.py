@@ -1255,5 +1255,39 @@ class R9XCapture(R8XCapture):
         self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])                    # 哈希不符 → 照常重导
 
 
+class R10XCapture(R9XCapture):
+    """PR #6 审查 r10：恢复导出不论条数都先核对哈希、再核对或补登 MANIFEST；无 sha256 的旧状态一律重导。"""
+
+    def test_empty_export_manifest_failure_registered_on_recovery(self):
+        import hashlib
+        from markjin import collect
+        self.plan()
+        orig = collect.Archive._append
+        collect.Archive._append = lambda self_, name, line: (_ for _ in ()).throw(OSError(28, "No space left on device"))
+        try:
+            rc, _ = self.x("leads", "--state", str(self.st))
+        finally:
+            collect.Archive._append = orig
+        self.assertEqual(rc, 1)
+        day = self.d / "raw" / "2026-10-12"
+        first = list((day / "x").glob("leads-*.json"))
+        self.assertEqual(len(first), 1)
+        self.assertEqual(json.loads(first[0].read_text())["items"], [])
+        self.leads()
+        sha = hashlib.sha256(first[0].read_bytes()).hexdigest()
+        self.assertIn(f"{sha}  ./x/{first[0].name}", (day / "MANIFEST.sha256").read_text().splitlines())
+        self.assertNotIn("pending_export", XC.load_state(self.st))
+
+    def test_legacy_pending_without_sha_reexported(self):
+        self._seed_lead()
+        day = self.d / "raw" / "2026-10-12" / "x"; day.mkdir(parents=True)
+        (day / "leads-old.json").write_text(json.dumps({"items": [{"id": "7"}]}))
+        s = XC.load_state(self.st)
+        s["pending_export"] = {"path": "raw/2026-10-12/x/leads-old.json", "ids": ["7"], "at": "2026-10-12T00:00:00Z"}
+        XC.save_state(self.st, s)
+        self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])                    # 旧状态不认 → 重导
+        self.assertTrue(XC.load_state(self.st)["posts"]["7"]["exported_at"])
+
+
 if __name__ == "__main__":
     unittest.main()
