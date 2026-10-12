@@ -60,7 +60,7 @@
 | actual_value | 实际取值。区间型分支对账出 HIT、MISS、NONE_HIT、MULTI_HIT 时必须是数字；脚本按端点开闭算出它落在不在本支区间内，结果必须和 check_result、actual_branch 一致 |
 | quarter_readings | 每个季度的读数，写成 `季度:读数@vintage#raw 路径:sha256`，用英文分号分隔，季度须在 window_quarters 内并按顺序（按季读数型分支） |
 | actual_branch | 是否为实际发生的那一支，填 `是`、`否` 或留空 |
-| check_result | 对账结果：`PENDING`（未到期）、`HIT`、`MISS`、`NONE_HIT`、`MULTI_HIT`、`TRIGGER_UNOBSERVABLE`、`DATA_UNAVAILABLE` |
+| check_result | 对账结果：`PENDING`（未到期）、`HIT`、`MISS`、`NONE_HIT`、`MULTI_HIT`、`TRIGGER_UNOBSERVABLE`、`DATA_UNAVAILABLE`；`VOID` 为作废行 |
 | error_source | 错在哪一环，只能填 `采集`、`解读`、`框架`。有多个原因时用英文分号分隔，主因写在最前。只在对账结果为 NONE_HIT、MULTI_HIT 或 TRIGGER_UNOBSERVABLE 时填写 |
 | checked_by / checked_at | 核对人和写入时间（完整时间戳）。对账行的 checked_at 必须晚于 window_end；按季读数行的 checked_at 是这一行的写入时间 |
 | evidence | 复算依据，格式 `raw 路径:sha256[,raw 路径:sha256…]\|scripts/脚本路径@40 位 commit\|取值时间（+08:00）`；raw 路径须是 `raw/YYYY-MM-DD/…`、不得含 `..`，并与该日 MANIFEST.sha256 一致 |
@@ -71,13 +71,15 @@
 
 ## 登记和对账的规则
 
-**判定分组**：HIT 与互斥判定按 (draft_id, classification_id) 分组。每组至少 2 支，同组分支必须在同一个提交里、连续地一起登记，之后不得再给这一组加分支（E-BR-GROUP-LATE）。同组分支的 publish_date、registered_at 的日期、window_start、window_end、observed_variable、unit、data_source、data_vintage 必须完全相同。同组如果全是区间型分支，各区间必须两两互斥，并且合起来覆盖全部实数（按端点开闭计算）。对账时，组内组内只看各分支当前的最终结论：恰有一支 HIT、其余 MISS；全部 NONE_HIT；两支以上 MULTI_HIT、其余 MISS；或全部 TRIGGER_UNOBSERVABLE。组内结论尚未出齐时只查是否矛盾；error_source 在组内必须一致。
+**判定分组**：HIT 与互斥判定按 (draft_id, classification_id) 分组。每组至少 2 支，同组分支必须在同一个提交里、连续地一起登记，之后不得再给这一组加分支（E-BR-GROUP-LATE）。同组分支的 publish_date、registered_at 的日期、window_start、window_end、observed_variable、unit、data_source、data_vintage 必须完全相同。同组区间不要求两两互斥、也不要求覆盖全部实数：有缺口或重叠时只在 `--stats` 里给出提示（W-BR-GROUP-GAP / W-BR-GROUP-OVERLAP），因为 NONE_HIT（漏分类）和 MULTI_HIT（条件失效）必须能出现。同组的对账行必须用同一个 actual_value 和同一份 evidence（E-BR-GROUP-OBSERVATION）；全是区间型分支时，脚本先用这个共同取值按端点开闭（数值一律按 Decimal 精确比较）算出每一支是否命中：恰一支命中则该支 HIT、其余 MISS；没有命中则全部 NONE_HIT；两支以上命中则这些支 MULTI_HIT、其余 MISS，再与各行结论核对（E-BR-GROUP-RESULT）。对账时，组内只看各分支当前的最终结论：恰有一支 HIT、其余 MISS；全部 NONE_HIT；两支以上 MULTI_HIT、其余 MISS；或全部 TRIGGER_UNOBSERVABLE。组内结论尚未出齐时只查是否矛盾；error_source 在组内必须一致。
 
 行分四种：**登记行**（每个分支的第一行）、**对账行**、**登记更正行**、**结论更正行**。
 
 1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。
-   - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。例外是台账还没有任何数据行（只有表头）时，可以调整表头。基线提交不存在或读不出时判失败，不放行。
-   - **推送时间。** CI 用运行时间作为推送时间（`--now`）。对本次新增的登记行和登记更正行，要求推送时间与 registered_at 相差不超过 6 小时，并且早于 window_start 当日 00:00（SGT）。
+   - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。例外是台账还没有任何数据行（只有表头）时，可以调整表头；第一条数据行进入 main 之后，这个例外永久失效。push 时 before 必须是 HEAD 的祖先（否则 E-BR-NOT-FAST-FORWARD），并直接比较 before 与 HEAD 两个版本的台账，确认只是追加；main 另应在仓库规则里禁止强推。基线提交不存在或读不出时判失败，不放行。
+   - **推送时间。** PR 上 CI 用运行时间（`--now`），只对本次 PR 新登记的行和登记更正行核对：与 registered_at 相差不超过 6 小时，并且早于 window_start 当日 00:00（SGT）。
+   - **合并时间。** main 上只核对合并时间早于 window_start（`--merge-time`）。合并时间优先取 GitHub 签名的合并提交时间（committer 为 GitHub），否则退回 CI 运行时间。
+   - **作废行。** main 上检查失败、但已经落地的行，只能追加一条作废行处理：check_result 为 `VOID`，corrects_row_id 指向该分支第一行，reason 必填，事先登记字段照抄，对账字段全空。作废后该分支不能再追加任何行（E-BR-AFTER-VOID），门禁计数不算它，命中率也不算含作废分支的组。
 2. **登记行。** check_result 必须是 `PENDING`，quarter_readings 为空；registered_at 的日期等于 publish_date，并早于观测开始（window_start 至少是发布次日）；lu_basis_date 和 lu_evidence 里每个读数的 vintage 都不得晚于 registered_at。
 3. **不可改字段**：全部事先登记字段，加上 registered_at。对账行和结论更正行里，这些字段必须与当前登记（登记行，或最近一条登记更正行）完全一致。
 4. **对账行**：window_end 之后追加，事先登记字段照抄，再填对账字段，checked_at 晚于 window_end。DATA_UNAVAILABLE 可以等数据发布后再追加一行。每个分支只能有一个最终结论（HIT、MISS、NONE_HIT、MULTI_HIT、TRIGGER_UNOBSERVABLE）；要改只能走结论更正。
@@ -92,7 +94,7 @@
     - 命中率按更正后的条件算，前提是登记更正发生在观测开始前；没有更正的，按第一行。结果取当前有效的最终结论（结论更正后的最新一条）。一组恰有一支 HIT、其余 MISS，记为对。
     - 另外单独列出做过登记更正的分支数和结论更正的次数。`--stats` 会输出这几项。
 11. **登记校验**（从严临时执行），任一条不满足就不登记，退回生产与发布 bot：N ≥ 1；L ≤ U；window_quarters 恰好是 N 个连续季度，最后一个不晚于 window_end 所在季度；lu_evidence 非空，每个读数都带 vintage、raw 路径、sha256 和来源链接；按季读数型分支四个区间字段填 `NA`。
-12. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导；自由文本字段（slug、reason、observed_variable、unit、data_source、data_vintage、trigger_condition、registered_by、checked_by、actual_value）不得含绝对路径、file: URI 或内部目录名，由 check-branches 检查；CI 还对 PR 或 push 的全部新增提交运行 `check-public.py --range`，检查台账全文是否含本机路径。
+12. **公开口径。** 台账只登记分支条件、校验码和提交号，不写框架正文，也不写推导；自由文本字段（slug、reason、observed_variable、unit、data_source、data_vintage、trigger_condition、registered_by、checked_by、actual_value）不得含绝对路径、file: URI 或内部目录名，由 check-branches 检查（先去掉 http(s) 网址；斜杠后跟 ASCII 字母、下划线、点或 ~ 才算路径，冒号后直接跟的路径如 a:/opt/x 也算；`/年`、`亿元 /年`、`bp /月`、`x /5` 不算；unit 只认已知的本机根目录）；CI 还对 PR 或 push 的全部新增提交运行 `check-public.py --range`，检查台账全文是否含本机路径。
 
 ## 校验
 

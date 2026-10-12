@@ -5,6 +5,7 @@
 """
 import csv, io, re, subprocess
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 LEDGER_PATH = "ledger/branches.csv"
 
@@ -30,7 +31,7 @@ FROZEN = [
 PRE_REGISTERED = FROZEN  # 兼容旧名
 INTERVAL = ["interval_low", "interval_low_closed", "interval_high", "interval_high_closed"]
 QUARTERLY = ["n_quarters", "window_quarters", "lu_basis_date", "l_value", "u_value", "lu_evidence"]
-CHECK_RESULTS = {"PENDING", "HIT", "MISS", "NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE", "DATA_UNAVAILABLE"}
+CHECK_RESULTS = {"VOID", "PENDING", "HIT", "MISS", "NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE", "DATA_UNAVAILABLE"}
 FINAL = {"HIT", "MISS", "NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE"}
 WRONG = {"NONE_HIT", "MULTI_HIT", "TRIGGER_UNOBSERVABLE"}
 ERROR_SOURCES = {"采集", "解读", "框架"}
@@ -51,10 +52,23 @@ LU_RE = re.compile(r"^(\d{4}Q[1-4]):(-?\d+(?:\.\d+)?)@(\d{4}-\d{2}-\d{2})#([^:|;
 EVIDENCE_RE = re.compile(r"^([^|]+)\|(scripts/[A-Za-z0-9._/\-]+)@([0-9a-f]{40})\|(\S+)$")
 
 
-# 自由文本字段：不得出现绝对路径（网址除外）、file: URI、内部目录名
+# 自由文本字段：不得出现绝对路径、file: URI、内部目录名。先去掉 http(s) 网址再查。
 FREE_TEXT = ["slug", "reason", "observed_variable", "unit", "data_source", "data_vintage", "trigger_condition",
              "registered_by", "checked_by", "actual_value"]
-PRIVATE_RE = re.compile(r"(?i)(?<![\w:/.%-])/(?!/)[\w.~-]+|file:|\\\\|[a-z]:\\|markjin-internal|markjin-core|topics-private|~/")
+URL_RE = re.compile(r"(?i)https?://\S+")
+# 绝对路径：斜杠后必须跟 ASCII 字母、下划线、点或 ~（/年、bp /月、x /5 不算）；斜杠前不能是字母数字（km/s、FRED:GDP/CPI 不算），
+# 冒号后直接跟的绝对路径（a:/opt/x）要算
+ABS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/[A-Za-z_.~][\w.~-]*")
+COMMON_RE = re.compile(r"(?i)file:|\\\\|\b[a-z]:[\\/]|markjin-internal|markjin-core|topics-private|(?<![\w])~/")
+# unit 放宽：只认已知的本机根目录
+ROOTS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/(?:workspace|home|opt|Users|tmp|etc|var|root|private|mnt|srv|usr)(?:/|\b)")
+
+
+def private_text(field, v):
+    v = URL_RE.sub(" ", v)
+    if COMMON_RE.search(v):
+        return True
+    return bool((ROOTS_RE if field == "unit" else ABS_RE).search(v))
 
 
 def blank(v):
@@ -134,11 +148,20 @@ def canonical_trigger(row):
     return "".join(parts) if (lo or hi) else None
 
 
+def D(v):
+    """数值一律用 Decimal 比较，避免浮点舍入。"""
+    try:
+        return Decimal(v)
+    except (InvalidOperation, TypeError):
+        return None
+
+
 def in_interval(row, v):
+    v = D(v) if not isinstance(v, Decimal) else v
     lo, hi = row["interval_low"], row["interval_high"]
-    if lo and (v < float(lo) or (v == float(lo) and row["interval_low_closed"] != "true")):
+    if lo and (v < D(lo) or (v == D(lo) and row["interval_low_closed"] != "true")):
         return False
-    if hi and (v > float(hi) or (v == float(hi) and row["interval_high_closed"] != "true")):
+    if hi and (v > D(hi) or (v == D(hi) and row["interval_high_closed"] != "true")):
         return False
     return True
 
@@ -154,6 +177,19 @@ def is_interval(row):
 def check_row(row, manifest=None):
     """单行规则（不看其他行）。manifest(path)->sha256 或 None，用于核对 raw 绑定；None 表示不核对 MANIFEST。"""
     e = []
+    # 所有行都要过的检查（按季行、作废行也不例外）
+    for f in FREE_TEXT:
+        if private_text(f, row[f]):
+            e.append(f"E-BR-PRIVATE-TEXT:{f}")
+    if bool(row["corrects_row_id"]) != bool(row["reason"].strip()):
+        e.append("E-BR-CORRECTION-REASON")
+    if row["check_result"] == "VOID":
+        # 作废行：只追加，指向该分支第一行，reason 必填，不填任何对账字段
+        if not row["corrects_row_id"] and "E-BR-CORRECTION-REASON" not in e:
+            e.append("E-BR-CORRECTION-REASON")
+        if any(not blank(row[f]) for f in ("actual_value", "actual_branch", "error_source", "evidence", "quarter_readings")):
+            e.append("E-BR-VOID-FILLED")
+        return e
     for f in ("draft_id", "classification_id", "slug", "domain", "framework_version", "framework_sha256", "framework_commit",
               "observed_variable", "unit", "data_source", "data_vintage", "trigger_condition",
               "registered_by", "registered_at"):
@@ -206,7 +242,7 @@ def check_row(row, manifest=None):
         lv, uv = row["l_value"], row["u_value"]
         if not (NUM_RE.match(lv) and NUM_RE.match(uv)):
             e.append("E-BR-LU")
-        elif float(lv) > float(uv):
+        elif D(lv) > D(uv):
             e.append("E-BR-L-GT-U")  # L ≤ U
         if blank(row["lu_evidence"].strip()):
             e.append("E-BR-LU-EVIDENCE")
@@ -276,7 +312,7 @@ def check_row(row, manifest=None):
             if row[f] not in ("true", "false"):
                 e.append(f"E-BR-INTERVAL:{f}")
         if NUM_RE.match(row["interval_low"]) and NUM_RE.match(row["interval_high"]) \
-                and float(row["interval_low"]) > float(row["interval_high"]):
+                and D(row["interval_low"]) > D(row["interval_high"]):
             e.append("E-BR-INTERVAL-ORDER")
         if not any(c.startswith("E-BR-INTERVAL") for c in e):
             canon = canonical_trigger(row)
@@ -295,7 +331,7 @@ def check_row(row, manifest=None):
             if is_interval(row) and not NUM_RE.match(row["actual_value"]):
                 e.append("E-BR-ACTUAL-VALUE")
             elif is_interval(row) and not any(c.startswith("E-BR-INTERVAL") for c in e):
-                inside = in_interval(row, float(row["actual_value"]))
+                inside = in_interval(row, D(row["actual_value"]))
                 if inside != (cr in ("HIT", "MULTI_HIT")) or inside != (row["actual_branch"] == "是"):
                     e.append("E-BR-ACTUAL-MISMATCH")  # 按开闭端点算出的归属与 check_result / actual_branch 不符
             elif not row["actual_value"].strip():
@@ -320,11 +356,6 @@ def check_row(row, manifest=None):
         parts = es.split(";")
         if cr not in WRONG or any(p not in ERROR_SOURCES for p in parts) or len(set(parts)) != len(parts):
             e.append("E-BR-ERROR-SOURCE")
-    for f in FREE_TEXT:
-        if PRIVATE_RE.search(row[f]):
-            e.append(f"E-BR-PRIVATE-TEXT:{f}")
-    if bool(row["corrects_row_id"]) != bool(row["reason"].strip()):
-        e.append("E-BR-CORRECTION-REASON")
     return e
 
 
@@ -351,6 +382,7 @@ def parse(text, manifest=None):
         errs += [(i, c) for c in check_row(row, manifest)]
     # 行间规则
     seq, ids, reg, final, last_readings, seen = {}, {}, {}, {}, {}, set()
+    first_id, voided = {}, set()
     group_closed, prev_group = set(), None
     for i, row in rows:
         key = branch_key(row)
@@ -380,10 +412,22 @@ def parse(text, manifest=None):
             if row["registered_at"][:10] != row["publish_date"]:
                 errs.append((i, "E-BR-REGISTERED-DATE"))
             reg[key], final[key], last_readings[key] = row, None, []
+            first_id[key] = row["row_id"]
             ids[row["row_id"]] = row
             continue
         cur = reg[key]
         changed = [f for f in FROZEN if row[f] != cur[f]]
+        if key in voided:
+            errs.append((i, "E-BR-AFTER-VOID"))
+        if row["check_result"] == "VOID":
+            # 作废行：指向该分支第一行，事先登记字段照抄当前登记；作废后该分支不计入门禁和命中率
+            if row["corrects_row_id"] != first_id[key]:
+                errs.append((i, "E-BR-CORRECTS-TARGET"))
+            if changed:
+                errs.append((i, "E-BR-PREREG-CHANGED"))
+            voided.add(key)
+            ids[row["row_id"]] = row
+            continue
         if row["corrects_row_id"]:
             target = row["corrects_row_id"]
             if row["check_result"] == "PENDING":
@@ -446,29 +490,26 @@ def _group_shape_errors(rows, reg):
         if any(tuple(x[f] for f in GROUP_SAME) + (x["registered_at"][:10],) !=
                tuple(regs[0][f] for f in GROUP_SAME) + (regs[0]["registered_at"][:10],) for x in regs):
             errs.append((line[g], "E-BR-GROUP-MISMATCH"))
-        if len(regs) >= 2 and all(is_interval(x) for x in regs):
-            code = _partition_error(regs)
-            if code:
-                errs.append((line[g], code))
     return errs
 
 
 def _partition_error(regs):
-    """同组区间型分支须两两互斥并覆盖全部实数（按端点开闭）。返回错误码或 None。"""
-    INF = float("inf")
+    """只作提示：同组区间型分支是否两两互斥、是否覆盖全部实数（按端点开闭）。返回 W-BR-GROUP-GAP / W-BR-GROUP-OVERLAP 或 None。
+    不拦登记：NONE_HIT（漏分类）和 MULTI_HIT（条件失效）必须能出现。"""
+    INF = Decimal("Infinity")
     try:
-        iv = sorted(((float(x["interval_low"]) if x["interval_low"] else -INF, x["interval_low_closed"] == "true",
-                      float(x["interval_high"]) if x["interval_high"] else INF, x["interval_high_closed"] == "true")
+        iv = sorted(((D(x["interval_low"]) if x["interval_low"] else -INF, x["interval_low_closed"] == "true",
+                      D(x["interval_high"]) if x["interval_high"] else INF, x["interval_high_closed"] == "true")
                      for x in regs), key=lambda t: (t[0], not t[1]))
-    except ValueError:
+    except (ValueError, TypeError):
         return None
     if iv[0][0] != -INF or iv[-1][2] != INF:
-        return "E-BR-GROUP-GAP"
+        return "W-BR-GROUP-GAP"
     for (l1, lc1, h1, hc1), (l2, lc2, h2, hc2) in zip(iv, iv[1:]):
         if h1 > l2 or (h1 == l2 and hc1 and lc2):
-            return "E-BR-GROUP-OVERLAP"
+            return "W-BR-GROUP-OVERLAP"
         if h1 < l2 or (h1 == l2 and not hc1 and not lc2):
-            return "E-BR-GROUP-GAP"
+            return "W-BR-GROUP-GAP"
     return None
 
 
@@ -485,6 +526,23 @@ def _group_errors(rows, final):
         fs = {k: final[k] for k in keys if final.get(k) is not None}
         if not fs:
             continue
+        # 同组对账必须基于同一次观测：同一个 actual_value、同一份 evidence
+        if len({r["actual_value"] for r in fs.values()}) > 1 or len({r["evidence"] for r in fs.values()}) > 1:
+            errs.append((max(line[k] for k in fs), "E-BR-GROUP-OBSERVATION"))
+            continue
+        # 全是区间型分支：先用共同取值统一算出每一支是否命中，再与各行结论核对
+        v = D(next(iter(fs.values()))["actual_value"])
+        reg_rows = {k: _reg_of(rows, k) for k in keys}
+        if v is not None and all(is_interval(x) for x in reg_rows.values()) \
+                and not any(r["check_result"] == "TRIGGER_UNOBSERVABLE" for r in fs.values()):
+            hits = {k for k, x in reg_rows.items() if in_interval(x, v)}
+            for k, r in fs.items():
+                if k in hits:
+                    exp = "HIT" if len(hits) == 1 else "MULTI_HIT"
+                else:
+                    exp = "NONE_HIT" if not hits else "MISS"
+                if r["check_result"] != exp:
+                    errs.append((line[k], "E-BR-GROUP-RESULT")); break
         res = [r["check_result"] for r in fs.values()]
         n_hit, n_multi = res.count("HIT"), res.count("MULTI_HIT")
         kinds = set(res) - {"MISS"}
@@ -497,6 +555,33 @@ def _group_errors(rows, final):
         if bad:
             errs.append((max(line[k] for k in fs), "E-BR-GROUP-RESULT"))
     return errs
+
+
+def _reg_of(rows, key):
+    """该分支当前登记（第一行或最后一条登记更正行）。"""
+    cur = None
+    for _, r in rows:
+        if branch_key(r) == key and (cur is None or (r["corrects_row_id"] and r["check_result"] == "PENDING")):
+            cur = r
+    return cur
+
+
+def voided_branches(rows):
+    return {branch_key(r) for _, r in rows if r["check_result"] == "VOID"}
+
+
+def partition_warnings(rows):
+    """同组区间型分支的覆盖与互斥提示（不是错误）。"""
+    out, members = {}, {}
+    for _, r in rows:
+        members.setdefault(group_key(r), []).append(branch_key(r))
+    for g, ks in members.items():
+        regs = [_reg_of(rows, k) for k in dict.fromkeys(ks)]
+        if len(regs) >= 2 and all(is_interval(x) for x in regs):
+            w = _partition_error(regs)
+            if w:
+                out["-".join(g)] = w
+    return out
 
 
 def first_rows(rows):
@@ -526,8 +611,11 @@ def hit_stats(rows):
             reg_corr.add(k)
         elif row["check_result"] in FINAL:
             final[k] = row
+    void = voided_branches(rows)
     judged = correct = 0
     for g, ks in members.items():
+        if ks & void:
+            continue
         fs = [final[k] for k in ks if k in final]
         if len(fs) != len(ks):
             continue
@@ -536,14 +624,16 @@ def hit_stats(rows):
         correct += int(res.count("HIT") == 1 and res.count("MISS") == len(res) - 1)
     return {"groups": len(members), "groups_judged": judged, "groups_correct": correct,
             "branches": sum(len(v) for v in members.values()), "registration_corrected_branches": len(reg_corr),
-            "conclusion_corrections": sum(conclusion_changes(rows).values())}
+            "conclusion_corrections": sum(conclusion_changes(rows).values()),
+            "voided_branches": len(void), "partition_warnings": partition_warnings(rows)}
 
 
 def gate_count(rows, cutoff="2026-12-31", domain=None):
     """门禁计数：每个分支（draft_id + classification_id + branch_order）只按第一行算：
     第一行 window_end 不晚于 cutoff 且 check_result 为 PENDING 的计 1。"""
-    return sum(1 for r in first_rows(rows).values()
-               if r["check_result"] == "PENDING" and r["window_end"] <= cutoff and (domain is None or r["domain"] == domain))
+    void = voided_branches(rows)
+    return sum(1 for k, r in first_rows(rows).items()
+               if k not in void and r["check_result"] == "PENDING" and r["window_end"] <= cutoff and (domain is None or r["domain"] == domain))
 
 
 def append_only(old_text, new_text):

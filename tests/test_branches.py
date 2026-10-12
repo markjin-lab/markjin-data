@@ -139,9 +139,11 @@ class Basics(unittest.TestCase):
             self.assertIn("E-BR-PENDING-FILLED", codes(row(**{f: "x"})), f)
 
     def test_error_source(self):
+        gap = row(branch_order="2", interval_low="7", interval_low_closed="true", interval_high="",
+                  interval_high_closed="false", trigger_condition="7 <= x")
         ok = row(check_result="NONE_HIT", actual_branch="否", actual_value="6", error_source="采集;框架", evidence=EVID, **DONE)
-        self.assertEqual(ccodes(row(), ok), [])
-        self.assertIn("E-BR-ERROR-SOURCE", ccodes(row(), dict(ok, error_source="采集;采集")))
+        self.assertEqual(ccodes(row(), gap, ok), [])
+        self.assertIn("E-BR-ERROR-SOURCE", ccodes(row(), gap, dict(ok, error_source="采集;采集")))
         self.assertIn("E-BR-ERROR-SOURCE", ccodes(row(), hit(error_source="采集")))
 
 
@@ -236,8 +238,7 @@ class R1Corrections(unittest.TestCase):
         self.assertEqual(ccodes(row(), corr, hit(slug="gdp-q3-fixed", registered_at="2026-10-13T09:00:00+08:00")), [])
 
     def test_ok_conclusion_correction_and_count(self):
-        corr = miss(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="对账取错数据",
-                    check_result="NONE_HIT", error_source="采集")
+        corr = miss(corrects_row_id="2026-10-13-macro-c1-b1-r2", reason="对账取错数据")
         rows, errs = B.parse(csv_of(*with_sibling(chain(row(), hit(), corr))))
         self.assertEqual(errs, [])
         self.assertEqual(B.conclusion_changes(rows), {("2026-10-13-macro", "c1", "1"): 1})
@@ -431,12 +432,18 @@ class R3Review(unittest.TestCase):
             self.assertIn("E-BR-GROUP-MISMATCH" if f != "registered_at" else "E-BR-REGISTERED-DATE",
                           ccodes(row(), self.b2(**{f: v})), f)
 
-    def test_N6_overlap(self):
-        self.assertIn("E-BR-GROUP-OVERLAP", ccodes(row(interval_high="6", trigger_condition="x < 6"), self.b2()))
+    def warn(self, *rows):
+        rows_, errs = B.parse(csv_of(*chain(*rows)))
+        return errs, B.partition_warnings(rows_)
 
-    def test_N7_gap(self):
-        self.assertIn("E-BR-GROUP-GAP", ccodes(row(), self.b2(interval_low_closed="false", trigger_condition="5 < x")))
-        self.assertEqual(ccodes(row(), self.b2()), [])
+    def test_N6_overlap_is_warning(self):  # r4：不再拦登记，改为提示
+        errs, w = self.warn(row(interval_high="6", trigger_condition="x < 6"), self.b2())
+        self.assertEqual(errs, []); self.assertEqual(list(w.values()), ["W-BR-GROUP-OVERLAP"])
+
+    def test_N7_gap_is_warning(self):
+        errs, w = self.warn(row(), self.b2(interval_low_closed="false", trigger_condition="5 < x"))
+        self.assertEqual(errs, []); self.assertEqual(list(w.values()), ["W-BR-GROUP-GAP"])
+        self.assertEqual(self.warn(row(), self.b2())[1], {})
 
     def test_hit_outside_interval(self):  # r2-6：区间外宣称 HIT
         self.assertIn("E-BR-ACTUAL-MISMATCH", ccodes(row(), self.b2(), hit(actual_value="6")))
@@ -507,6 +514,111 @@ class R3Cli(unittest.TestCase):
         self.assertIn("E-BR-PUSH-SKEW", late.stdout)
         after = self.cli("--base", "HEAD~1", "--now", "2026-10-14T00:30:00+08:00")
         self.assertIn("E-BR-PUSH-AFTER-START", after.stdout)
+
+    def test_merge_time_main(self):  # main 只核对合并早于 window_start，不查 6 小时
+        self.commit(csv_of(row(), sibling(row())), "A")
+        ok = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-13T15:00:00+08:00")
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        bad = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-14T08:00:00+08:00")
+        self.assertIn("E-BR-MERGE-AFTER-START", bad.stdout)
+        # 已落地的行之后追加作废行：作废行本身不再核对时间
+        self.commit(csv_of(row(), sibling(row()), rid(dict(row(), check_result="VOID", corrects_row_id=FIRST,
+                                                             reason="合并晚于观测开始"), 2)), "void")
+        v = self.cli("--base", "HEAD~1", "--merge-time", "2026-10-15T08:00:00+08:00")
+        self.assertEqual(v.returncode, 0, v.stdout)
+
+    def test_non_fast_forward_push(self):  # MEDIUM 2
+        self.commit(csv_of(row(), sibling(row())), "A")
+        old = subprocess.run(["git", "-C", str(self.d), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        self.g("reset", "-q", "--hard", "HEAD~1")
+        self.commit(csv_of(row(slug="other"), sibling(row(slug="other"))), "rewrite")
+        p = self.cli("--base", old)
+        self.assertEqual(p.returncode, 1); self.assertIn("E-BR-NOT-FAST-FORWARD", p.stdout)
+
+
+class R4Review(unittest.TestCase):
+    """r4 反例（data20-r4/counterexamples.txt）。"""
+
+    def b2(self, **kw):
+        return row(**{**dict(branch_order="2", interval_low="5", interval_low_closed="true", interval_high="",
+                             interval_high_closed="false", trigger_condition="5 <= x"), **kw})
+
+    def fin(self, r, res, v, **kw):
+        return dict(r, **{**dict(check_result=res, actual_branch="是" if res in ("HIT", "MULTI_HIT") else "否",
+                                 actual_value=v, evidence=EVID, **DONE), **kw})
+
+    def two(self, res1, v1, res2, v2, b1=None, b2=None, **kw2):
+        b1 = b1 or row(); b2 = b2 or self.b2()
+        return ccodes(b1, b2, self.fin(b1, res1, v1), self.fin(b2, res2, v2, **kw2))
+
+    def test_Z1_none_hit_with_different_values(self):
+        self.assertIn("E-BR-GROUP-OBSERVATION", self.two("NONE_HIT", "6", "NONE_HIT", "4"))
+        # 同一取值也不行：6 落在第二支里，应是 MISS/HIT
+        self.assertIn("E-BR-GROUP-RESULT", self.two("NONE_HIT", "6", "NONE_HIT", "6"))
+        self.assertIn("E-BR-GROUP-OBSERVATION", self.two("MULTI_HIT", "4", "MULTI_HIT", "6"))
+
+    def test_Z2_hit_and_miss_with_different_values(self):
+        self.assertIn("E-BR-GROUP-OBSERVATION", self.two("HIT", "4", "MISS", "3"))
+        self.assertIn("E-BR-GROUP-OBSERVATION",
+                      self.two("HIT", "4", "MISS", "4", evidence=EVID.replace("09:00", "09:01")))
+        self.assertEqual(self.two("HIT", "4", "MISS", "4"), [])
+
+    def test_none_hit_and_multi_hit_possible(self):
+        gap = self.b2(interval_low="7", trigger_condition="7 <= x")
+        self.assertEqual(self.two("NONE_HIT", "6", "NONE_HIT", "6", b2=gap), [])
+        b1 = row(interval_high="6", trigger_condition="x < 6")
+        self.assertEqual(self.two("MULTI_HIT", "5.5", "MULTI_HIT", "5.5", b1=b1), [])
+        self.assertIn("E-BR-GROUP-RESULT", self.two("HIT", "5.5", "MISS", "5.5", b1=b1))
+
+    def test_Z3_decimal_long_and_endpoints(self):
+        r = row(interval_high="1.000000000000000001", interval_high_closed="true")
+        r["trigger_condition"] = B.canonical_trigger(r)
+        self.assertIn("E-BR-ACTUAL-MISMATCH", B.check_row(self.fin(r, "HIT", "1.000000000000000002")))
+        self.assertNotIn("E-BR-ACTUAL-MISMATCH", B.check_row(self.fin(r, "HIT", "1.000000000000000001")))
+        self.assertNotIn("E-BR-ACTUAL-MISMATCH", B.check_row(self.fin(r, "MISS", "1.000000000000000002")))
+        # 端点 5：x < 5 不含 5，5 <= x 含 5
+        self.assertIn("E-BR-ACTUAL-MISMATCH", B.check_row(self.fin(row(), "HIT", "5")))
+        self.assertEqual(self.two("MISS", "5", "HIT", "5"), [])
+        self.assertIn("E-BR-GROUP-RESULT", self.two("HIT", "4.9999999999999999999", "MISS", "4.9999999999999999999",
+                                                    b2=self.b2(interval_low="4.9999999999999999999",
+                                                               trigger_condition="4.9999999999999999999 <= x")))
+
+    def test_Z4_quarterly_private_unit(self):
+        self.assertIn("E-BR-PRIVATE-TEXT:unit", B.check_row(quarterly(unit="/opt/private/x")))
+
+    def test_Z5_quarterly_correction_without_reason(self):
+        self.assertIn("E-BR-CORRECTION-REASON", B.check_row(quarterly(corrects_row_id=FIRST, reason="")))
+        self.assertIn("E-BR-CORRECTION-REASON", B.check_row(quarterly(corrects_row_id=FIRST, reason="  ")))
+
+    def test_Y1_units_and_paths(self):
+        for u in ("/年", "亿元 /年", "bp /月", "x /5", "美元/桶", "%/年", "人/km2", "1/2", "/kg"):
+            self.assertFalse(B.private_text("unit", u), u)
+        for v in ("/年", "亿元 /年", "bp /月", "x /5", "https://fred.stlouisfed.org/series/X", "FRED:GDP/CPI", "见 / 年"):
+            self.assertFalse(B.private_text("data_source", v), v)
+        ws = "/work" + "space/a"
+        for v in ("/opt/private/x", "a:/opt/private/x", "markjin-internal/f", "C:\\x", "~/a", "file:///x", ws,
+                  "见 https://x.org 和 /srv/data"):
+            self.assertTrue(B.private_text("data_source", v), v)
+        for v in ("/opt/private/x", "a:/opt/private/x", ws, "file:///x"):
+            self.assertTrue(B.private_text("unit", v), v)
+
+    def void(self, **kw):
+        return row(**{**dict(check_result="VOID", corrects_row_id=FIRST, reason="main 上合并晚于 window_start"), **kw})
+
+    def test_void_row(self):
+        rows = chain(row(), self.b2(), self.void())
+        rs, errs = B.parse(csv_of(*rows))
+        self.assertEqual(errs, [])
+        self.assertEqual(B.gate_count(rs), 1)
+        self.assertEqual(B.hit_stats(rs)["voided_branches"], 1)
+        self.assertIn("E-BR-AFTER-VOID", ccodes(row(), self.b2(), self.void(), hit()))
+        self.assertIn("E-BR-CORRECTION-REASON", ccodes(row(), self.b2(), self.void(reason="")))
+        self.assertIn("E-BR-CORRECTS-TARGET", ccodes(row(), self.b2(), self.void(corrects_row_id="x")))
+        self.assertIn("E-BR-VOID-FILLED", ccodes(row(), self.b2(), self.void(actual_value="4")))
+        self.assertIn("E-BR-PREREG-CHANGED", ccodes(row(), self.b2(), self.void(unit="bp")))
+        # 含作废分支的组不计入命中率
+        rs, _ = B.parse(csv_of(*chain(row(), self.b2(), self.void(), self.fin(self.b2(), "HIT", "6"))))
+        self.assertEqual(B.hit_stats(rs)["groups_judged"], 0)
 
 
 if __name__ == "__main__":
