@@ -72,3 +72,32 @@
 - A01（18 个账号）：有效，返回 8 条（start_time 2026-10-10T16:00Z，max 10）。
 - B15 quantum：有效，返回 10 条。
 - `(TSMC OR ASML OR HBM OR CoWoS) -is:retweet -is:reply min_faves:100`：**无效**（min_faves 不可用），故 B14 已去掉该条件。
+
+## 翻页（next_token）与链接补全 — 2026-10-12 修订（取代上方“调用预算”中的翻页上限）
+
+实测（2026-10-12 06:2x SGT，`x.search_posts_all`，同一查询连续 2 页）：
+- 工具把 `max_results` 限制在 **25/次**。
+- 翻页参数名：**`next_token`**，取上一页 `meta.next_token` 原值传入（schema 另列 `pagination_token`，未用；统一用 `next_token`）。
+- 第 2 页返回 25 条新 id，与第 1 页 0 重叠，且全部早于第 1 页（recency 排序），翻页有效。
+- **`search_posts_all` 不返回 `entities`**（即便 `post.fields` 含 entities）。链接必须用 `get_posts_by_ids`（≤100 id/次，`post.fields=entities,created_at,note_tweet`）补全，取 `entities.urls[].unwound_url`，无则 `expanded_url`。
+- t.co 的 robots.txt 对 `*` 全站 Disallow：**不自行解析 t.co**。
+
+每查询页数上限：A 批次（from: 账号）**4 页**；B 主题 **2 页**（两轮相同，由 `x_capture.py` 按状态执行）。到上限、无 `next_token`、本页无新 id、或日预算用尽即停。
+预算：**≤400 次 / UTC 日（X 额度 00:00Z = 08:00 SGT 重置，05:00 与 06:00 SGT 两轮落在同一额度日），≤25 次 / 滚动 60 秒**（工具硬限 30/分、1000/日）。**每一次实际调用（首页、翻页、补全）前都必须 `reserve`**，未预留的调用无法入账。
+| 轮次 | A（7×≤4） | B（17×≤2） | 补全 get_posts_by_ids | 上限 |
+|---|---|---|---|---|
+| round1 | ≤28 | ≤34 | ≤10 | ≤72 |
+| round2 | ≤28 | ≤34 | ≤10 | ≤72 |
+| 合计/日（含内部集 ≤24） | | | | **≤168** |
+
+辅助脚本 `x_capture.py`（不直接调 X，由 agent 调工具并以 write_to_file 落盘后交给脚本）：
+```
+x_capture.py plan    --queries q.json --state S.json --date YYYY-MM-DD --round 1|2   # 自动算 start_time；完整参数写入状态
+x_capture.py reserve --state S.json --tool search_posts_all --slug A01 --page 1      # 每次调用前；不允许 → 退出码 3 + wait_s
+x_capture.py ingest  --state S.json --call-id ID --file RESULT.txt                    # -> {"next": {完整参数 + next_token, "wait_s"}} 或 {"next": null}
+x_capture.py hydrate --state S.json                                                  # get_posts_by_ids 批次（≤100；每批先 reserve --tool get_posts_by_ids）
+x_capture.py ingest-hydrate --state S.json --call-id ID --file RESULT.txt
+x_capture.py leads   --state S.json                                                  # 线索 JSON（label: 线索, source_role: lead）
+x_capture.py budget  --state S.json                                                  # 今日（UTC）已用/剩余、需等待秒数
+```
+`leads` 输出（含补全的 `urls[].expanded_url/unwound_url`）交 `fetch_primary.py` 抓一手来源；抓取结果只写 `fetch_status`，线索身份不变。
