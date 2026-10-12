@@ -76,7 +76,7 @@
 行分四种：**登记行**（每个分支的第一行）、**对账行**、**登记更正行**、**结论更正行**。
 
 1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。
-   - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。基线提交不存在或读不出时判失败，不放行。
+   - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。例外是台账还没有任何数据行（只有表头）时，可以调整表头。基线提交不存在或读不出时判失败，不放行。
    - **推送时间。** CI 用运行时间作为推送时间（`--now`）。对本次新增的登记行和登记更正行，要求推送时间与 registered_at 相差不超过 6 小时，并且早于 window_start 当日 00:00（SGT）。
 2. **登记行。** check_result 必须是 `PENDING`，quarter_readings 为空；registered_at 的日期等于 publish_date，并早于观测开始（window_start 至少是发布次日）；lu_basis_date 和 lu_evidence 里每个读数的 vintage 都不得晚于 registered_at。
 3. **不可改字段**：全部事先登记字段，加上 registered_at。对账行和结论更正行里，这些字段必须与当前登记（登记行，或最近一条登记更正行）完全一致。

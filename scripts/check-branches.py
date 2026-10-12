@@ -44,7 +44,9 @@ def history_errors(repo, base, ref, now=None):
             errs.append((c[:12], 0, "E-BR-LEDGER-REMOVED")); continue
         if new is None:
             continue
-        if old is not None and not branches.append_only(old_t, new_t):
+        # 只有表头、没有数据行时允许改表头（台账启用前的字段调整）；一旦有数据行，必须严格只追加
+        old_has_rows = len(old_t.splitlines()) > 1
+        if old is not None and old_has_rows and not branches.append_only(old_t, new_t):
             errs.append((c[:12], 0, "E-BR-NOT-APPEND-ONLY")); continue
         old_rows, new_rows = _rows(old_t), _rows(new_t)
         old_groups = {branches.group_key(r) for _, r in old_rows}

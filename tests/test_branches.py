@@ -484,6 +484,14 @@ class R3Cli(unittest.TestCase):
         p = self.cli("--base", "HEAD~2")
         self.assertEqual(p.returncode, 1); self.assertIn("E-BR-NOT-APPEND-ONLY", p.stdout)
 
+    def test_header_change_allowed_only_when_empty(self):
+        self.commit("row_id,old\n", "old header")
+        self.commit(HDR, "new header")
+        self.assertEqual(self.cli("--base", "HEAD~2").returncode, 0)
+        self.commit(csv_of(row(), sibling(row())), "rows")
+        self.commit(csv_of(row(), sibling(row())).replace("row_id,", "rowid,", 1), "change header with rows")
+        self.assertIn("E-BR-NOT-APPEND-ONLY", self.cli("--base", "HEAD~1").stdout)
+
     def test_group_late_commit(self):
         r1, r2 = row(), sibling(row())
         self.commit(csv_of(r1), "A")
