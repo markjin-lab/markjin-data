@@ -127,11 +127,103 @@ class VerifyRawRetractions(Base):
 
     def test_env_base_override(self):
         (self.d / "src/gone.txt").unlink(); self.commit("rm")
-        r = self.run_default(env_base=self.head()); self.assertNotIn("被删除", r.stdout)   # 基线=HEAD：无历史差异
+        r = self.run_default(env_base=self.head()); self.assertEqual(r.returncode, 1); self.assertIn("被删除", r.stdout)   # 基线=目标：仍检查目标提交对父提交
         r = self.run_default(env_base=self.base); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("被删除", r.stdout)
 
     def test_bad_base_fails(self):
         r = self.run_default(env_base="deadbeef" * 5); self.assertEqual(r.returncode, 1)
+
+
+    # ---- r2（PR #9 审查）----
+    def git(self, *a):
+        r = subprocess.run(["git", *a], cwd=self.repo, capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, r.stderr); return r.stdout.strip()
+
+    def test_new_day_without_manifest_fails(self):
+        (self.repo / "raw/2026-10-13").mkdir(); (self.repo / "raw/2026-10-13/a.txt").write_text("x\n")
+        self.commit("day")
+        r = self.verify(); self.assertEqual(r.returncode, 1); self.assertIn("缺少 MANIFEST.sha256: raw/2026-10-13/", r.stdout)
+
+    def test_manifest_reorder_fails(self):
+        (self.d / "MANIFEST.sha256").write_text(f"{sha(self.gone)}  ./src/gone.txt\n{sha(self.keep)}  ./src/keep.txt\n")
+        self.commit("reorder")
+        r = self.verify(); self.assertEqual(r.returncode, 1); self.assertIn("MANIFEST 删改了旧行", r.stdout)
+
+    def test_manifest_prepend_fails(self):
+        (self.d / "src/new.txt").write_bytes(b"new\n")
+        m = self.d / "MANIFEST.sha256"
+        m.write_text(f"{sha(b'new' + bytes([10]))}  ./src/new.txt\n" + m.read_text())
+        self.commit("prepend")
+        r = self.verify(); self.assertEqual(r.returncode, 1); self.assertIn("MANIFEST 删改了旧行", r.stdout)
+
+    def test_manifest_append_passes(self):
+        (self.d / "src/new.txt").write_bytes(b"new\n")
+        with open(self.d / "MANIFEST.sha256", "a") as m:
+            m.write(f"{sha(b'new' + bytes([10]))}  ./src/new.txt\n")
+        self.commit("append")
+        r = self.verify(); self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_add_then_remove_within_range_fails(self):
+        (self.d / "src/tmp.txt").write_bytes(b"tmp\n")
+        with open(self.d / "MANIFEST.sha256", "a") as m:
+            m.write(f"{sha(b'tmp' + bytes([10]))}  ./src/tmp.txt\n")
+        self.commit("add")
+        (self.d / "src/tmp.txt").unlink()
+        (self.d / "MANIFEST.sha256").write_text(f"{sha(self.keep)}  ./src/keep.txt\n{sha(self.gone)}  ./src/gone.txt\n")
+        self.commit("remove")          # 端点 diff 为空，但中间提交违规
+        self.assertEqual(self.git("diff", self.base, "HEAD"), "")
+        r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("被删除", r.stdout)
+
+    def test_reads_commit_not_worktree(self):
+        orig = (self.d / "src/keep.txt").read_bytes(), (self.d / "MANIFEST.sha256").read_bytes()
+        (self.d / "src/keep.txt").write_bytes(b"changed\n")
+        (self.d / "MANIFEST.sha256").write_text(f"{sha(b'changed' + bytes([10]))}  ./src/keep.txt\n{sha(self.gone)}  ./src/gone.txt\n")
+        self.commit("tamper")
+        (self.d / "src/keep.txt").write_bytes(orig[0]); (self.d / "MANIFEST.sha256").write_bytes(orig[1])   # 工作树还原
+        r = self.verify(); self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("被修改", r.stdout)
+
+    def test_target_other_than_head(self):
+        self.git("checkout", "-q", "-b", "bad")
+        (self.d / "src/gone.txt").unlink(); bad = self.commit("rm")
+        self.git("checkout", "-q", "-")
+        r = subprocess.run(["bash", "scripts/verify-raw.sh", self.base, "--target", bad], cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("被删除", r.stdout)
+        self.assertEqual(self.verify().returncode, 0)
+
+    def test_non_ancestor_base_fails(self):
+        self.git("checkout", "-q", "-b", "side")
+        (self.repo / "s.txt").write_text("s\n"); side = self.commit("side")
+        self.git("checkout", "-q", "-")
+        (self.repo / "m.txt").write_text("m\n"); self.commit("main")
+        r = subprocess.run(["bash", "scripts/verify-raw.sh", side], cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1); self.assertIn("不是目标", r.stdout)
+
+    def test_git_failure_fails_closed(self):
+        fake = Path(tempfile.mkdtemp())
+        real = shutil.which("git")
+        (fake / "git").write_text(f'#!/bin/sh\n[ "$1" = diff ] && exit 128\nexec {real} "$@"\n'); (fake / "git").chmod(0o755)
+        (self.repo / "x.txt").write_text("x\n"); self.commit("x")
+        env = dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}")
+        r = subprocess.run(["bash", "scripts/verify-raw.sh", self.base], cwd=self.repo, capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 1, r.stdout); self.assertIn("git 命令失败", r.stdout)
+
+    def test_hook_checks_non_head_ref(self):
+        self.git("checkout", "-q", "-b", "bad")
+        (self.d / "src/gone.txt").unlink(); bad = self.commit("rm")
+        self.git("checkout", "-q", "-")
+        r = self.hook(f"refs/heads/bad {bad} refs/heads/bad {self.base}\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr); self.assertIn("verify-raw 未通过", r.stderr)
+
+    def test_hook_passes_clean_non_head_ref(self):
+        self.git("checkout", "-q", "-b", "ok")
+        (self.repo / "n.txt").write_text("n\n"); ok = self.commit("ok")
+        self.git("checkout", "-q", "-")
+        r = self.hook(f"refs/heads/ok {ok} refs/heads/ok {self.base}\n")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_hook_rejects_main_deletion(self):
+        r = self.hook(f"(delete) {'0' * 40} refs/heads/main {self.base}\n")
+        self.assertEqual(r.returncode, 1); self.assertIn("禁止删除受保护 ref", r.stderr)
 
 
 class PublicLocalPath(Base):
@@ -146,6 +238,18 @@ class PublicLocalPath(Base):
     def test_home_path_flagged(self):
         self.add_raw("stored at '/home/box/x'\n")
         self.expect(self.public(), False, "E-PUBLIC-LOCAL-PATH")
+
+    def test_file_uri_flagged(self):
+        self.add_raw('{"p": "file:///workspace/a"}\n')
+        self.expect(self.public(), False, "E-PUBLIC-LOCAL-PATH")
+
+    def test_json_escaped_flagged(self):
+        self.add_raw('{"p": "\\/workspace\\/a"}\n')
+        self.expect(self.public(), False, "E-PUBLIC-LOCAL-PATH")
+
+    def test_escaped_host_url_and_fragment_not_flagged(self):
+        self.add_raw('{"u": "https:\\/\\/sam.gov\\/workspace\\/x", "f": "https://x/#/workspace/a"}\n')
+        self.expect(self.public(), True)
 
     def test_quoted_workspace_path_flagged(self):
         self.add_raw('{"p": "/workspace/a"}\n')

@@ -13,12 +13,15 @@ if [ -z "$input" ]; then
   echo "pre-push: stdin 为空（E-CHECK-STDIN），推送已拒绝" >&2; exit 1
 fi
 printf '%s\n' "$input" | python3 "$root/scripts/check-internal.py" --pre-push --remote "$remote" --remote-url "$url" || { echo "pre-push: 内部主题检查未通过，推送已拒绝" >&2; exit 1; }
-# verify-raw：逐条 ref 以远端 sha 为基线检查待推送的 local_sha（远端无此 ref 时由脚本回退 origin/main / HEAD^）
+# verify-raw：逐条 ref 独立检查。以远端 sha 为基线、local_sha 为目标，逐提交从 git 对象读取（不看工作树、不要求是 HEAD）。
+# 远端无此 ref（新分支）时由脚本回退 origin/main（须为祖先）/ target^。删除受保护 ref（main、tag）一律拒绝。
 printf '%s\n' "$input" | while read -r lref lsha rref rsha; do
-  case "$lsha" in 0000000000000000000000000000000000000000) continue ;; esac
-  [ "$lsha" = "$(git rev-parse HEAD)" ] || { echo "pre-push: verify-raw 只能检查当前 HEAD（$lref 非 HEAD）" >&2; exit 1; }
+  case "$lsha" in 0000000000000000000000000000000000000000)
+    case "$rref" in refs/heads/main|refs/tags/*) echo "pre-push: 禁止删除受保护 ref $rref" >&2; exit 1 ;; esac
+    continue ;; esac
   case "$rsha" in 0000000000000000000000000000000000000000) rsha= ;; esac
-  git cat-file -e "${rsha:-HEAD}^{commit}" 2>/dev/null || { echo "pre-push: 本地缺少远端提交 $rsha，请先 fetch" >&2; exit 1; }
-  VERIFY_RAW_BASE="$rsha" bash "$root/scripts/verify-raw.sh" $rsha >/dev/null || { echo "pre-push: verify-raw 未通过（基线 ${rsha:-默认}）" >&2; exit 1; }
+  if [ -n "$rsha" ]; then git cat-file -e "$rsha^{commit}" 2>/dev/null || { echo "pre-push: 本地缺少远端提交 $rsha，请先 fetch" >&2; exit 1; }; fi
+  target=$(git rev-parse -q --verify "$lsha^{commit}") || { echo "pre-push: $lref 不是提交，跳过 verify-raw" >&2; continue; }
+  VERIFY_RAW_BASE= python3 "$root/scripts/verify-raw.py" ${rsha:+"$rsha"} --target "$target" >/dev/null || { echo "pre-push: verify-raw 未通过（$lref，基线 ${rsha:-默认}）" >&2; exit 1; }
 done || { echo "pre-push: verify-raw 检查失败，推送已拒绝" >&2; exit 1; }
 printf '%s\n' "$input" | python3 "$root/scripts/check-public.py" --pre-push --remote "$remote" --remote-url "$url" || { echo "pre-push: 公开仓库守卫未通过，推送已拒绝" >&2; exit 1; }
