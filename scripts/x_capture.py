@@ -379,7 +379,14 @@ def cmd_leads(a, s):
         f = check_target(a, root / pend["path"], "leads output file")
         # 不论导出几条（含 0 条）：先核对哈希，再核对或补登 MANIFEST，最后记 exported_at。
         # 没有 sha256 的旧状态、或哈希不符：一律不认，这些帖子照常重新导出。
-        if f.is_file() and pend.get("sha256"):
+        if f.is_file() and not pend.get("sha256"):
+            # 旧状态（没有 sha256）但档案已写出：按档案实际内容算 sha256 补登 MANIFEST（档案不能漏登），
+            # 但不据此标记已导出——这些帖子下面照常重新导出
+            line = f"{hashlib.sha256(f.read_bytes()).hexdigest()}  ./{day_rel[2]}"
+            man = day / "MANIFEST.sha256"
+            if not (man.is_file() and line in man.read_text(encoding="utf-8").splitlines()):
+                collect.Archive(day)._append("MANIFEST.sha256", line)
+        elif f.is_file():
             data = f.read_bytes()
             if hashlib.sha256(data).hexdigest() == pend["sha256"]:
                 line = f"{pend['sha256']}  ./{day_rel[2]}"

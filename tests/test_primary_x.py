@@ -1287,6 +1287,12 @@ class R10XCapture(R9XCapture):
         XC.save_state(self.st, s)
         self.assertEqual([i["id"] for i in self.leads()["items"]], ["7"])                    # 旧状态不认 → 重导
         self.assertTrue(XC.load_state(self.st)["posts"]["7"]["exported_at"])
+        import hashlib                                                                       # r11：旧档案按实际内容补登
+        sha = hashlib.sha256((day / "leads-old.json").read_bytes()).hexdigest()
+        man = (self.d / "raw" / "2026-10-12" / "MANIFEST.sha256").read_text().splitlines()
+        self.assertIn(f"{sha}  ./x/leads-old.json", man)
+        self.assertEqual(sum(1 for l in man if l.endswith("./x/leads-old.json")), 1)
+        self.assertEqual(len(list(day.glob("leads-*.json"))), 2)                             # 另有一份新导出
 
 
 if __name__ == "__main__":
