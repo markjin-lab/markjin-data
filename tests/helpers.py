@@ -19,6 +19,8 @@ FILES = {
                        "<summary>The model reaches 90% accuracy on MMLU. The method handles long documents well.</summary></entry></feed>",
     "x/01.json": f'{{"id": "{XPOST_ID}", "text": "release 2.0"}}',
     "fred/UNRATE.json": '{"series_id": "UNRATE", "realtime_start": "2026-01-02", "value": "4.2"}',
+    # #32 r3：FRED 序列单位存档（series 接口元数据的最小形式），支持位置核对用它比对单位
+    "fred/UNRATE.series.json": '{"id": "UNRATE", "units": "Percent", "units_short": "%"}',
 }
 
 

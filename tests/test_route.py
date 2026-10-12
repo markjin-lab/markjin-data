@@ -2186,6 +2186,17 @@ class FinalR5(FinalR1):
         sc, d = self._route_daily(TITLE + arxiv_line() + f"\n模型在 MMLU 上达到 90%。见 {asrc} 〔原文：{ARXIV_LOC}〕\n" + DISC)
         self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
 
+    def test_fred_unit_mismatch_not_publishable_via_route_pr(self):
+        # #32 r3：FRED 序列单位为 Percent，断言写“4.2 倍”→ 有效 Codex 与王总批准也不可发布
+        bad = TITLE + fred_line("UNRATE 为 4.2 倍。") + DISC
+        self.write("state/publish-state.json", json.dumps(state())); self.commit("st"); self.git("tag", "-f", "base")
+        self.draft.write_text(bad, encoding="utf-8")
+        dr = {"content_sha256": hashlib.sha256(bad.encode()).hexdigest(), "draft_id": "daily-2026-01-05-d1"}
+        self.write(f"approvals/codex/{dr['content_sha256']}.json", json.dumps(codex(dr)))
+        self.write(f"approvals/wang/{dr['content_sha256']}.json", json.dumps(wang(dr))); self.commit("bad")
+        sc, d = self._go([NOW, NOW, NOW])["daily/" + self.draft.name]
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"])
+
     def test_x_plus_supporting_nonx_publishable_via_route_pr(self):
         # 对照：X + 经原文支持位置核对确实支撑的非 X 来源 → 可发布
         from helpers import x_line, ARXIV_LOC, ARXIV_ID

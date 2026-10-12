@@ -164,5 +164,118 @@ class SemanticChecks(Base):
         self.expect(r, "PASS", absent=("R-SUPPORT-ENTITY",))
 
 
+
+FSRC = f"`raw/{DATE}/fred/UNRATE.json` · https://fred.stlouisfed.org/series/UNRATE"
+
+
+def fred_repo(series=None, drop=False):
+    files = dict(FILES)
+    if drop:
+        files.pop("fred/UNRATE.series.json")
+    elif series is not None:
+        files["fred/UNRATE.series.json"] = series
+    return make_repo(files)
+
+
+class FredUnits(Base):
+    """#32 r3：FRED 序列单位存档并用于核对；拿不到单位时带单位的断言不能自动通过。"""
+    def test_percent_series(self):
+        self.expect(run(T + fred_line("UNRATE 为 4.2%。")), "PASS", "R-SUPPORT-REVIEW")
+        self.expect(run(T + fred_line("UNRATE 为 4.2。")), "PASS")
+        self.expect(run(T + fred_line("UNRATE 为 4.2 倍。")), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")       # F2
+        self.expect(run(T + fred_line("UNRATE 为 4.2 个百分点。")), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_units_missing_or_unregistered(self):
+        repo = fred_repo(drop=True)
+        self.expect(run(T + fred_line("UNRATE 为 4.2%。"), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + fred_line("UNRATE 为 4.2。"), repo=repo), "PASS")    # 不带单位的断言只核数字
+        repo = make_repo(dict(FILES))
+        (repo / "raw" / DATE / "fred" / "UNRATE.series.json").write_text('{"id": "UNRATE", "units": "Times"}')  # 改了但没重登 MANIFEST
+        self.expect(run(T + fred_line("UNRATE 为 4.2%。"), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_units_other_classes(self):
+        repo = fred_repo('{"id": "UNRATE", "units": "Percentage Points"}')
+        r = run(T + fred_line("UNRATE 为 4.2 个百分点。"), repo=repo)   # “个百分点”另被宏观措辞规则拦，这里只看单位门禁
+        self.assertNotIn("E-SUPPORT-LOCATOR-MISMATCH", r["error_codes"], r["errors"])
+        self.expect(run(T + fred_line("UNRATE 为 4.2%。"), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        repo = fred_repo('{"seriess": [{"id": "UNRATE", "units": "Index 1982-1984=100"}]}')
+        self.expect(run(T + fred_line("UNRATE 为 4.2%。"), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + fred_line("UNRATE 为 4.2。"), repo=repo), "PASS")
+        repo = fred_repo('{"id": "OTHER", "units": "Percent"}')
+        self.expect(run(T + fred_line("UNRATE 为 4.2%。"), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class ChineseNumerals(Base):
+    """#32 r3：中文数字先规范化再比较；解析不了的不能自动通过。"""
+    def test_percent_words(self):
+        self.expect(run(T + arxiv_line("模型在 MMLU 上准确率为百分之九十五。")), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + arxiv_line("模型在 MMLU 上准确率为九成五。")), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + arxiv_line("模型在 MMLU 上准确率为百分之九十。")), "PASS")
+        self.expect(run(T + arxiv_line("模型在 MMLU 上准确率达九成。")), "PASS")
+
+    def test_unparsable_not_auto_pass(self):
+        for t in ("模型在 MMLU 上准确率为百分之九十几。", "模型在 MMLU 上准确率达九成多。"):
+            self.expect(run(T + arxiv_line(t)), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_chinese_times_vs_percent(self):
+        self.expect(run(T + arxiv_line("模型在 MMLU 上提升九十倍。")), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class NegationByClause(Base):
+    """#32 r3：否定按具体说法核对，不整行判断。"""
+    def test_unchanged_not_negation(self):
+        r = run(T + fred_line("UNRATE 为 4.2%，失业率不变。"))      # P1：不因“不变”被当成否定误拦（语义仍交 Codex）
+        self.assertNotIn("E-SUPPORT-LOCATOR-MISMATCH", r["error_codes"], r["errors"])
+
+    def test_without_equals_no_need(self):
+        loc = "Without fine-tuning, the model reaches 90% accuracy on MMLU."
+        repo = custom_repo(loc)
+        self.expect(run(T + arxiv_line("无需微调，模型在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo), "PASS")   # P2
+        # “经过微调”分句不含数字，与整个片段比：片段含 without → 奇偶不同 → 拦
+        self.expect(run(T + arxiv_line("经过微调，模型在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_double_negation(self):
+        loc = "The model is able to reach 90% accuracy on MMLU."
+        repo = custom_repo(loc)
+        self.expect(run(T + arxiv_line("模型并非不能在 MMLU 上达到 90%。", locator=loc), repo=repo), "PASS")   # C8
+        loc2 = "The model did not fail to reach 90% accuracy on MMLU."
+        repo2 = custom_repo(loc2)
+        self.expect(run(T + arxiv_line("模型在 MMLU 上达到了 90%。", locator=loc2), repo=repo2), "PASS")          # 英文双重否定
+        self.expect(run(T + arxiv_line("模型在 MMLU 上未能达到 90%。", locator=loc2), repo=repo2), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_negation_still_blocks(self):
+        loc = "The model fails to reach 90% accuracy on MMLU."
+        repo = custom_repo(loc)
+        self.expect(run(T + arxiv_line("模型在 MMLU 上达到 90% 准确率。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class Magnitude(Base):
+    """#32 r3：billion 与“亿”等量级先等价换算再比较。"""
+    LOC = "Revenue on MMLU-Bench reached 3 billion dollars in FY2025."
+
+    def test_billion_vs_yi(self):
+        repo = custom_repo(self.LOC)
+        self.expect(run(T + arxiv_line("FY2025 收入达到 30 亿美元。", locator=self.LOC), repo=repo), "PASS")         # P3
+        self.expect(run(T + arxiv_line("FY2025 收入达到三十亿美元。", locator=self.LOC), repo=repo), "PASS")
+        self.expect(run(T + arxiv_line("FY2025 收入达到 3 亿美元。", locator=self.LOC), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + arxiv_line("FY2025 收入达到 3000 million 美元。", locator=self.LOC), repo=repo), "PASS")
+
+
+class PureCitation(Base):
+    """#32 r3：纯来源说明只认固定格式；位置检查与 X-only 检查用同一个判定结果。"""
+    def test_fixed_format_only(self):
+        self.expect(run(T + f"见 {ASRC}\n" + arxiv_line()), "PASS")
+        self.expect(run(T + f"来源：{ASRC} 与 {XSRC}\n" + arxiv_line()), "PASS", absent=("E-X-ONLY",))
+        # C6：“见与和＋来源”不再算纯来源说明
+        self.expect(run(T + f"见与和 {ASRC}\n" + arxiv_line()), "FAIL", "E-SUPPORT-LOCATOR-MISSING")
+
+    def test_pure_x_citation_not_x_only(self):
+        # 纯 X 引导行不是断言：只标 R-X-ONLY，不报 E-X-ONLY
+        r = run(T + f"见 {XSRC}\n" + arxiv_line())
+        self.expect(r, "PASS", "R-X-ONLY", absent=("E-X-ONLY",))
+        # 带断言文字的 X 段落仍硬拦
+        self.expect(run(T + f"发布 2.0 版。见 {XSRC}\n" + arxiv_line()), "FAIL", "E-X-ONLY")
+
+
 if __name__ == "__main__":
     unittest.main()

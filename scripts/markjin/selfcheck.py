@@ -31,7 +31,7 @@ import re
 from pathlib import Path, PurePosixPath
 
 from .deps import DEP_CODE, have_yaml
-from . import strictjson
+from . import strictjson, numnorm
 from .fmkeys import FM_CATEGORY_KEYS
 from .internal import load_internal_terms
 from .textnorm import compact, has_any, norm
@@ -379,6 +379,7 @@ class _Ctx:
         self.repo, self.date, self.manifests, self.urls = repo, date, {}, []
         self.last_text = None
         self.last_scopes = None
+        self.last_units = None
 
     def manifest(self, day_dir: Path):
         """严格解析 MANIFEST.sha256 → (dict 或 None, 错误码或 None)。"""
@@ -408,6 +409,26 @@ class _Ctx:
             res = (None, "E-MANIFEST-PARSE") if bad or not entries else (entries, None)
         self.manifests[day_dir] = res
         return res
+
+    def _fred_units(self, sid, entries):
+        """#32 r3：FRED 序列单位存档 raw/<日期>/fred/<ID>.series.json（FRED series 接口原始响应或 {"id","units"}），
+        必须登记在 MANIFEST 且哈希一致；读不到、未登记或不一致 → None（带单位的断言不能自动通过）。"""
+        rel = f"fred/{sid}.series.json"
+        f = self.repo / "raw" / self.date / "fred" / f"{sid}.series.json"
+        if _has_symlink(self.repo, ("raw", self.date, "fred", f"{sid}.series.json")) or not f.is_file():
+            return None
+        try:
+            data = f.read_bytes()
+            if entries.get(rel) != _sha256(data):
+                return None
+            o = strictjson.loads(data.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError):
+            return None
+        if isinstance(o, dict) and isinstance(o.get("seriess"), list) and len(o["seriess"]) == 1:
+            o = o["seriess"][0]
+        if not isinstance(o, dict) or o.get("id") != sid:
+            return None
+        return o.get("units")
 
     def check_pair(self, raw_rel: str, url: str, claim=None):
         """一个 (raw, URL) 来源对。返回 (错误码或 None, kind, supported: bool)。"""
@@ -450,6 +471,7 @@ class _Ctx:
                 return "E-REPLAY-004", kind, False
             # r13：FRED observations API 原始响应不含 series_id；此时以 MANIFEST 登记的文件名 <ID>.json 绑定系列身份
             scopes = _fred_scopes(fj, text, claim)
+            self.last_units = self._fred_units(sid, entries)
         else:
             ver = URL_KINDS[kind].match(url).group(2) if kind == "arxiv" else None
             scopes = select_entries(text, kind, sid, ver)
@@ -782,7 +804,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                     if card_type == "daily":
                         loc_err = loc_err or "E-SUPPORT-LOCATOR-MISSING"
                     continue
-                ok, hints = support_at(ctx.last_scopes, kind, claim, loc)
+                ok, hints = support_at(ctx.last_scopes, kind, claim, loc, fred_units=ctx.last_units)
                 for h in hints:
                     flags[h] = True
                 if ok:
@@ -907,26 +929,47 @@ def _units(s):
     return out
 
 
-def _negated(s):
-    t = norm(s)
-    zh = t
-    for w in _POLAR_NEG_ZH_OK:
-        zh = zh.replace(w, "")
-    return bool(_POLAR_NEG_EN.search(t)) or any(w in zh for w in _POLAR_NEG_ZH)
+def _fred_unit_class(u):
+    """FRED 序列元数据的 units 字段 → 单位类别。None 表示拿不到单位。"""
+    if not isinstance(u, str) or not u.strip():
+        return None
+    l = u.lower()
+    if "percentage point" in l:
+        return "pp"
+    if "percent" in l:
+        return "pct"
+    return "level"     # Index、Billions of Dollars、Thousands of Persons 等：不是百分比，也不是倍数
 
 
-def support_at(scopes, kind, claim, loc):
+def _neg_parity_ok(claim, loc):
+    """#32 r3：按具体说法核对否定，不整行判断。断言逐个分句：含数字或代号的分句，与片段中含同样数字/代号的分句比；
+    其余分句与整个片段比。比较的是否定词个数的奇偶（双重否定抵消；“不变”“不同”不算否定；“无需”与 without 同为否定）。"""
+    lclauses = numnorm.clauses(loc) or [loc]
+    for cc in numnorm.clauses(claim) or [claim]:
+        keys_n = numbers(numnorm.normalize_numbers(cc)[0])
+        keys_t = [t.lower() for t in claim_terms(cc)]
+        if keys_n or keys_t:
+            cands = [lc for lc in lclauses
+                     if keys_n <= numbers(numnorm.normalize_numbers(lc)[0]) and all(t in lc.lower() for t in keys_t)]
+            target = cands[0] if cands else loc
+        else:
+            target = loc
+        if numnorm.neg_count(cc) % 2 != numnorm.neg_count(target) % 2:
+            return False
+    return True
+
+
+def support_at(scopes, kind, claim, loc, fred_units=None):
     """原文支持位置核对（#32）。返回 (是否成立, 提示标记集合)。
     硬性条件（不成立 → E-SUPPORT-LOCATOR-MISMATCH）：
       1. 片段是所引条目原文的连续子串；
-      2. 断言中的数字全部出现在片段里（宏观算式稿验算通过的推导值除外）；
-      3. 单位与倍数一致：断言里带单位的数字，片段里同一数字须带同类单位（% 与“倍”不能互换，% 与“个百分点”也不能互换）；
-      4. 否定一致：断言与片段一个含否定词（未能、没有、not、failed to……）、另一个不含 → 不成立；
+      2. 数值先规范化（中文数字、百分之、成数、billion/亿 等量级换算），断言中的数字全部出现在片段里；
+         断言里有解析不了的中文数值（如“百分之九十几”“三成多”）→ 不成立（宏观算式稿验算通过的推导值除外）；
+      3. 单位与倍数一致：% 与“倍”不能互换，% 与“个百分点”不能互换；FRED 用存档的序列单位（<ID>.series.json，
+         须登记在 MANIFEST）核对，拿不到单位时带单位的断言不成立；
+      4. 否定按分句核对（见 _neg_parity_ok）；
       5. 断言中的指标/对象代号（两个以上大写字母或含数字，如 MMLU、GSM8K、GPT-4）全部出现在片段里。
-    提示（R-*，不硬拦，交 Codex 逐条核对）：
-      - support_review：机器核对通过，语义支持仍须人工确认（每条通过的断言都带）；
-      - locator_short：片段少于 LOC_SHORT 个非空白字符；
-      - entity_unchecked：断言含中文（中文对象名替换机器核不了），或含不在片段里的单大写字母专名（如 Llama）。"""
+    提示（R-*，不硬拦，交 Codex 逐条核对）：support_review（每条通过的断言都带）、locator_short、entity_unchecked。"""
     hints = set()
     if not quote_in_source(scopes, loc):
         return False, hints
@@ -935,16 +978,25 @@ def support_at(scopes, kind, claim, loc):
         c = _CLAIM_DATE_RE.sub(" ", _VINTAGE_RE.sub(" ", c))
     fms = list(FORMULA_RE.finditer(c))
     derived = bool(_FORMULA_MARK_RE.search(c) and fms and all(verify_formula(fm.group(0)) for fm in fms))
+    cn, c_unparsed = numnorm.normalize_numbers(c)
+    ln, _ = numnorm.normalize_numbers(norm(loc))
     if not derived:
-        if not numbers(c) <= numbers(loc):
+        if c_unparsed or not numbers(cn) <= numbers(ln):
             return False, hints
-    if not derived and kind != "fred":   # FRED 存档的数值不带单位（单位在序列元数据里），不做单位比对
-        cu, lu = _units(c), _units(loc)
-        for n, us in cu.items():
-            for u in us - {None}:
-                if u not in lu.get(n, set()):
-                    return False, hints
-    if _negated(c) != _negated(loc):
+        cu = _units(cn)
+        if kind == "fred":
+            fc = _fred_unit_class(fred_units)
+            for n, us in cu.items():
+                for u in us - {None}:
+                    if fc is None or u != fc:
+                        return False, hints
+        else:
+            lu = _units(ln)
+            for n, us in cu.items():
+                for u in us - {None}:
+                    if u not in lu.get(n, set()):
+                        return False, hints
+    if not _neg_parity_ok(c, norm(loc)):
         return False, hints
     lt = norm(loc).lower()
     if not all(t.lower() in lt for t in claim_terms(c)):
@@ -1065,13 +1117,17 @@ def _fm_value(s, fm_parsed=None, raw=None):
     return v
 
 
-_CITE_WORDS_RE = re.compile(r"来源|出处|详见|参见|补充|见|另见|与|和|及|source|sources|see|also|and", re.I)
+_CITE_PAIR = SRC_PAIR + r"(?: 〔原文[:：][^〔〕]+〕)?"
+PURE_CITE_RE = re.compile(
+    r"^(?:[-*+] )?(?:来源|出处|参见|另见|详见|见|sources?|see)\s*[:：]?\s*" + _CITE_PAIR
+    + r"(?:\s*(?:；|;|、|与|和|及|，|,|and)\s*" + _CITE_PAIR + r")*"
+    + r"(?:\s*[；;，,]?\s*(?:见|详见|参见|see)\s*https://github\.com/markjin-lab/[A-Za-z0-9._/#-]+)?\s*[。.]?$", re.I)
 
 
-def _pure_citation(claim):
-    """去掉来源、链接、位置以及“来源/见/与”这类引导词和标点后什么都不剩 → 纯来源说明，不是断言（#32 r2）。"""
-    rest = _CITE_WORDS_RE.sub("", claim)
-    return not re.sub(r"[\W_]+", "", rest)
+def _pure_citation(s):
+    """#32 r3：纯来源说明只认固定格式——引导词（来源/出处/见/参见/source/see）+ 一个或多个来源对（用 ；、与 等连接），
+    可再跟一个“见 <本组织仓库链接>”。其他写法一律按断言处理。位置检查与 X-only 检查共用这一个判定结果。"""
+    return bool(PURE_CITE_RE.match(s.strip()))
 
 
 def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
@@ -1117,16 +1173,17 @@ def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
         if loc is None:
             loc_err = loc_err or "E-SUPPORT-LOCATOR-MISSING"
             continue
-        ok, hints = support_at(ctx.last_scopes, kind, claim, loc)
+        ok, hints = support_at(ctx.last_scopes, kind, claim, loc, fred_units=ctx.last_units)
         for h in hints:
             flags[h] = True
         if ok:
             nonx_ok = True
         else:
             loc_err = loc_err or "E-SUPPORT-LOCATOR-MISMATCH"
-    if loc_err and card_type == "daily" and not _pure_citation(claim):
+    pure = _pure_citation(s)        # 同一判定：纯来源说明既不要求位置，也不按断言判 X-only
+    if loc_err and card_type == "daily" and not pure:
         err(loc_err, i)
-    _x_flags(kinds, counts, flags, err, i, card_type, nonx_supported=nonx_ok)   # r7 + #32
+    _x_flags(kinds, counts, flags, err, i, card_type, assertion=not pure, nonx_supported=nonx_ok)   # r7 + #32
 
 
 def _check_loose_sources(ctx, s, i, err, counts, flags, count_replay=False, card_type=None):
