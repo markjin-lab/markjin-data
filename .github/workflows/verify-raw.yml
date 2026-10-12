@@ -9,4 +9,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: bash scripts/verify-raw.sh
+      - run: |
+          # PR：基线取 base 与 head 的 merge-base（main 前进后仍为祖先）；push：before sha（新分支为全零 → 脚本默认）
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            VERIFY_RAW_BASE=$(git merge-base "$VERIFY_RAW_BASE" "$VERIFY_RAW_TARGET") || exit 1; export VERIFY_RAW_BASE
+          fi
+          bash scripts/verify-raw.sh --target "$VERIFY_RAW_TARGET"
+        env:
+          VERIFY_RAW_TARGET: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          VERIFY_RAW_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
