@@ -2169,6 +2169,23 @@ class FinalR5(FinalR1):
         sc, d = self._route_daily(TITLE + line + DISC)
         self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
 
+    def test_paragraph_heading_without_locator_not_publishable_via_route_pr(self):
+        # #32 r2：段落、标题里带来源但没写支持位置（或位置不支持断言）→ 有效 Codex APPROVED 也不可发布
+        from helpers import ARXIV_LOC, ARXIV_ID, XPOST_ID
+        asrc = f"`raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
+        xsrc = f"`raw/{DATE}/x/01.json` · https://x.com/i/status/{XPOST_ID}"
+        for body, want in ((f"模型在 GSM8K 上达到 90%。见 {asrc}\n", "E-SUPPORT-LOCATOR-MISSING"),
+                           (f"## 模型在 GSM8K 上达到 90% {asrc} 〔原文：{ARXIV_LOC}〕\n", "E-SUPPORT-LOCATOR-MISMATCH"),
+                           (f"该方法远超所有对手。见 {xsrc} 与 {asrc}\n", "E-X-ONLY")):
+            sc, d = self._route_daily(TITLE + arxiv_line() + "\n" + body + DISC)
+            self.assertFalse(d.publishable, body); self.assertIn(want, sc["error_codes"], body)
+
+    def test_paragraph_with_locator_publishable_via_route_pr(self):
+        from helpers import ARXIV_LOC, ARXIV_ID
+        asrc = f"`raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
+        sc, d = self._route_daily(TITLE + arxiv_line() + f"\n模型在 MMLU 上达到 90%。见 {asrc} 〔原文：{ARXIV_LOC}〕\n" + DISC)
+        self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
+
     def test_x_plus_supporting_nonx_publishable_via_route_pr(self):
         # 对照：X + 经原文支持位置核对确实支撑的非 X 来源 → 可发布
         from helpers import x_line, ARXIV_LOC, ARXIV_ID

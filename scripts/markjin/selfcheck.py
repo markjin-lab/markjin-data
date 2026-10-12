@@ -53,6 +53,7 @@ STRICT_ASSERT_RE = re.compile(
 PAIR_RE = re.compile(SRC_PAIR)
 LOC_PAIR_RE = re.compile(r"`(raw/[^`\s]+)` · (https?://[^\s`;]+)" + LOCATOR)
 LOCATOR_ANY_RE = re.compile(r"〔原文[:：]")
+LOC_TEXT_RE = re.compile(r"〔原文[:：][^〔〕]+〕")
 TERM_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9.\-]*[A-Za-z0-9](?![A-Za-z0-9])")
 
 
@@ -349,6 +350,7 @@ HARD_SOFT_PREFIX = "R-"   # R-* 为审查原因（不 FAIL，但不是低风险�
 FLAG_KEYS = ("has_inference", "inference_unclear", "macro", "medical", "religion", "internal", "x_only",
              "signal_card", "free_text", "unstructured", "unsupported", "link_unchecked", "link_unreachable",
              "structure_other", "quote_unverified", "stock",
+             "support_review", "locator_short", "entity_unchecked",
              "quote_numeric", "quote_comparative", "quote_modal", "quote_entity", "translation")
 COUNT_KEYS = ("assertions", "structured", "replayable", "x_sourced", "macro", "inference",
               "unclear", "free_text", "quotes", "source_links", "other")
@@ -506,7 +508,7 @@ def _fred_scopes(fj, text, claim):
 
 def _claim_of(s):
     """非结构化行的断言原文：去掉 raw 路径与 URL（其中的日期、编号不算断言数字）。"""
-    return URL_RE.sub(" ", RAW_RE.sub(" ", s))
+    return URL_RE.sub(" ", RAW_RE.sub(" ", LOC_TEXT_RE.sub(" ", s)))
 
 
 def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
@@ -780,7 +782,10 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                     if card_type == "daily":
                         loc_err = loc_err or "E-SUPPORT-LOCATOR-MISSING"
                     continue
-                if support_at(ctx.last_scopes, kind, claim, loc):
+                ok, hints = support_at(ctx.last_scopes, kind, claim, loc)
+                for h in hints:
+                    flags[h] = True
+                if ok:
                     nonx_ok = True
                 elif card_type == "daily":
                     loc_err = loc_err or "E-SUPPORT-LOCATOR-MISMATCH"
@@ -880,23 +885,76 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     return _result(errors, flags, counts, meta)
 
 
+# —— 原文支持位置核对（#32 r2）
+LOC_SHORT = 20        # 位置片段少于 20 个非空白字符 → R-LOCATOR-SHORT 提示（太短容易断章取义）
+_UNIT_RE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(%|％|percentage points?|个百分点|percent|per cent|倍|×|x(?![A-Za-z])|times|-fold|fold)?", re.I)
+_UNIT_CLASS = {"%": "pct", "％": "pct", "percent": "pct", "per cent": "pct",
+               "个百分点": "pp", "percentage point": "pp", "percentage points": "pp",
+               "倍": "mult", "×": "mult", "x": "mult", "times": "mult", "-fold": "mult", "fold": "mult"}
+_POLAR_NEG_ZH = ("未能", "尚未", "未", "没有", "没", "并非", "不是", "无法", "不能", "不会", "不")
+_POLAR_NEG_ZH_OK = ("不同", "不断", "不少", "不仅", "不久", "不过", "不论")   # 含“不”但不是否定
+_POLAR_NEG_EN = re.compile(r"\b(?:not|no|never|cannot|without|unable|fail(?:s|ed)?\s+to|did\s+not|does\s+not|n't)\b|n't", re.I)
+_CAP_NAME_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z][a-z][A-Za-z0-9\-]*(?![A-Za-z0-9])")   # Llama、Gemini 这类单大写字母专名
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _units(s):
+    """数字 → 单位类别集合（pct / pp / mult / None）。"""
+    out = {}
+    for m in _UNIT_RE.finditer(_THOUSANDS.sub("", norm(s))):
+        u = m.group(2)
+        out.setdefault(m.group(1).rstrip("."), set()).add(_UNIT_CLASS.get((u or "").lower(), None) if u else None)
+    return out
+
+
+def _negated(s):
+    t = norm(s)
+    zh = t
+    for w in _POLAR_NEG_ZH_OK:
+        zh = zh.replace(w, "")
+    return bool(_POLAR_NEG_EN.search(t)) or any(w in zh for w in _POLAR_NEG_ZH)
+
+
 def support_at(scopes, kind, claim, loc):
-    """原文支持位置是否成立（#32）：片段是所引条目原文的连续子串；断言中的数字全部出现在片段里；
-    断言中的拉丁字母术语（指标、对象、代号，如 MMLU、GSM8K、UNRATE）全部出现在片段里。
-    只能排除“同一个数字、对象或指标不同”这类机器可核的错配；片段在语义上是否支持断言仍由 Codex 逐条审查。"""
+    """原文支持位置核对（#32）。返回 (是否成立, 提示标记集合)。
+    硬性条件（不成立 → E-SUPPORT-LOCATOR-MISMATCH）：
+      1. 片段是所引条目原文的连续子串；
+      2. 断言中的数字全部出现在片段里（宏观算式稿验算通过的推导值除外）；
+      3. 单位与倍数一致：断言里带单位的数字，片段里同一数字须带同类单位（% 与“倍”不能互换，% 与“个百分点”也不能互换）；
+      4. 否定一致：断言与片段一个含否定词（未能、没有、not、failed to……）、另一个不含 → 不成立；
+      5. 断言中的指标/对象代号（两个以上大写字母或含数字，如 MMLU、GSM8K、GPT-4）全部出现在片段里。
+    提示（R-*，不硬拦，交 Codex 逐条核对）：
+      - support_review：机器核对通过，语义支持仍须人工确认（每条通过的断言都带）；
+      - locator_short：片段少于 LOC_SHORT 个非空白字符；
+      - entity_unchecked：断言含中文（中文对象名替换机器核不了），或含不在片段里的单大写字母专名（如 Llama）。"""
+    hints = set()
     if not quote_in_source(scopes, loc):
-        return False
+        return False, hints
     c = norm(claim)
     if kind == "fred":
         c = _CLAIM_DATE_RE.sub(" ", _VINTAGE_RE.sub(" ", c))
-    # 宏观算式稿（“由原始数据计算；算式：…”且算式验算通过）：结果值是推导出来的，不要求出现在原文片段里，
-    # 算式本身由 E-FORMULA-MISMATCH 把关；其余断言的数字必须全部出现在片段里
     fms = list(FORMULA_RE.finditer(c))
     derived = bool(_FORMULA_MARK_RE.search(c) and fms and all(verify_formula(fm.group(0)) for fm in fms))
-    if not derived and not numbers(c) <= numbers(loc):
-        return False
+    if not derived:
+        if not numbers(c) <= numbers(loc):
+            return False, hints
+    if not derived and kind != "fred":   # FRED 存档的数值不带单位（单位在序列元数据里），不做单位比对
+        cu, lu = _units(c), _units(loc)
+        for n, us in cu.items():
+            for u in us - {None}:
+                if u not in lu.get(n, set()):
+                    return False, hints
+    if _negated(c) != _negated(loc):
+        return False, hints
     lt = norm(loc).lower()
-    return all(t.lower() in lt for t in claim_terms(c))
+    if not all(t.lower() in lt for t in claim_terms(c)):
+        return False, hints
+    hints.add("support_review")
+    if len(compact(loc)) < LOC_SHORT:
+        hints.add("locator_short")
+    if _CJK_RE.search(c) or any(t.lower() not in lt for t in _CAP_NAME_RE.findall(c)):
+        hints.add("entity_unchecked")
+    return True, hints
 
 
 _FORMULA_MARK_RE = re.compile(r"由原始数据计算|按原始数据计算")
@@ -1007,6 +1065,15 @@ def _fm_value(s, fm_parsed=None, raw=None):
     return v
 
 
+_CITE_WORDS_RE = re.compile(r"来源|出处|详见|参见|补充|见|另见|与|和|及|source|sources|see|also|and", re.I)
+
+
+def _pure_citation(claim):
+    """去掉来源、链接、位置以及“来源/见/与”这类引导词和标点后什么都不剩 → 纯来源说明，不是断言（#32 r2）。"""
+    rest = _CITE_WORDS_RE.sub("", claim)
+    return not re.sub(r"[\W_]+", "", rest)
+
+
 def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
     """段落/标题里的来源。
     - URL 只能是已知来源类型（arxiv/x/fred）或本组织仓库链接（github.com/markjin-lab/…），否则 E-REPLAY-005；
@@ -1032,17 +1099,33 @@ def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
         return
     if len(raws) != len(src_urls):
         err("E-REPLAY-006", i); return
-    kinds, nonx_ok = [], False
+    kinds, nonx_ok, loc_err = [], False, None
     claim = _claim_of(s)
-    for raw_rel, url in zip(raws, src_urls):
+    # #32 r2：段落/标题/注释里的每个非 X 来源，URL 后面都必须紧跟 〔原文：…〕 并核对通过；不再“有非 X 来源就算支撑”
+    locs = {m.start(1): m.group("loc") for m in re.finditer(r"(https?://[^\s)）`<>\]]+)" + LOCATOR, s)}
+    url_pos = [m.start() for m in URL_RE.finditer(s) if not SELF_LINK_RE.match(m.group(0))]
+    for (raw_rel, url), pos in zip(zip(raws, src_urls), url_pos):
         e, kind, sup = ctx.check_pair(raw_rel, url, claim=claim)   # r13：带上断言原文
         if e:
             err(e, i); return
         kinds.append(kind)
         if numbers(claim) and not sup:
             flags["unsupported"] = True
-        if kind != "x" and (sup or not numbers(claim)):
+        if kind == "x":
+            continue
+        loc = locs.get(pos)
+        if loc is None:
+            loc_err = loc_err or "E-SUPPORT-LOCATOR-MISSING"
+            continue
+        ok, hints = support_at(ctx.last_scopes, kind, claim, loc)
+        for h in hints:
+            flags[h] = True
+        if ok:
             nonx_ok = True
+        else:
+            loc_err = loc_err or "E-SUPPORT-LOCATOR-MISMATCH"
+    if loc_err and card_type == "daily" and not _pure_citation(claim):
+        err(loc_err, i)
     _x_flags(kinds, counts, flags, err, i, card_type, nonx_supported=nonx_ok)   # r7 + #32
 
 
@@ -1060,8 +1143,6 @@ def _check_loose_sources(ctx, s, i, err, counts, flags, count_replay=False, card
         line_err = line_err or e
         if not e and numbers(claim) and not sup:
             flags["unsupported"] = True
-        if not e and kind != "x" and (sup or not numbers(claim)):
-            nonx_ok = True
     if line_err:
         err(line_err, i)
     elif count_replay:
@@ -1080,6 +1161,7 @@ SOFT = {
     "unsupported": "R-SUPPORT-UNVERIFIED", "link_unchecked": "R-LINK-UNCHECKED",
     "link_unreachable": "R-LINK-UNREACHABLE",
     "structure_other": "R-STRUCTURE", "quote_unverified": "R-QUOTE-UNVERIFIED",
+    "support_review": "R-SUPPORT-REVIEW", "locator_short": "R-LOCATOR-SHORT", "entity_unchecked": "R-SUPPORT-ENTITY",
 }
 
 

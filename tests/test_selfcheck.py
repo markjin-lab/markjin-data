@@ -1338,8 +1338,11 @@ class FinalR6XOnlyAllEntries(T):
         # #32：段落里 X + 不支撑 2.0 的 arXiv → 仍判 E-X-ONLY；arXiv 实际含断言数字 → 不拦
         r = run(TITLE + quote_line() + f"\n发布 2.0 版。见 {self.XSRC} 与 `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1\n")
         self.assertIn("E-X-ONLY", r["error_codes"], r["errors"])
+        # #32 r2：段落里非 X 来源没写支持位置 → 不再算支撑（MISSING + E-X-ONLY）；写了并核对通过 → 不拦
         r = run(TITLE + quote_line() + f"\n模型达到 90%。见 {self.XSRC} 与 `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1\n")
-        self.assertNotIn("E-X-ONLY", r["error_codes"], r["errors"])
+        self.assertIn("E-X-ONLY", r["error_codes"], r["errors"]); self.assertIn("E-SUPPORT-LOCATOR-MISSING", r["error_codes"])
+        r = run(TITLE + quote_line() + f"\n模型达到 90%。见 {self.XSRC} 与 `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕\n")
+        self.assertNotIn("E-X-ONLY", r["error_codes"], r["errors"]); self.assertEqual(r["status"], "PASS", r["errors"])
 
     def test_pure_source_line_only_flagged(self):
         r = run(TITLE + quote_line() + f"\n来源：{self.XSRC}\n")
