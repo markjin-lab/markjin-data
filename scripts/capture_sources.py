@@ -37,7 +37,8 @@ METHODS = ("rss", "api")
 
 
 def parse_ok(body):
-    """严格解析：JSON 用 strictjson（重复键判失败），XML 用 ElementTree。返回 json / xml / None。"""
+    """严格解析：JSON 用 strictjson（重复键判失败、顶层须为对象或数组），XML 用 ElementTree（含 DOCTYPE/ENTITY
+    拒收）。返回 json / xml / None。"""
     b = body
     if b[:2] == b"\x1f\x8b":
         try:
@@ -45,15 +46,14 @@ def parse_ok(body):
         except OSError:
             return None
     b = b.lstrip(b"\xef\xbb\xbf \r\n\t")
-    try:
-        if b[:1] in (b"{", b"["):
-            strictjson.loads(b.decode("utf-8"))
-            return "json"
-        if b[:1] == b"<":
-            ET.fromstring(b)
+    if b[:1] in (b"{", b"["):
+        return "json" if collect.json_ok(b) else None
+    if b[:1] == b"<":
+        try:
+            collect.xml_root(b)
             return "xml"
-    except (ValueError, ET.ParseError, UnicodeDecodeError):
-        return None
+        except (ValueError, ET.ParseError):
+            return None
     return None
 
 
@@ -120,6 +120,7 @@ def main(argv=None):
     logs = {"public": [], "internal": []}
     fails = {"public": [], "internal": []}
     raw_logs = {"public": [], "internal": []}
+    skipped = {"public": [], "internal": []}
     n_ok = n_bad = 0
     for s in srcs:
         sid = s["id"]
@@ -150,7 +151,16 @@ def main(argv=None):
         if cred_err:
             r = collect.Result(False, error=cred_err)
         else:
-            r = fetcher.get(req_url, sid=sid)
+            hop_raws = []
+
+            def sink(body, st, ctype, _ar=raw_ar, _sid=sid, _acc=hop_raws):   # 每一跳原字节先私有存档
+                rel_h, sha_h = _ar.put_raw(sub, _sid, body, collect.ext_for(ctype, body))
+                _acc.append({"raw": rel_h, "sha256": sha_h, "status": st})
+            r = fetcher.get(req_url, sid=sid, raw_sink=sink)
+        if r.error == "not_configured":   # 例如 SEC 未设 MARKJIN_SEC_USER_AGENT：不发请求、不停用，记为未配置
+            skipped[where].append({"id": sid, "url": purl, "reason": "not_configured", "detail": r.detail})
+            print(f"SKIP {sid} not_configured: {r.detail}", file=sys.stderr)
+            continue
         rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url), "round": a.round,
                "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
                "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
@@ -169,7 +179,11 @@ def main(argv=None):
                 raw_ar.put_derived(sub, sid, sha, kind, gzip.decompress(r.body))
             rec["stored"] = "internal" if internal else "private"
             raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": purl, "parsed": kind,
-                                    "final_url": collect.public_url(r.final_url or url, pp, ppath), "hops": r.hops})
+                                    "final_url": collect.public_url(r.final_url or url, pp, ppath), "hops": r.hops,
+                                    "hop_raws": hop_raws})
+        elif not cred_err and hop_raws:   # 失败/验证页/跳转中途的响应原字节也已私有存档，登记到私有 fetch-log
+            raw_logs[where].append({"id": sid, "run": run, "url": purl, "error": r.error, "hops": r.hops,
+                                    "hop_raws": hop_raws})
         if r.ok and kind:
             (int_ar if internal else pub_ar).put_json(
                 f"{sub}{sid}/index-{run}.json",
@@ -184,6 +198,8 @@ def main(argv=None):
             print(f"ERR {sid} {r.status} {rec['error']}", file=sys.stderr)
         logs[where].append(rec)
     for where, ar in (("public", pub_ar), ("internal", int_ar)):
+        if ar is not None and skipped[where]:
+            ar.put_json(f"{sub}skipped-{run}.json", skipped[where])
         if ar is None or not (logs[where] or fails[where]):
             continue
         ar.put(f"{sub}query-log-{run}.jsonl",

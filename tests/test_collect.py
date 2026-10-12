@@ -166,7 +166,8 @@ class FetchT(unittest.TestCase):
         self.assertEqual(f.get("https://api.e.org/private/x").error, "robots_disallow")
         for _, ua in f.opener.calls:
             self.assertIn("markjin-collector", ua)
-            self.assertIn("@", ua)
+            self.assertIn("https://", ua)                 # 联系方式用网址，代码里不写死邮箱
+            self.assertNotIn("@", ua)
             self.assertNotIn("Mozilla", ua)
 
     def test_redirect_rechecks_robots(self):
@@ -783,9 +784,9 @@ class R6Fixes(unittest.TestCase):
             self.assertEqual(idx, [], src)
             hs = json.loads((t.priv / "state/collector-hosts.json").read_text())
             self.assertIn("f.org", hs["hosts"])                                       # 持久停用
-            self.assertIn("suspected_challenge", err.getvalue())
+            self.assertIn("challenge", err.getvalue())      # text/plain 标签片段在 Fetcher 层即判验证页
             fl = next((t.out / "raw/2026-10-12").glob("failures-*.json")).read_text()
-            self.assertIn("suspected_challenge", fl)
+            self.assertIn("challenge", fl)
             self.assertTrue(list((t.priv / "raw/2026-10-12").rglob("feed/*")))      # 原字节仍私有存档
 
     def test_capture_rss_302_vendorless_fragment_disables(self):
@@ -796,6 +797,147 @@ class R6Fixes(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertFalse(list((t.out / "raw/2026-10-12").rglob("index-*.json")))
         self.assertIn("f.org", json.loads((t.priv / "state/collector-hosts.json").read_text())["hosts"])
+
+
+class R7Fixes(unittest.TestCase):
+    """PR #3 审查 r7：3xx 先验正文；title/可见文本前 2KB 短语；text/plain 标签；QName；逐跳原字节存档；
+    JSON 顶层；DOCTYPE/ENTITY；SEC UA 与全局限速。"""
+
+    def tmpdir(self):
+        return Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    LONG = (b"<html><head><title>One moment</title><style>" + b"x{}" * 300 + b"</style></head><body>"
+            b"<div>Checking your browser before accessing the site.</div>" + b"<p>pad</p>" * 400 + b"</body></html>")
+
+    def test_long_page_phrase_in_visible_window(self):
+        self.assertGreater(len(self.LONG), 2048)
+        self.assertTrue(collect.is_challenge(self.LONG))
+        for b in (b"<div>Please verify that you are human to continue</div>",
+                  b"<p>Please enable JavaScript and cookies to continue</p>",
+                  b"<title>Just a moment...</title>"):
+            self.assertTrue(collect.is_challenge(b), b)
+        late = b"<p>" + b"long article text " * 200 + b"check your browser settings</p>"
+        self.assertFalse(collect.is_challenge(late))                 # 可见文本 2KB 之后的提及不算
+        self.assertFalse(collect.is_challenge(b"<p>We study CAPTCHA systems</p>"))
+
+    def _get(self, routes, url="https://a.org/x"):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk(routes, state=collect.HostState(p))
+        sink = []
+        r = f.get(url, sid="s", raw_sink=lambda b, st, ct: sink.append((st, b)))
+        return r, [u for u, _ in f.opener.calls], collect.HostState(p).data, sink
+
+    def test_302_long_challenge_not_followed_and_raw_sunk(self):
+        r, calls, d, sink = self._get({"https://a.org/x": Resp(302, self.LONG, {"Location": "https://a.org/y"}),
+                                       "https://a.org/y": Resp(200, b"ok")})
+        self.assertEqual(r.error, "challenge")
+        self.assertNotIn("https://a.org/y", calls)
+        self.assertIn("a.org", d["hosts"])
+        self.assertEqual(sink, [(302, self.LONG)])                   # 丢弃前已交给私有存档
+
+    def test_robots_302_long_challenge_disables(self):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk({"https://a.org/robots.txt": Resp(302, self.LONG, {"Location": "https://a.org/r2"}),
+                   "https://a.org/x": Resp(200, b"ok")}, state=collect.HostState(p))
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "disabled")
+        self.assertIn("a.org", collect.HostState(p).data["hosts"])
+
+    def test_text_plain_tag_start_disables(self):
+        r, calls, d, sink = self._get({"https://a.org/x": Resp(200, b"<div>hello</div>", {"Content-Type": "text/plain"})})
+        self.assertEqual(r.error, "challenge")
+        self.assertIn("a.org", d["hosts"])
+        r, *_ = self._get({"https://a.org/x": Resp(200, b"<?xml version='1.0'?><rss/>", {"Content-Type": "text/plain"})})
+        self.assertTrue(r.ok)
+
+    def test_every_hop_raw_sunk(self):
+        r, calls, d, sink = self._get({"https://a.org/x": Resp(301, b"moved", {"Location": "https://a.org/y"}),
+                                       "https://a.org/y": Resp(200, b"{}")})
+        self.assertTrue(r.ok)
+        self.assertEqual(sink, [(301, b"moved"), (200, b"{}")])
+
+    def test_qname_roots_and_dtd_and_json_top(self):
+        cs = collect.content_suspect
+        self.assertIsNone(cs("rss", {}, b"<feed xmlns='http://www.w3.org/2005/Atom'/>"))
+        self.assertEqual(cs("rss", {}, b"<feed xmlns='http://www.w3.org/1999/xhtml'/>"),
+                         "xml_root:{http://www.w3.org/1999/xhtml}feed")
+        self.assertIsNotNone(cs("rss", {}, b"<feed/>"))
+        self.assertIsNotNone(cs("rss", {}, b"<rdf:RDF xmlns:rdf='urn:x'/>"))
+        self.assertIsNone(cs("api", {}, b"<eSearchResult/>", "xml", ["eSearchResult"]))
+        self.assertIsNotNone(cs("api", {}, b"<e:eSearchResult xmlns:e='urn:x'/>", "xml", ["eSearchResult"]))
+        self.assertEqual(cs("rss", {}, b"<?xml version='1.0'?><!DOCTYPE x [<!ENTITY a 'b'>]><rss>&a;</rss>"),
+                         "xml_doctype_or_entity")
+        self.assertEqual(cs("rss", {}, b"<!DOCTYPE rss><rss/>"), "xml_doctype_or_entity")
+        for b in (b"null", b'"Just a moment"', b"1", b"true"):
+            self.assertEqual(cs("api", {}, b), "json_unparseable", b)
+        self.assertIsNone(cs("api", {}, b"[]"))
+        self.assertIsNone(CS.parse_ok(b"null"))
+        self.assertIsNone(CS.parse_ok(b"<!DOCTYPE x><rss/>"))
+
+    def test_sec_unconfigured_skipped_no_request_no_disable(self):
+        import os
+        old = os.environ.pop(collect.SEC_UA_ENV, None)
+        try:
+            p = self.tmpdir() / "st.json"
+            f, _ = mk({"https://data.sec.gov/robots.txt": Resp(200, b""), "https://data.sec.gov/a.json": Resp(200, b"{}")},
+                      state=collect.HostState(p))
+            r = f.get("https://data.sec.gov/a.json", sid="sec-edgar-aapl")
+            self.assertEqual(r.error, "not_configured")
+            self.assertEqual(f.opener.calls, [])
+            self.assertEqual(collect.HostState(p).data["hosts"], {})
+            os.environ[collect.SEC_UA_ENV] = "no contact here"
+            self.assertIsNone(collect.sec_user_agent())
+        finally:
+            os.environ.pop(collect.SEC_UA_ENV, None)
+            if old is not None:
+                os.environ[collect.SEC_UA_ENV] = old
+
+    def test_sec_capture_skipped_not_failure(self):
+        import os, io, contextlib
+        old = os.environ.pop(collect.SEC_UA_ENV, None)
+        try:
+            t = CaptureT("test_auth_key_never_logged"); t.setUp()
+            src = dict(CaptureT.S, id="sec-edgar-aapl", method="api", url="https://data.sec.gov/submissions/C.json")
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                rc = t.run_cs([src], {"https://data.sec.gov/submissions/C.json": Resp(200, b"{}")})
+            self.assertEqual(rc, 0)
+            self.assertIn("not_configured", err.getvalue())
+            day = t.out / "raw/2026-10-12"
+            self.assertIn("not_configured", next(day.glob("skipped-*.json")).read_text())
+            self.assertFalse(list(day.rglob("index-*.json")))
+        finally:
+            if old is not None:
+                os.environ[collect.SEC_UA_ENV] = old
+
+    def test_sec_ua_from_env_and_global_rate(self):
+        import os
+        old = os.environ.get(collect.SEC_UA_ENV)
+        os.environ[collect.SEC_UA_ENV] = "markjin research (+https://example.org/contact)"
+        try:
+            t = [100.0]
+            slept = []
+            f, _ = mk({"https://data.sec.gov/robots.txt": Resp(200, b""), "https://www.sec.gov/robots.txt": Resp(200, b""),
+                       "https://data.sec.gov/a": Resp(200, b"{}"), "https://www.sec.gov/b": Resp(200, b"{}")})
+            f.clock = lambda: t[0]
+            f.sleep = lambda w: (slept.append(round(w, 3)), t.__setitem__(0, t[0] + w))
+            self.assertTrue(f.get("https://data.sec.gov/a").ok)
+            self.assertTrue(f.get("https://www.sec.gov/b").ok)
+            self.assertTrue(all(ua == os.environ[collect.SEC_UA_ENV] for _, ua in f.opener.calls))
+            ts = [x for h, x in f.requests]
+            gaps = [b - a for a, b in zip(ts, ts[1:])]
+            self.assertTrue(all(g >= 0.2 - 1e-9 for g in gaps), gaps)   # SEC 各主机合计 ≤5 次/秒
+            self.assertEqual(collect.RATE_GROUPS["sec.gov"], 0.2)
+            self.assertLessEqual(1 / collect.RATE_GROUPS["sec.gov"], 10)
+        finally:
+            if old is None:
+                os.environ.pop(collect.SEC_UA_ENV, None)
+            else:
+                os.environ[collect.SEC_UA_ENV] = old
+
+    def test_no_email_hardcoded_in_code(self):
+        import re as _re
+        root = Path(__file__).resolve().parents[1] / "scripts"
+        for p in root.rglob("*.py"):
+            self.assertIsNone(_re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", p.read_text(encoding="utf-8")), p)
 
 
 if __name__ == "__main__":
