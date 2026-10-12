@@ -11,12 +11,12 @@
 - base 必须是 REF 的祖先（否则 E-BR-NOT-FAST-FORWARD），并直接比较 base 与 REF 的台账（只追加）。
 - PR 用 --now（+08:00 完整时间戳，CI 运行时间）：对本次新登记的行和登记更正行核对
   |now − registered_at| ≤ 6 小时，且 now 早于 window_start（当日 00:00 SGT）。
-- 可信合并时间（--main-ref + --push-runs）：每组 = 这组行第一次进入 main 的那次 push 运行的 created_at。每次全量复核：
-  不早于 window_start（或取不到）的组自动排除出门禁和命中率，并持续报 E-BR-LATE-UNHANDLED，直到追加整组 VOID 留痕
-  （reason 写 run:<运行 ID>）。无效 VOID 可用 VOID_REVOKED 撤销。检查失败时 gate_count / stats 输出 INVALID。
+- 可信合并时间（--main-ref + --push-runs）：每条登记行和登记更正行 = head_sha 恰为其首次进入 main 的提交的最早 push 运行的
+  created_at，必须早于 window_start。查不到判“时间未知”，不顺延。时间相关问题只输出 warn，不改退出码；
+  晚合并组自动排除，时间未知或缺 --main-ref / 运行记录时 gate_count / stats 输出 INVALID。计数只是预估，以人工核对为准。
 输出只含行号、提交短 SHA、错误码与计数。退出码 0=通过，1=不通过。
 """
-import argparse, json, subprocess, sys
+import argparse, json, re, subprocess, sys
 from datetime import datetime, timedelta
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -62,61 +62,66 @@ def load_runs(path):
         return None
 
 
-def trusted_times(repo, rows, main_ref, runs):
-    """每组的可信合并时间 = 这组行第一次进入 main 的那次 push 运行的 created_at。
-    先沿 main 的 first-parent 历史找到这组第一支登记行首次出现的提交 c，再取 head_sha 为 c（或以 c 为祖先）的最早一次 push 运行。
-    返回 {组: (run_id 或 None, 时间 或 None)}；不在 main 上的组不出现。"""
-    out = {}
-    if not main_ref or not rows:
-        return out
+RUN_RE = re.compile(r"(?<![\w:])run:(\d+)(?!\d)")
+
+
+def run_ids(reason):
+    """从 reason 里解析出完整的 run:<id>，精确比较用（run:9010 不等于 run:901）。"""
+    return set(RUN_RE.findall(reason))
+
+
+def first_on_main(repo, main_ref):
+    """{row_id: 首次出现该行的 main（first-parent）提交}。"""
     log = _git(repo, "log", "--first-parent", "--reverse", "--format=%H", main_ref, "--", branches.LEDGER_PATH)
-    commits = log.stdout.split()
     present = {}
-    for c in commits:
+    for c in log.stdout.split():
         for _, x in _rows(branches.git_show(repo, c) or ""):
             present.setdefault(x["row_id"], c)
-    for _, r in rows:
+    return present
+
+
+def row_time(c, runs):
+    """可信时间 = head_sha 恰为 c 的最早一次 push 运行的 created_at。查不到就是“时间未知”，
+    不拿后来的运行顺延（一次 push 多个提交、运行记录过期或超出 1000 条上限时都会落到这里）。"""
+    hits = [(t, rid_) for rid_, head, t in (runs or []) if head == c]
+    return (min(hits)[1], min(hits)[0]) if hits else (None, None)
+
+
+def trust_check(repo, rows, main_ref, runs):
+    """全量复核每一条已进 main 的登记行和登记更正行：其可信时间必须早于 window_start。
+    返回 (errors, warnings, late_groups, counts_valid)。时间相关的问题只给警告，不让 main 一直红；
+    但只要有时间未知，门禁与命中率就输出 INVALID。"""
+    errs, warns, late, late_run, valid = [], [], set(), {}, True
+    present = first_on_main(repo, main_ref)
+    # 登记行（每支第一行）和登记更正行，各用自己首次进入 main 的时间核对
+    regs = [(ln, r) for ln, r in rows if r["check_result"] == "PENDING" and r["row_id"] in present
+            and (r["corrects_row_id"] or r["row_id"].endswith("-r1"))]
+    if regs and runs is None:
+        warns.append((0, "W-BR-PUSH-TIME-UNAVAILABLE")); valid = False
+    unknown = set()
+    for ln, r in regs:
         g = branches.group_key(r)
-        if g in out or r["row_id"] not in present:
-            continue
-        c = present[r["row_id"]]
-        best = None
-        for rid_, head, t in (runs or []):
-            if head == c or _git(repo, "merge-base", "--is-ancestor", c, head).returncode == 0:
-                if best is None or t < best[1]:
-                    best = (rid_, t)
-        out[g] = best or (None, None)
-    return out
-
-
-def trust_errors(repo, rows, main_ref, runs):
-    """全量复核：返回 (错误, 晚合并的组)。晚合并（可信时间不早于 window_start，或取不到时间）的组自动排除；
-    未用完整作废行留痕的晚合并组持续报 E-BR-LATE-UNHANDLED；作废行只在组确属晚合并、reason 写明 run:<运行 ID> 时有效。"""
-    errs, late = [], set()
-    times = trusted_times(repo, rows, main_ref, runs)
-    if times and runs is None:
-        errs.append(("-", 0, "E-BR-PUSH-TIME-UNAVAILABLE"))
+        rid_, t = row_time(present[r["row_id"]], runs)
+        if rid_ is None:
+            unknown.add(g)
+            if runs is not None:
+                warns.append((ln, "W-BR-PUSH-TIME-UNKNOWN")); valid = False
+        elif t >= _dt(r["window_start"] + "T00:00:00+08:00"):
+            late.add(g); late_run.setdefault(g, rid_)
+    complete = branches.complete_void_groups(rows)
     first = {}
     for ln, r in rows:
-        first.setdefault(branches.group_key(r), (ln, r))
-    complete = branches.complete_void_groups(rows)
-    for g, (run_id, t) in times.items():
-        ln, r = first[g]
-        start = _dt(r["window_start"] + "T00:00:00+08:00")
-        if run_id is None:
-            late.add(g)
-            if runs is not None:
-                errs.append(("-", ln, "E-BR-PUSH-TIME-MISSING"))
-        elif t >= start:
-            late.add(g)
-        if g in late and g not in complete:
-            errs.append(("-", ln, "E-BR-LATE-UNHANDLED"))
+        first.setdefault(branches.group_key(r), ln)
+    for g in late:
+        if g not in complete:
+            warns.append((first[g], "W-BR-LATE-UNHANDLED"))
     for ln, r in branches.active_voids(rows):
         g = branches.group_key(r)
-        run_id = times.get(g, (None, None))[0]
-        if g not in late or run_id is None or f"run:{run_id}" not in r["reason"]:
-            errs.append(("-", ln, "E-BR-VOID-UNVERIFIED"))
-    return errs, late
+        if g in unknown or (regs and runs is None):
+            warns.append((ln, "W-BR-VOID-UNVERIFIABLE")); valid = False
+        elif g not in late or run_ids(r["reason"]) != {late_run[g]}:
+            errs.append((ln, "E-BR-VOID-UNVERIFIED"))
+    return errs, warns, late, valid
 
 
 def history_errors(repo, base, ref, now=None):
@@ -200,8 +205,14 @@ def main(argv=None):
         return 1
     rows, errs = branches.parse(new, branches.manifest_from_git(a.repo, a.ref))
     out = [f"line {ln}: {code}" for ln, code in errs]
-    t_errs, late = trust_errors(a.repo, rows, a.main_ref, load_runs(a.push_runs))
-    out += [f"line {ln}: {code}" for _, ln, code in t_errs]
+    warns, late, valid = [], set(), True
+    if a.main_ref:
+        if not branches.commit_exists(a.repo, a.main_ref):
+            print(f"E-BR-MAIN-REF {a.main_ref} 不是可读的提交"); return 1
+        t_errs, warns, late, valid = trust_check(a.repo, rows, a.main_ref, load_runs(a.push_runs))
+        out += [f"line {ln}: {code}" for ln, code in t_errs]
+    else:
+        valid = False   # 没有 main 引用就无法核对可信时间，计数不作数
     if a.base:
         try:
             branches.git_show(a.repo, a.base)
@@ -211,12 +222,15 @@ def main(argv=None):
             return 1
     for x in out:
         print(x)
-    # 检查失败时不输出看起来有效的计数
+    for ln, code in warns:   # 时间相关问题只作警告输出，不改变退出码
+        print(f"warn line {ln}: {code}")
+    # 检查失败、缺 main 引用或运行记录、时间未知时，不输出看起来有效的计数；有效时也只是预估，以人工核对为准
+    ok = not out and valid
     if a.count_gate:
-        n = branches.gate_count(rows, a.cutoff, a.domain, late) if not out else "INVALID"
-        print(f"gate_count {n} (cutoff {a.cutoff}, domain {a.domain or 'all'})")
+        n = branches.gate_count(rows, a.cutoff, a.domain, late) if ok else "INVALID"
+        print(f"gate_count {n} (cutoff {a.cutoff}, domain {a.domain or 'all'}; 预估，以人工核对为准)")
     if a.stats:
-        print("stats " + (json.dumps(branches.hit_stats(rows, late), ensure_ascii=False, sort_keys=True) if not out else "INVALID"))
+        print("stats " + (json.dumps(branches.hit_stats(rows, late), ensure_ascii=False, sort_keys=True) if ok else "INVALID"))
     print("PASS" if not out else f"FAIL ({len(out)})")
     return 0 if not out else 1
 

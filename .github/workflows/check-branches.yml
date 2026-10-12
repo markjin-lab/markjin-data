@@ -25,11 +25,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -eu
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/check-branches.yml/runs?event=push&branch=main&per_page=100" \
-            --jq '.workflow_runs[] | {id, head_sha, created_at}' > "$RUNNER_TEMP/runs.jsonl"
-          jq -s . "$RUNNER_TEMP/runs.jsonl" > "$RUNNER_TEMP/push-runs.json.tmp"
-          mv "$RUNNER_TEMP/push-runs.json.tmp" "$RUNNER_TEMP/push-runs.json"
+          set -u
+          # 有限次数重试（含限速）；三次都失败就不写文件，下一步计数输出 INVALID
+          for i in 1 2 3; do
+            if gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/check-branches.yml/runs?event=push&branch=main&per_page=100" \
+                 --jq '.workflow_runs[] | {id, head_sha, created_at}' > "$RUNNER_TEMP/runs.jsonl" 2> "$RUNNER_TEMP/runs.err"; then
+              jq -s . "$RUNNER_TEMP/runs.jsonl" > "$RUNNER_TEMP/push-runs.json" && exit 0
+            fi
+            echo "::warning::取 push 运行记录失败（第 $i 次）：$(head -c 300 "$RUNNER_TEMP/runs.err")"
+            sleep $((i * 20))
+          done
+          echo "::error::三次都取不到 push 运行记录（可能是 API 限速）；本次门禁计数和命中率输出 INVALID"
+          exit 1
       - name: check ledger
         env:
           EVENT: ${{ github.event_name }}

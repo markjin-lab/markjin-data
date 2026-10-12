@@ -715,11 +715,11 @@ class R6Trust(unittest.TestCase):
         c = self.commit(csv_of(r1, r2), "old")
         self.push(c, "2026-10-15T01:00:00Z", 901)
         p = self.cli()
-        self.assertIn("E-BR-LATE-UNHANDLED", p.stdout)
-        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("stats INVALID", p.stdout)
-        # 下一次无关 push 仍然持续报错（全量复核）
+        # r8：时间相关只给警告、不让 main 一直红；晚合并组自动排除
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("W-BR-LATE-UNHANDLED", p.stdout); self.assertIn("gate_count 0", p.stdout)
         (self.d / "x.txt").write_text("x"); self.g("add", "."); self.g("commit", "-qm", "unrelated")
-        self.assertIn("E-BR-LATE-UNHANDLED", self.cli().stdout)
+        self.assertIn("W-BR-LATE-UNHANDLED", self.cli().stdout)
         # 整组 VOID 留痕（reason 写运行 ID）后恢复通过，组被自动排除
         c3 = self.commit(csv_of(r1, r2, v(r1, "晚合并 run:901"), v(r2, "晚合并 run:901")), "void", "2026-10-16T00:00:00+08:00")
         self.push(c3, "2026-10-16T01:00:00Z", 902)
@@ -750,7 +750,8 @@ class R6Trust(unittest.TestCase):
         import importlib.util
         spec = importlib.util.spec_from_file_location("cb", self.script); cb = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cb)
-        errs, late = cb.trust_errors(str(self.d), rs, "HEAD", cb.load_runs(self._runs_file()))
+        errs, warns, late, valid = cb.trust_check(str(self.d), rs, "HEAD", cb.load_runs(self._runs_file()))
+        self.assertTrue(valid)
         self.assertEqual(late, {B.group_key(r1)})
         self.assertEqual(B.gate_count(rs, excluded=late), 0)
         # V7：按时合并的组在结果已知后（2027-06）作废 → 无效，统计不变
@@ -778,14 +779,14 @@ class R6Trust(unittest.TestCase):
         r1, r2, _ = self.grp()
         c = self.commit(csv_of(r1, r2), "x")
         p = self.cli(runs=False)
-        self.assertIn("E-BR-PUSH-TIME-UNAVAILABLE", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
+        self.assertIn("W-BR-PUSH-TIME-UNAVAILABLE", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
         (self.d / "bad.json").write_text("{")
-        p = subprocess.run(["python3", str(self.script), "--repo", str(self.d), "--main-ref", "HEAD",
+        p = subprocess.run(["python3", str(self.script), "--repo", str(self.d), "--main-ref", "HEAD", "--count-gate",
                             "--push-runs", str(self.d / "bad.json")], capture_output=True, text=True)
-        self.assertIn("E-BR-PUSH-TIME-UNAVAILABLE", p.stdout)
+        self.assertIn("W-BR-PUSH-TIME-UNAVAILABLE", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
         self.push("f" * 40, "2026-10-13T00:00:00Z", 1)   # 有运行列表但找不到这次 push
         p = self.cli()
-        self.assertIn("E-BR-PUSH-TIME-MISSING", p.stdout); self.assertIn("E-BR-LATE-UNHANDLED", p.stdout)
+        self.assertIn("W-BR-PUSH-TIME-UNKNOWN", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
         self.assertIsNotNone(c)
 
     def test_multi_commit_push_uses_descendant_run(self):
@@ -794,14 +795,74 @@ class R6Trust(unittest.TestCase):
         (self.d / "x.txt").write_text("x"); self.g("add", "."); self.g("commit", "-qm", "later")
         head = self.g("rev-parse", "HEAD").stdout.strip()
         self.push(head, "2026-10-13T00:10:00Z", 501)
-        ok = self.cli()
-        self.assertEqual(ok.returncode, 0, ok.stdout)
+        # r8：只认 head_sha 恰为该提交的运行；一次推多个提交时判“时间未知”，计数 INVALID，不顺延
+        p = self.cli()
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("W-BR-PUSH-TIME-UNKNOWN", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
 
     def test_not_on_main_yet(self):  # PR 阶段：组还没进 main，不做合并时间判定
         r1, r2, _ = self.grp()
         self.commit(csv_of(r1, r2), "pr rows")
         p = self.cli(main_ref="HEAD~1")
         self.assertEqual(p.returncode, 0, p.stdout); self.assertIn("gate_count 2", p.stdout)
+
+
+class R7Review(R6Trust):
+    """r7 反例：R1、R2、B2、R4、R5、run:<id> 精确匹配。"""
+
+    def test_R1_first_run_missing_later_run_present(self):
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "in time")   # 首次运行（10-13）已过期，只剩观测开始后的运行
+        (self.d / "x.txt").write_text("x"); self.g("add", "."); self.g("commit", "-qm", "later")
+        later = self.g("rev-parse", "HEAD").stdout.strip()
+        self.push(later, "2026-10-15T01:00:00Z", 999)
+        p = self.cli()
+        self.assertNotIn("LATE-UNHANDLED", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
+        self.commit(csv_of(r1, r2, v(r1, "late run:999"), v(r2, "late run:999")), "void")
+        p = self.cli()
+        self.assertNotIn("gate_count 0", p.stdout); self.assertIn("gate_count INVALID", p.stdout)
+        self.assertIsNotNone(c)
+
+    def test_R2_empty_run_list(self):
+        r1, r2, v = self.grp()
+        self.commit(csv_of(r1, r2), "x")
+        self.commit(csv_of(r1, r2, v(r1, "run:1"), v(r2, "run:1")), "void")
+        p = self.cli()   # 空列表
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("stats INVALID", p.stdout)
+
+    def test_B2_correction_pushed_after_start(self):  # 登记按时，观测开始后直推一条回填 registered_at 的登记更正
+        r1, r2, _ = self.grp()
+        c = self.commit(csv_of(r1, r2), "in time"); self.push(c, "2026-10-13T00:00:00Z", 1)
+        corr = rid(dict(r1, corrects_row_id=r1["row_id"], reason="改条件", interval_high="4.5",
+                        trigger_condition="x < 4.5", registered_at="2026-10-13T09:00:00+08:00"), 2)
+        corr2 = rid(dict(r2, corrects_row_id=r2["row_id"], reason="改条件", interval_low="4.5",
+                         trigger_condition="4.5 <= x", registered_at="2026-10-13T09:00:00+08:00"), 2)
+        c2 = self.commit(csv_of(r1, r2, corr, corr2), "late corr"); self.push(c2, "2026-10-14T05:00:00Z", 2)
+        p = self.cli()
+        self.assertIn("W-BR-LATE-UNHANDLED", p.stdout); self.assertIn("gate_count 0", p.stdout)
+
+    def test_R4_no_main_ref(self):
+        r1, r2, _ = self.grp()
+        c = self.commit(csv_of(r1, r2), "late"); self.push(c, "2026-10-15T00:00:00Z", 1)
+        p = subprocess.run(["python3", str(self.script), "--repo", str(self.d), "--count-gate", "--stats"],
+                           capture_output=True, text=True)
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("stats INVALID", p.stdout)
+
+    def test_R5_bad_main_ref(self):
+        p = self.cli(main_ref="no-such-ref")
+        self.assertEqual(p.returncode, 1); self.assertIn("E-BR-MAIN-REF", p.stdout)
+
+    def test_run_id_exact(self):
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "old"); self.push(c, "2026-10-15T01:00:00Z", 901)
+        self.commit(csv_of(r1, r2, v(r1, "晚合并 run:9010"), v(r2, "晚合并 run:9010")), "void")
+        self.assertIn("E-BR-VOID-UNVERIFIED", self.cli().stdout)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cb", self.script); cb = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cb)
+        self.assertEqual(cb.run_ids("x run:901。"), {"901"})
+        self.assertEqual(cb.run_ids("x run:9010"), {"9010"})
+        self.assertEqual(cb.run_ids("xrun:901"), set())
 
 
 if __name__ == "__main__":

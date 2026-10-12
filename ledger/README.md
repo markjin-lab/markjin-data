@@ -78,9 +78,11 @@
 1. **只追加，不改已有行。** 已提交的行一个字节都不改，也不删，新内容一律追加在文件末尾。
    - CI 用 `--base` **逐个提交**检查：base..head 之间的每个提交，台账都必须以其父提交的台账开头（push 取 before，PR 取 base 与 head 的 merge-base）。同一个 PR 里先加后改也会被拦下。例外是台账还没有任何数据行（只有表头）时，可以调整表头；第一条数据行进入 main 之后，这个例外永久失效。push 时 before 必须是 HEAD 的祖先（否则 E-BR-NOT-FAST-FORWARD），并直接比较 before 与 HEAD 两个版本的台账，确认只是追加；main 已在分支保护里禁止强推和删除；但还没有要求必须通过状态检查、也没有要求必须经 PR 合入，所以 main 上的台账检查目前是推送之后才运行、事后报警，失败的行在作废前可能已经落地。基线提交不存在或读不出时判失败，不放行。
    - **推送时间。** PR 上 CI 用运行时间（`--now`），只对本次 PR 新登记的行和登记更正行核对：与 registered_at 相差不超过 6 小时，并且早于 window_start 当日 00:00（SGT）。
-   - **可信合并时间。** 登记是否有效、作废能否成立，都只用同一个时间：这组行第一次进入 main 的那次 push 的时间。CI 先单独一步用 GITHUB_TOKEN 只读查询 GitHub Actions API，取 main 上 push 事件运行的 id、head_sha、created_at，写成 JSON 交给 `--push-runs`；脚本沿 main 的 first-parent 历史找到这组第一支登记行首次出现的提交，再取 head_sha 等于它（一次推多个提交时取以它为祖先）的最早一次 push 运行的 created_at。提交时间（committer date）一律不用。取不到运行列表时报 E-BR-PUSH-TIME-UNAVAILABLE；有列表但找不到对应运行时报 E-BR-PUSH-TIME-MISSING，并按晚合并从严处理。每次检查都全量复核所有已进 main 的组。
-   - **晚合并的组自动排除。** 可信时间不早于 window_start（或取不到）的组，由脚本自动排除出门禁计数和命中率，`--stats` 列出 excluded_late_groups；在用整组作废行留痕之前，每次检查都持续报 E-BR-LATE-UNHANDLED。
-   - **作废行（整组，只留痕）。** VOID 不再决定排不排除。组内每一支各追加一条：check_result 为 `VOID`，corrects_row_id 指向该支第一行，reason 必填并写明 `run:<运行 ID>`（即上面那次 push 运行），事先登记字段照抄，对账字段（含 checked_by、checked_at）全空（E-BR-VOID-FILLED）；全组作废行必须连续、在同一个提交里完成（E-BR-VOID-PARTIAL / E-BR-VOID-SPLIT）。组不是晚合并、或 reason 里的运行 ID 不对，报 E-BR-VOID-UNVERIFIED。作废后该组不能再追加对账行（E-BR-AFTER-VOID）。
+   - **可信合并时间。** 每一条登记行和登记更正行，都用它自己第一次进入 main 的那次 push 的时间核对，必须早于 window_start。这个时间取 head_sha 恰为该行首次出现的 main 提交（按 first-parent 历史）的最早一次 push 运行的 created_at；CI 先单独一步用 GITHUB_TOKEN 只读查询 Actions API（失败重试 3 次，含限速），写成 JSON 交给 `--push-runs`。提交时间（committer date）一律不用。查不到首次运行（一次 push 多个提交、运行记录超过 90 天保留期或超出 1000 条查询上限）时判“时间未知”（W-BR-PUSH-TIME-UNKNOWN），不拿后来的运行顺延；取不到运行列表时报 W-BR-PUSH-TIME-UNAVAILABLE。每次检查都全量复核。
+   - **时间相关只警告。** 上述时间检查在 main 上只输出 `warn` 行，不让 CI 一直红；但只要有时间未知、缺 `--main-ref` 或缺运行记录，`--count-gate` 和 `--stats` 就输出 INVALID。`--main-ref` 不是可读提交时报 E-BR-MAIN-REF。
+   - **晚合并的组自动排除。** 任一登记行或登记更正行的可信时间不早于 window_start，整组自动排除出门禁计数和命中率，`--stats` 列出 excluded_late_groups；在用整组作废行留痕之前持续警告 W-BR-LATE-UNHANDLED。
+   - **临时规则（时间凭证落地前）。** 登记 PR 和登记更正 PR 都必须在 window_start 之前合并，由审查与治理 bot 人工核对。脚本算出的门禁数只是预估，是否计入门禁以人工核对为准。时间凭证、凭证写回 main 等见跟进 Issue。
+   - **作废行（整组，只留痕）。** VOID 不再决定排不排除。组内每一支各追加一条：check_result 为 `VOID`，corrects_row_id 指向该支第一行，reason 必填并写明 `run:<运行 ID>`（即使该组判为晚合并的那次 push 运行；脚本先解析出完整 ID 再精确比较，run:9010 不等于 run:901），事先登记字段照抄，对账字段（含 checked_by、checked_at）全空（E-BR-VOID-FILLED）；全组作废行必须连续、在同一个提交里完成（E-BR-VOID-PARTIAL / E-BR-VOID-SPLIT）。组不是晚合并、或 reason 里的运行 ID 不对，报 E-BR-VOID-UNVERIFIED。作废后该组不能再追加对账行（E-BR-AFTER-VOID）。
    - **撤销作废。** 已经落地的无效 VOID 只能追加 `VOID_REVOKED` 行撤销：corrects_row_id 指向那条 VOID，reason 必填，事先登记字段照抄，对账字段全空；每条 VOID 只能撤销一次。撤销后的 VOID 不再生效，CI 可恢复通过。
    - **检查失败时**，`--count-gate` 和 `--stats` 输出 `INVALID`，不给出看起来有效的计数。
 2. **登记行。** check_result 必须是 `PENDING`，quarter_readings 为空；registered_at 的日期等于 publish_date，并早于观测开始（window_start 至少是发布次日）；lu_basis_date 和 lu_evidence 里每个读数的 vintage 都不得晚于 registered_at。
@@ -105,7 +107,10 @@
 python3 scripts/check-branches.py --repo . --ref HEAD                                # 格式与登记规则
 python3 scripts/check-branches.py --repo . --ref HEAD --base origin/main             # 另逐提交查只追加、组成员固定
 python3 scripts/check-branches.py --repo . --ref HEAD --base B --now <+08:00 时间>    # 另查推送时间
-python3 scripts/check-branches.py --repo . --ref HEAD --count-gate [--domain ai] --stats  # 门禁计数与命中率
+python3 scripts/check-branches.py --repo . --ref HEAD --main-ref origin/main --push-runs runs.json --count-gate [--domain ai] --stats
+# 门禁计数与命中率（预估，以人工核对为准）；缺 --main-ref 或运行记录时输出 INVALID。runs.json 取法：
+# gh api --paginate "repos/<owner>/<repo>/actions/workflows/check-branches.yml/runs?event=push&branch=main&per_page=100" \
+#   --jq '.workflow_runs[] | {id, head_sha, created_at}' | jq -s . > runs.json
 ```
 
 脚本只输出行号、提交短 SHA、错误码和计数。它会核对区间型结论与 actual_value 是否一致，但不从 raw 复算取值。测试在 `tests/test_branches.py`。
