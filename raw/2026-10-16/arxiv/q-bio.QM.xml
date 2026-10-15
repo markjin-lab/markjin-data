@@ -1,0 +1,1498 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/eWjM0Nw6rNKOrrRmzs18Wwh+NcA</id>
+  <title>arXiv Query: search_query=cat:q-bio.QM&amp;id_list=&amp;start=0&amp;max_results=50</title>
+  <updated>2026-10-15T21:02:14Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=cat:q-bio.QM&amp;start=0&amp;max_results=50&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>50</opensearch:itemsPerPage>
+  <opensearch:totalResults>13726</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2610.20288v1</id>
+    <title>Predicting Unseen Scientific Interactions: Conditional Flow Models Hallucinate Non-Additive Effects</title>
+    <updated>2026-10-14T14:42:12Z</updated>
+    <link href="https://arxiv.org/abs/2610.20288v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.20288v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Conditional generative models are increasingly used for scientific prediction beyond the direct training support. Yet scientific questions often concern whether one intervention changes the effect of another. Such interactions can be of primary interest while explaining little of the total variation, allowing models to appear accurate overall without recovering the relevant scientific effect. It remains unclear how these models learn interactions and when these successfully extrapolate to unseen conditions. We therefore study interaction recovery in flow-matching models using a physiological time-series simulator, drug dose-response data, combinatorial cell perturbations, and molecular conformer generations, where we separate recovery from hallucinated interaction structure. In the controlled setting, individual effects are learned much earlier than interactions and models hallucinate interactions where none exist. Across settings, we find qualitatively different generalization problems, with successful prediction depending on whether condition structure continues from observed to held-out targets. When it does, interactions are recoverable. If not, models can generate plausible responses while missing the interaction. We furthermore find that hallucinations increase as targets become less identifiable, and that successful interaction recovery in output space can fail under nonlinear readouts. Finally, we show that aggregate fidelity metrics can conceal whether models learn and extrapolate interactions.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-14T14:42:12Z</published>
+    <arxiv:comment>Accepted as an oral at NeurIPS 2026 Workshop: AI Data Readiness for Scientific Discovery (AIDaR). Code: https://github.com/SamGijsen/interaction-flows</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Sam Gijsen</name>
+    </author>
+    <author>
+      <name>Moritz Seiler</name>
+    </author>
+    <author>
+      <name>Kerstin Ritter</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.20074v1</id>
+    <title>Feasibility of a Patient-Specific Digital Twin for Ventriculoperitoneal Shunt Trajectory Planning</title>
+    <updated>2026-10-14T12:12:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.20074v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.20074v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Catheter obstruction is the commonest cause of shunt failure; freehand insertion at Keen's point leaves the tip free in cerebrospinal fluid in only one case in ten. We built a digital twin that reconstructs skull, scalp, ear and ventricles from preoperative CT by deterministic geometry, searches every entry around Keen's point for the perpendicular trajectory with the longest intraventricular length under safety constraints, and returns the plan as two ruler measurements from the ear and two depths. Executed freehand in 11 consecutive adults (IDEAL Stage 2a), it achieved Hayhurst Grade 1 placement in 10 of 11 against 22 of 213 historically (p = 9 x 10^-9), median entry and angular deviations 2.5 mm and 5.9 degrees, 1.4 cm more intraventricular catheter than Keen's point, and no intraoperative complication. The technique was unchanged; the gain came from choosing entry and depth per patient. Whether it lowers revision is the next stage's hypothesis.</summary>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-14T12:12:56Z</published>
+    <arxiv:comment>29 pages, 8 figures, 2 tables; includes Supplementary Information</arxiv:comment>
+    <arxiv:primary_category term="cs.CV"/>
+    <author>
+      <name>Kritsanavis Chongsrid</name>
+    </author>
+    <author>
+      <name>Vich Yindeedej</name>
+    </author>
+    <author>
+      <name>Supaporn Konmun</name>
+    </author>
+    <author>
+      <name>Xulei Yang</name>
+    </author>
+    <author>
+      <name>Si Yong Yeo</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.19888v1</id>
+    <title>Maximum likelihood, neural networks and posterior mean for inferring fractional Brownian motion parameters</title>
+    <updated>2026-10-14T09:47:05Z</updated>
+    <link href="https://arxiv.org/abs/2610.19888v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.19888v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Fractional Brownian motion (fBM) is a model of anomalous diffusion parameterised by a Hurst exponent $H \in (0,1)$ and a generalised diffusion coefficient $D_H &gt; 0$. We jointly estimate $H$ and $D_H$ using maximum likelihood (MLE) from density measurements with Poisson counting noise and single-particle trajectory with Gaussian localisation error. We show that one density measurement in time cannot infer both $H$ and $D_H$ and that several time points are needed, which matters most for inference precision. For trajectories, we show that a neural network trained with a squared error loss approximates the posterior mean of $H$, which can be computed exactly at negligible cost. Paired with the profile-likelihood estimate of $D_H$, the posterior mean has the lowest root mean squared error in both $H$ and $D_H$, except near $H=0$ and $H=1$ where MLE estimates $H$ better. In vesicle trajectories from two cell types, $H$ and $D_H$ form a continuum rather than distinct modes of motion. The posterior probability that each window within a track is subdiffusive or superdiffusive shows that $26\%$ of MRC5 fibroblast and $21\%$ of HeLa vesicle trajectories contain both subdiffusive and superdiffusive windows, against $2\%$ and $7\%$ expected from estimation uncertainty alone. Intracellular cargoes therefore switch between subdiffusion and superdiffusion over time rather than forming populations with fixed $H$.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cond-mat.stat-mech" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="physics.bio-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-14T09:47:05Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Daniel S. Han</name>
+    </author>
+    <author>
+      <name>Vaishnavi Ananthanarayanan</name>
+    </author>
+    <author>
+      <name>Matthew J. Simpson</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.19738v1</id>
+    <title>ProtModernBERT: Compute-Efficient Protein Language Modeling</title>
+    <updated>2026-10-14T07:59:49Z</updated>
+    <link href="https://arxiv.org/abs/2610.19738v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.19738v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large protein language models provide a powerful framework for learning sequence-function relationships and guiding experimental design. However, architectural improvements are underexplored, especially in low-compute regimes of relevance for resource-constrained research laboratories. We show that the training cost for encoder-only transformer architectures can be reduced by leveraging modern architectural refinements, offering an encouraging performance / compute-efficiency trade-off. We introduce ProtModernBERT, a modernized BERT-style model pre-trained on amino acid sequences, and compare it with ProtBert, Amplify, and ESM2 across a set of supervised structural tasks -encompassing secondary structure prediction, disorder prediction, and subcellular localization- and ProteinGym's zero-shot functional benchmark. We find that ProtModernBERT matches or closely tracks the performance of Amplify-120M and ProtBert with up to 80-90\% reduction in pre-training FLOPs, and narrows the gap to ESM2 when controlling for pre-training. Our analysis using a cluster-based validation protocol for hyperparameter selection and randomly initialized models disentangles the contributions of architecture and data, showing that modern components provide stronger inductive biases that are more consequential than parameter count in low-compute regimes.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-14T07:59:49Z</published>
+    <arxiv:comment>12 pages, 5 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Alberto Martínez</name>
+    </author>
+    <author>
+      <name>Natalia Flechas Manrique</name>
+    </author>
+    <author>
+      <name>Llorenç Espinosa-Portalés</name>
+    </author>
+    <author>
+      <name>Luc Andrea</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.19507v1</id>
+    <title>Structure Before Intelligence: Gating What Agentic Scientific Workflows Release</title>
+    <updated>2026-10-14T03:25:50Z</updated>
+    <link href="https://arxiv.org/abs/2610.19507v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.19507v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>An agentic scientific workflow can run to completion and still release wrong results: a silent numerical error, a stale input, or a defect in a shared upstream step can contaminate several outputs while a sibling branch stays correct. We treat trust in such results as a release decision. A harness around the workflow's directed acyclic graph (DAG) decides which outputs may be used: it enforces mandatory checks, contains failures to the affected branch, recomputes from tracked versions, adds validators, and releases a result only if a risk model estimates its probability of being invalid as low. Language-model agents work inside the harness, choosing corrective actions and reviewing releases, but cannot override it. On 60 held-out paired instances of two workflows with injected faults, we switched components on and off. Each supplied a different property. Containment and recovery raised the number of correct results. Validation supplied safety: fixed rules without validation released 37 invalid results, while validating every candidate released none. Risk estimation supplied efficiency, matching that safety with 31% fewer validators at somewhat lower yield, although better targeting than random validation was not shown. Lineage evidence helped on one workflow. The language model added no measurable benefit: whether invalid results escaped depended on the harness, not the model. This proof of concept points to a practical path: placing agents inside explicit release-control structure can keep released scientific results trustworthy, and it gives more capable agents a measurable baseline to improve on.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-14T03:25:50Z</published>
+    <arxiv:comment>21 pages: 10-page main paper and 11-page supplement; 2 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Ashish Acharya</name>
+    </author>
+    <author>
+      <name>Aman Al Amin</name>
+    </author>
+    <author>
+      <name>Hong Qin</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.19237v1</id>
+    <title>An Open-Source Web-Based Viewer for Disseminating Image-Derived Models</title>
+    <updated>2026-10-13T21:54:54Z</updated>
+    <link href="https://arxiv.org/abs/2610.19237v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.19237v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Patient-specific 3-dimensional (3D) models are increasingly central to planning surgery and catheter-based intervention in children with congenital heart disease (CHD), whose anatomy is often atypical and variable. These models inform care only when the surgeons and interventional cardiologists who make treatment decisions can rotate, crop, and measure them directly. Desktop modeling applications require local installation, capable hardware, and training. Commercial web-based viewers are portable but closed, and, in our experience, cannot display volume rendering, time-resolved (e.g., 4-dimensional) data, or the custom workflows centers build for CHD. Because CHD populations are small and heterogeneous, such workflows are unlikely to be prioritized commercially, and end users have no means to add them. To address these limitations, we developed the SlicerHeart Viewer, an open-source module that presents a simplified interface to a complete 3D Slicer/SlicerHeart session running on a server. Clinicians access models created by clinical modeling services from any device through a web browser. Because 3D Slicer runs underneath, volume rendering, time-resolved data, and any SlicerHeart workflow, including those developed for CHD, are available without modification. The module is independent of the hosting environment; we chose internal servers behind institutional single sign-on, and a cloud-hosted option is in development. Over one year at a single pediatric center, nearly all of 82 modeled cases were shared through the Viewer with clinicians from five specialties, with cases loading in 5 to 10 seconds. The approach is not specific to CHD and is deployable at other centers.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T21:54:54Z</published>
+    <arxiv:comment>First two authors contributed equally</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Christian Herz</name>
+    </author>
+    <author>
+      <name>Kyle Sunderland</name>
+    </author>
+    <author>
+      <name>Matthew Daemer</name>
+    </author>
+    <author>
+      <name>Julia Iacovella</name>
+    </author>
+    <author>
+      <name>Sehdev Pressley</name>
+    </author>
+    <author>
+      <name>Ashley Koluda</name>
+    </author>
+    <author>
+      <name>Csaba Pinter</name>
+    </author>
+    <author>
+      <name>Kevin Zuber</name>
+    </author>
+    <author>
+      <name>John Daniels</name>
+    </author>
+    <author>
+      <name>Allen Ladd</name>
+    </author>
+    <author>
+      <name>Mali Hetmaniuk</name>
+    </author>
+    <author>
+      <name>Kevin K. Whitehead</name>
+    </author>
+    <author>
+      <name>Andras Lasso</name>
+    </author>
+    <author>
+      <name>Matthew A. Jolley</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.19011v1</id>
+    <title>PMO-Dock: Benchmarking Docking, Specificity, and Generalization in Molecular Optimization</title>
+    <updated>2026-10-13T18:07:37Z</updated>
+    <link href="https://arxiv.org/abs/2610.19011v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.19011v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The Practical Molecular Optimization (PMO) benchmark standardized evaluation in molecular optimization, but it is built on simple property-based oracles that do not capture structure-based drug design. As the field has moved to docking-based objectives, evaluation practice has become unstandardized, and different methods report results on different docking tasks, often without a shared protocol for fair comparison or sample-efficiency constraints. To address this, we introduce Practical Molecular Optimization for Docking (PMO-Dock), a benchmark and protocol for docking-based optimization consisting of 25 tasks covering hit generation, lead optimization, and a new specificity task requiring strong on-target binding while penalizing off-target interactions. The protocol separates model development from final evaluation: validation tasks are used for hyperparameter tuning, and test tasks are held out for final evaluation and are not used during development. Evaluation on the test tasks is done under a strict oracle budget to reflect realistic drug-discovery settings. We benchmark four diverse high-performing methods spanning different optimization paradigms, Saturn (reinforcement learning), GenMol (discrete diffusion), Genetic-guided GFlowNet, and ChemLlama (LLM-based evolutionary search). Our results show no universally best method across tasks, additional analyses of hyperparameter transfer (cross-task and cross-category) and sensitivity show that transfer is often limited and varies by method, motivating method-dependent selection strategies. This benchmark provides a concrete standard for evaluating generalization to unseen tasks and sample efficiency under a limited test-time oracle budget.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T18:07:37Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Gor Simonyan</name>
+    </author>
+    <author>
+      <name>Tatevik Abrahamyan</name>
+    </author>
+    <author>
+      <name>Narek Abelyan</name>
+    </author>
+    <author>
+      <name>Tigran Fahradyan</name>
+    </author>
+    <author>
+      <name>Hrant Khachatrian</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.18851v1</id>
+    <title>MFG: Multi-turn Feedback Guided Molecular Optimization</title>
+    <updated>2026-10-13T17:58:41Z</updated>
+    <link href="https://arxiv.org/abs/2610.18851v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.18851v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Multi-objective molecular optimization is a critical process in drug discovery that aims to modify a given molecule to simultaneously improve multiple properties while maintaining a similar overall structure. This process often requires iterative modifications guided by computational or experimental feedback. Recent large language model (LLM)-based methods have begun to explore this iterative approach; however, these methods are not explicitly trained to leverage such feedback, while existing approaches primarily focus on single-turn molecular optimization. To address this gap, we introduce Multi-turn Feedback Guided (MFG) molecular optimization, a reinforcement learning framework that trains an LLM to progressively optimize molecules using feedback from previous turns. MFG introduces a feedback vector capturing both property improvements and source molecule similarity, alongside a feedback-aligned reward function that promotes progressive improvement across turns. We apply MFG over $\text{GeLLM}^{3}\text{O}$, a state-of-the-art LLM model for multi-objective molecular optimization, evaluate $\text{GeLLM}^{3}\text{O-MFG}$ on ten multi-objective molecular optimization tasks. The results demonstrate that $\text{GeLLM}^{3}\text{O-MFG}$ achieves the highest average similarity-constrained success rate ($81.50%$), outperforming the base model $\text{GeLLM}^{3}\text{O}$ ($70.81%$).</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T17:58:41Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Trieu Nguyen</name>
+    </author>
+    <author>
+      <name>Frazier N. Baker</name>
+    </author>
+    <author>
+      <name>Ruoxi Gao</name>
+    </author>
+    <author>
+      <name>Daniel Adu-Ampratwum</name>
+    </author>
+    <author>
+      <name>Xia Ning</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.18794v1</id>
+    <title>Brain Age Gap Progression in Individuals at Risk for Neurodegeneration</title>
+    <updated>2026-10-13T17:40:34Z</updated>
+    <link href="https://arxiv.org/abs/2610.18794v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.18794v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Neuroimaging is a widely used modality for characterizing neurodegeneration in various health conditions. Brain age gap has emerged as a promising biomarker for monitoring brain health from neuroimaging data using machine learning algorithms. Recent studies have leveraged coVariance neural networks (VNN)-driven pipelines based on the advancements in graph signal processing for relatively transparent construction of brain age gap from neuroimaging data. In this paper, we focus on a longitudinal study of VNN-based brain age gap in conjunction with Alzheimer's Progression Score (APS) in individuals that are at a higher risk of neurodegeneration due to family history of Alzheimer's disease. APS is a multimodal marker of disease progression. The longitudinal analysis of APS and VNN-derived brain age gap metrics revealed that a higher risk of disease progression at baseline predicted a larger rate of increase in brain age gap in follow-up visits. Thus, our findings revealed potential stratification in the brain age gap modulated by clinical/biological risks of AD in the at-risk population.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T17:40:34Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Jason Scheffel</name>
+    </author>
+    <author>
+      <name>Saurabh Sihag</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.18438v1</id>
+    <title>STAMP as a topology-aware molecular language for fragment-level learning and editing</title>
+    <updated>2026-10-13T14:13:38Z</updated>
+    <link href="https://arxiv.org/abs/2610.18438v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.18438v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Molecular fragments provide chemically meaningful units, but existing molecular languages rarely make their locations and connections explicit for editing. Here we introduce STAMP (Sequential Tree Attachment-based Motif-Preserving representation), a topology-aware molecular language that connects fragment-level representation learning with precise structural editing. STAMP separately encodes motif identity, attachment sites and tree topology, making fragments reusable across contexts and subtrees directly accessible. Learned representations capture motif similarity and recurring transformations, and lower activity-cliff prediction error on 23 of 30 targets versus a matched SMILES encoder. Compatible subtree operations support scaffold-preserving optimization, ranking first among six methods on 15 of 23 benchmark objectives. A deterministic compiler enables frozen language models to act on indexed fragments, improving molecular editing, optimization, transformation transfer and change identification by 9 to 56 percentage points over plain SMILES. Together, these results establish an executable molecular language in which learned chemical units remain directly operable during design.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T14:13:38Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Yuxuan Ren</name>
+    </author>
+    <author>
+      <name>Jiatong Li</name>
+    </author>
+    <author>
+      <name>Ziqiao Meng</name>
+    </author>
+    <author>
+      <name>Yatao Bian</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.18244v1</id>
+    <title>An efficient and flexible generalization of transit compartment models for delayed biological processes</title>
+    <updated>2026-10-13T12:09:51Z</updated>
+    <link href="https://arxiv.org/abs/2610.18244v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.18244v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Transit compartment models are widely used in pharmacokinetics/pharmacodynamics to represent delayed biological processes such as absorption, maturation, cellular proliferation, and treatment-induced toxicity. This transit compartment formulation imposes an artificial relationship between the mean and variance of the delay distribution, as the number of transit compartment must be integer-valued number of transit compartments. Consequently, estimating the number of compartments from experimental data leads to mixed-integer optimization problems that artificially constrain model dynamics and bias parameter inference. However, these transit compartment models are mathematically equivalent to distributed delay differential equations with Erlang delay kernels. We leverage a hypoexponential generalization of these distributed delay differential equations that preserves the familiar ordinary differential equation structure while allowing the mean and variance of the delay distribution to be estimated directly as real-valued parameters. This approach does not increase the number of inferred parameters and can be immediately implemented as a straightforward modification of existing transit compartment models. We demonstrate the approach using models of viral eclipse phases, lymphocyte proliferation, and chemotherapy-induced neutropenia. Across these examples, the hypoexponential formulation provides comparable or improved fits relative to Erlang transit models and substantially reduces computational cost by avoiding grid search over compartment numbers. This framework provides a practical approach to estimate biologically meaningful delay distributions in quantitative systems pharmacology (QSP) models.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T12:09:51Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Giulia Belluccini</name>
+    </author>
+    <author>
+      <name>Christiaan H. van Dorp</name>
+    </author>
+    <author>
+      <name>Linjie Huang</name>
+    </author>
+    <author>
+      <name>Jodie A. Cochrane</name>
+    </author>
+    <author>
+      <name>Sara Hamis</name>
+    </author>
+    <author>
+      <name>Tyler Cassidy</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.17718v1</id>
+    <title>ECG-RSI: Recursive Self-Improvement through Targeted Electrocardiogram Waveform Evolution</title>
+    <updated>2026-10-13T04:50:27Z</updated>
+    <link href="https://arxiv.org/abs/2610.17718v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.17718v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Electrocardiogram (ECG) models need supervision that targets evolving weaknesses and remains faithful to waveform evidence. We introduce ECG-RSI, a recursive self-improvement framework combining verified waveform synthesis with feedback-guided intervention search. Signal remeasurement verifies waveform edits; construction errors guide generator repair, while learner errors motivate interventions compared on a separate selection set. Across seven benchmarks, three rounds raise Qwen3.5-35B-A3B's mean question-answering accuracy from 34.57% to 56.04% and mean classification F1 from 24.27 to 34.03. Across the retained trajectory, the preferred supervision shifts from direct reinforcement to confusion-focused contrasts. Continued feedback correction yields diminishing external gains. These results motivate separating error diagnosis from intervention selection and checking whether gains on the feedback set transfer to independent benchmarks.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="eess.SP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T04:50:27Z</published>
+    <arxiv:comment>Project: https://pork-pay.github.io/ECG-RSI/; GitHub: https://github.com/pork-pay/ECG-RSI</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Xiaoliang Wang</name>
+    </author>
+    <author>
+      <name>Zhuo Chen</name>
+    </author>
+    <author>
+      <name>Chuanyang Zheng</name>
+    </author>
+    <author>
+      <name>Jiangwei Lao</name>
+    </author>
+    <author>
+      <name>Quanbin Wang</name>
+    </author>
+    <author>
+      <name>Honglin Lin</name>
+    </author>
+    <author>
+      <name>Jiajia Liu</name>
+    </author>
+    <author>
+      <name>Zhihong Lu</name>
+    </author>
+    <author>
+      <name>Hao Jin</name>
+    </author>
+    <author>
+      <name>Jian Wang</name>
+    </author>
+    <author>
+      <name>Lijun Wu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.17690v1</id>
+    <title>MedEvo: Medical Reasoning Evolution through Knowledge Navigation</title>
+    <updated>2026-10-13T04:11:26Z</updated>
+    <link href="https://arxiv.org/abs/2610.17690v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.17690v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Medical multimodal reasoning models are typically trained on teacher-generated rationales, discarding the valid reasoning in students' own failed trajectories, while general-domain correction methods offer little guidance for errors in image reading, anatomical context, or differential diagnosis. We propose MedEvo, which uses medical knowledge, namely a tag taxonomy and error-type diagnosis, to navigate both trajectory repair and data selection. For each failed rollout, a gold-blind auditor locates the first consequential error and provides a minimal, answer-free hint; the same student retains the valid prefix and regenerates the erroneous suffix. After each round, MedEvo identifies capability gaps across medical tags on a held-out feedback set and prioritizes related questions for new rollouts and repairs. With supervised fine-tuning (SFT) alone, MedEvo raises Qwen3.5-9B mean accuracy across seven benchmarks from 65.57% to 69.12% (47.40% to 54.50% on the multimodal track of MedXpertQA (MedXpertQA-MM)), surpassing teacher-distillation SFT (66.93%). It also raises Qwen3.5-35B and Qwen3.5-397B mean accuracy from 67.91% to 73.04% and from 71.83% to 74.95%, respectively. Our analyses show that failed trajectories contain reasoning worth preserving, that repair success does not imply learning value, and that independent feedback is key to sustained improvement.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-13T04:11:26Z</published>
+    <arxiv:comment>Project: https://pork-pay.github.io/MedEvo/; GitHub: https://github.com/pork-pay/MedEvo</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Xiaoliang Wang</name>
+    </author>
+    <author>
+      <name>Zhuo Chen</name>
+    </author>
+    <author>
+      <name>Chuanyang Zheng</name>
+    </author>
+    <author>
+      <name>Quanbin Wang</name>
+    </author>
+    <author>
+      <name>Jiangwei Lao</name>
+    </author>
+    <author>
+      <name>Yingao Liu</name>
+    </author>
+    <author>
+      <name>Jiajia Liu</name>
+    </author>
+    <author>
+      <name>Jinming Cao</name>
+    </author>
+    <author>
+      <name>Honglin Lin</name>
+    </author>
+    <author>
+      <name>Zhihong Lu</name>
+    </author>
+    <author>
+      <name>Hao Jin</name>
+    </author>
+    <author>
+      <name>Jian Wang</name>
+    </author>
+    <author>
+      <name>Lijun Wu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.18920v1</id>
+    <title>Physiology-Informed Sparse Identification of Dynamic Crop Models</title>
+    <updated>2026-10-12T18:44:58Z</updated>
+    <link href="https://arxiv.org/abs/2610.18920v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.18920v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Developing resilient crops requires models that accurately capture how plant growth dynamics emerge from the continuous interplay between genetic and environmental factors. While high-throughput phenotyping platforms generate data for dynamic growth models, current modelling approaches show limitations: process-based crop growth models (CGMs) capture environmental dynamics but are difficult to scale across many genotypes because they require calibration of many parameters, while quantitative genetic models allow modelling many genotypes but often summarise time-varying environments using static covariates. To address this gap, we propose a data-driven framework to identify reduced systems of ordinary differential equations (ODEs) describing crop growth dynamics as functions of environmental variables and a controllable number of genotype-specific coefficients (GSCs). Using the Sparse Identification of Nonlinear Dynamics (SINDy) method, we infer model structure directly from data via sparse regression on a physiologically informed library of candidate functions. In this framework, GSCs parameterise cultivar-specific differences in response to environmental conditions. The resulting models are linear in these GSCs, making them compatible with mixed-model and genomic prediction approaches. We evaluate the approach on an in silico dataset generated with WOFOST for five potato cultivars across twelve growing seasons. Our identified ODEs generalise to held-out years and achieve $R^2 &gt; 0.9$ for end-of-season yield prediction across held-out years when compared to full-scale WOFOST simulations. These results provide a proof of concept for SINDy-based identification of parsimonious dynamic crop models from longitudinal crop-growth data.</summary>
+    <category term="q-bio.PE" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.DS" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-12T18:44:58Z</published>
+    <arxiv:primary_category term="q-bio.PE"/>
+    <author>
+      <name>Corné Verburg</name>
+    </author>
+    <author>
+      <name>Alexander Heinlein</name>
+    </author>
+    <author>
+      <name>Fred van Eeuwijk</name>
+    </author>
+    <author>
+      <name>Neil Budko</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.17138v1</id>
+    <title>Probability generating functions for epidemiological time series</title>
+    <updated>2026-10-12T17:23:31Z</updated>
+    <link href="https://arxiv.org/abs/2610.17138v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.17138v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Probability generating functions (PGFs) are a fundamental tool in mathematical epidemiology to characterize the stochastic evolution of epidemics via branching process theory. However, they are rarely used as operational tools in real-time during an outbreak, the main barrier being a lack of a systematic, computational methodology to describe epidemiological time series, such as cases or hospital admissions over time. Here, we introduce a general and computationally efficient framework for outbreak analytics based on PGFs. We first develop a method to encode joint distributions of incidences and their noisy measurements by realistic surveillance systems. Then, by transforming PGFs to cumulant generating functions (CGFs), we enable efficient evaluation of these joint distributions. We demonstrate the practicality of our approach for Bayesian inference and short-term forecasts, offering a significant computational advantage over simulation-based methods. Altogether, our framework operationalizes generating functions and paves the way for their broader adoption in computational epidemiology.</summary>
+    <category term="q-bio.PE" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-12T17:23:31Z</published>
+    <arxiv:comment>32 pages, 9 figures</arxiv:comment>
+    <arxiv:primary_category term="q-bio.PE"/>
+    <author>
+      <name>Mariah C. Boudreau</name>
+    </author>
+    <author>
+      <name>Guillaume St-Onge</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.16236v1</id>
+    <title>From Simulated Fluids to Living Tissue: Zero-Shot Foundation Model Transfer to Perturbed Embryos</title>
+    <updated>2026-10-12T06:10:51Z</updated>
+    <link href="https://arxiv.org/abs/2610.16236v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.16236v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Morphogenesis is driven by the interplay of genetic regulation and tissue mechanics. In vivo video data is limited, particularly under genetic mutations and environmental perturbations, making generalization beyond the most representative conditions in the dataset challenging. However, at tissue scales, the dynamics of Drosophila can be described as a continuum flow, motivating the usage of representations learned across other physical systems as priors for developmental dynamics.
+  We investigate finetuning Walrus, a Continuum Dynamics Foundation Model pretrained across a broad set of simulated continuous systems, on tissue velocity fields from only 12 wild-type Drosophila blastoderm videos. We evaluate autoregressive prediction both in-distribution and zero-shot under unseen temperature and genetic perturbations. Zero-shot refers to evaluation on perturbation conditions never seen during wild-type finetuning, without any additional training. In-distribution, a Fourier Neural Operator model trained from scratch achieves best performance on VRMSE. However, Walrus (CRPS) is the strongest model under the most severe distribution shift of unseen samples of mutated embryos and temperature conditions. Interestingly, predictions capture the shape of the mean surface tissue velocity trajectory and its separation between 17°C and 27°C, including the timing of the peak at Germ Band Extension onset, a biologically meaningful milestone of embryo development.
+  Our results provide preliminary support that representations learned from different dynamical systems can transfer to experimental morphogenesis in developmental regimes, provided they admit a continuum description. More broadly, our results motivate further study of physics foundation models as a new complementary tool for the simulation of morphogenesis in low-data regimes.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="physics.bio-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-12T06:10:51Z</published>
+    <arxiv:comment>19 pages, 13 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Louisa Cornelis</name>
+    </author>
+    <author>
+      <name>Haewon Jeong</name>
+    </author>
+    <author>
+      <name>Irina Espejo</name>
+    </author>
+    <author>
+      <name>Payel Mukhopadhyay</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.16232v1</id>
+    <title>AutoNovo: Agentic Program Search Discovers Transferable Nucleic Acid Design Algorithms</title>
+    <updated>2026-10-12T06:08:54Z</updated>
+    <link href="https://arxiv.org/abs/2610.16232v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.16232v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In-silico optimization of nucleic acids relies on predictive oracles that imperfectly capture biological function, so sequences optimized against one model may exploit model-specific artifacts and fail to generalize to independent models. Recent studies have shown that not all designers generalize equally well to independent models. In this work, we use agentic program search to iteratively propose, execute, evaluate, and revise code for nucleic-acid designers. We describe the successful strategies used to prompt the search. AutoNovo designers achieved the best observed mean among the evaluated methods on 3/3 DNA-design tasks in terms of in-silico performance, and 6/6 transfer tasks in terms of independent models. The designers come from a family of discovered nucleic acid designers rather than a single universal best designer. We plan to release the resulting designers. These results are the first steps in creating nucleic acid designers that maximize cross-model generalization, and thus improving the odds that in-silico designed sequences reflect real biology.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-12T06:08:54Z</published>
+    <arxiv:comment>40th Conference on Neural Information Processing Systems (NeurIPS 2026). Workshop: Agentic AI for Biological Discovery</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Joel Shor</name>
+    </author>
+    <author>
+      <name>Subhashini Venugopalan</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.15229v1</id>
+    <title>Data-Driven Discovery of a Hyperelastic Strain-Energy Function for Veins Using Constitutive Artificial Neural Networks</title>
+    <updated>2026-10-10T23:41:31Z</updated>
+    <link href="https://arxiv.org/abs/2610.15229v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.15229v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Veins are commonly subjected to altered mechanical loading in clinical settings such as vein grafting, arteriovenous fistula creation, and tissue-engineered vascular graft implantation, making accurate constitutive models of venous tissue clinically important. Venous mechanical behavior differs characteristically from that of arteries, and existing constitutive models struggle to simultaneously fit the circumferential and axial stress-stretch responses across vein types. Here, we present a constitutive artificial neural network (CANN) framework that discovers a compact, interpretable hyperelastic constitutive model from biaxial mechanical data across three types of veins (saphenous, jugular, and inferior vena cava). The framework incorporates an expanded candidate function library with structurally motivated terms representing progressive fiber recruitment and fiber-family interactions. Sobol sensitivity analysis, correlation-based pruning, and response-level family collapse were then used to reduce the discovered basis to a compact strain-energy density function (SEF). The resulting eight-term SEF achieved significantly higher fitting accuracy than established venous constitutive models across all three types of veins $(R^2&gt;0.9, p&lt;0.01)$. These findings establish a framework for constitutive model discovery in veins and propose a candidate constitutive form for further validation across larger, independent cohorts.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="physics.bio-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="physics.comp-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-10T23:41:31Z</published>
+    <arxiv:comment>26 pages, includes supplementary materials</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Marisa Bazzi</name>
+    </author>
+    <author>
+      <name>Divya Adil</name>
+    </author>
+    <author>
+      <name>Gavin Mays</name>
+    </author>
+    <author>
+      <name>Ellen Kuhl</name>
+    </author>
+    <author>
+      <name>Christopher K. Breuer</name>
+    </author>
+    <author>
+      <name>Jay D. Humphrey</name>
+    </author>
+    <author>
+      <name>Alison L. Marsden</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.15182v1</id>
+    <title>Homogeneity and heterogeneity of functional element composition of genome units across human and seven model organisms</title>
+    <updated>2026-10-10T21:03:16Z</updated>
+    <link href="https://arxiv.org/abs/2610.15182v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.15182v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Is a chromosome a miniature of its genome, with the same mix of functional elements as the whole? We ask this of eight annotated genomes: human, mouse, zebrafish, Caenorhabditis elegans, Drosophila melanogaster, Saccharomyces cerevisiae, Arabidopsis thaliana and maize. Elements are classified in a four-level hierarchy, from five major classes (protein-coding genes, ncRNA genes, transposable elements (TEs), pseudogenes, IG/TR gene segments) down to finer classes. Units are chromosomes or arms, cytogenetic bands, equal cuts of each chromosome, and random segments of matching size. We compare each unit with the genome and with other units, call compositions homogeneous when they differ by less than 5%, and score each against a random sample of the same size.
+  The first finding is a surprising homogeneity. The level-1 compositions of the major chromosomes match each other and the genome in maize, zebrafish, yeast and C. elegans, and in fly down to the major arms. Finer classes can be homogeneous too: protein function in Arabidopsis, and the Wicker TE orders in maize. Enzyme reaction classes are interchangeable between chromosomes in all eight genomes.
+  The second finding is a structured heterogeneity. Where a unit departs from its genome, it does so in one of three ways: clusters of named elements, such as rRNA genes or immune receptor loci; megabase-scale compartments, such as TE-rich pericentromeric heterochromatin; and lineage-specific gene families, visible only at the finest levels.
+  Corrected for chance, the genomes fall into groups. For protein function and gene families, composition is more uniform in plants and fly than in vertebrates, and least uniform in C. elegans. For the major classes and TE orders, uniformity follows where each genome places its repeats, along the arms (maize, zebrafish) or around the centromeres (Arabidopsis, fly), not its lineage.</summary>
+    <category term="q-bio.GN" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-10T21:03:16Z</published>
+    <arxiv:comment>55 pages, 39 figures, 10 tables</arxiv:comment>
+    <arxiv:primary_category term="q-bio.GN"/>
+    <author>
+      <name>Yanying Wu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.15000v1</id>
+    <title>Bayesian adaptive design for neural recruitment curves</title>
+    <updated>2026-10-10T15:30:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.15000v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.15000v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Nonlinear response models remain ubiquitous across disciplines with recruitment curves describing muscle response to neural stimulation. Conventional acquisition methods typically rely on static uniform sampling, requiring many stimuli, while adaptive threshold-hunting designs such as ML-PEST forfeit accurate characterization of the overall curve. We present a Bayesian adaptive design that uses posterior uncertainty over curve parameters to propose stimuli that maximize information gain across the full recruitment curve. We additionally implement a focused acquisition method that can target arbitrary subset of curve parameters, which we use to evaluate and interpret our design. In simulations, our design outperforms uniform sampling in recovering threshold while matching ML-PEST, and outperforms ML-PEST in predictive curve accuracy while matching uniform. It likewise matches our threshold-focused acquisition, suggesting our design doesn't trade off threshold estimation for recovering the curve. We further show data collected using our design yields greater power when detecting a change in threshold in intervention studies. Our design proposes the next stimulus within 5 seconds, making it feasible for transcranial magnetic stimulation (TMS) experiments. Finally, we validate our design in TMS experiments and provide a library for Python, called onMEP, for online acquisition of neural recruitment curves.</summary>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.NC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-10T15:30:47Z</published>
+    <arxiv:primary_category term="stat.ME"/>
+    <author>
+      <name>Vishweshwar Tyagi</name>
+    </author>
+    <author>
+      <name>Saihari S. Dukkipati</name>
+    </author>
+    <author>
+      <name>Daniel Twili</name>
+    </author>
+    <author>
+      <name>Jonas M. Mikhaeil</name>
+    </author>
+    <author>
+      <name>Andrew Gelman</name>
+    </author>
+    <author>
+      <name>Jason B. Carmel</name>
+    </author>
+    <author>
+      <name>James R. McIntosh</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.14974v1</id>
+    <title>Ensemble-Based Modelling of Optogenetic Bioprocesses under Phototoxicity</title>
+    <updated>2026-10-10T14:46:37Z</updated>
+    <link href="https://arxiv.org/abs/2610.14974v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.14974v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Optogenetics enables methanol-free protein production in the yeast $\textit{Komagataella phaffii}$ using light as a control input, facilitated by the blue-light-responsive transcription factor EL222. This opens the door to more programmable protein production in the food and biopharmaceutical industries. However, excessive illumination can inhibit growth and protein accumulation in some of these engineered cell factories. Previous hybrid modelling used black-box regression across sparsely sampled conditions to infer light-dependent kinetic parameters, without explicitly representing intracellular regulation. Here, we develop a multiscale mechanistic model linking EL222 activation, transcription, and translation to protein, biomass, and substrate dynamics. A latent light-associated stress state represents photoinhibitory effects on growth, transcription, and translation. An ensemble-based parameter-estimation strategy combines repeated global-local optimisation with screening for parameter sets supporting locally stable intracellular steady states under specified light conditions. Using available batch data for yeast-enhanced green fluorescent protein production in a $\textit{K. phaffii}$ strain carrying eight EL222 gene copies, the ensemble-mean predictions captured the main experimental trends in protein accumulation and growth across six constant light intensities. Parameter variability was propagated to time-course predictions, providing an empirical assessment of parameter-related uncertainty. Wider prediction bands coincided with less complete experimental coverage of the growth phases. Overall, the framework provides a mechanistic basis for future model-based optimisation and control of optogenetic bioprocesses under phototoxicity.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-10T14:46:37Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Yufan Liu</name>
+    </author>
+    <author>
+      <name>Sam Ferrer</name>
+    </author>
+    <author>
+      <name>Sebastián Espinel-Ríos</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.14719v1</id>
+    <title>Amortised Global Sensitivity Analysis of Pharmacokinetic models for Simulated Clinical Trials</title>
+    <updated>2026-10-10T08:40:08Z</updated>
+    <link href="https://arxiv.org/abs/2610.14719v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.14719v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Pharmacokinetic and pharmacokinetic-pharmacodynamic models are used in simulated clinical trials to compare dosing protocols and patient groups before a trial is run. Distinct virtual patient cohorts, representing renal impairment, obesity and overdosage, can impose different input distributions on the same model. Global sensitivity analysis (GSA) identifies which uncertain inputs drive the cohort's predictions, but a direct analysis incurs its full computational cost for every cohort. An alternative accounting is proposed here: a single surrogate is trained on an input envelope wide enough to contain every cohort, each cohort is then analysed using that surrogate, and the reported quantity is the number of cohorts at which the surrogate route has cost fewer mechanistic evaluations than the direct route. The study tests three GSA methods: variance-based GSA, Morris screening and optimal transport. It covers four PK and PK/PD models with seven to twenty-three free inputs, 21 cohorts and five surrogates. Every estimate is scored against a converged mechanistic solution obtained with its own method, and all costs are expressed in mechanistic model evaluations. The parameter ranking is recovered at low cost: gradient-boosted trees reconstruct it on 20 of the 21 cohorts and cost fewer evaluations to train than one direct cohort analysis, on all four models, at break-even counts between 0.02 and 0.14 cohorts. Amortisation is fastest at the highest dimensions, where each direct variance-based sample of a $D$-input model requires $D+2$ evaluations while the training budget does not scale accordingly. Recovering absolute index values is harder, and fewer surrogates manage it as inputs grow: two of the five surrogates fail at fifteen inputs, where the gradient-boosted trees and the Gaussian process still succeed, and at twenty-three inputs no surrogate succeeds on a majority of cohorts.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-10T08:40:08Z</published>
+    <arxiv:comment>68 pages, 15 figures, 11 tables; main text followed by supplementary material. Code: https://github.com/DanielePessina/jaxgsa</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Daniele Pessina</name>
+    </author>
+    <author>
+      <name>Roberto A. Abbiati</name>
+    </author>
+    <author>
+      <name>Maria M. Papathanasiou</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.14642v1</id>
+    <title>Bayesian Uncertainty Quantification of Breast-Cancer Pathology AI Agreement under Reader- and Annotation-Condition-Dependent Reference Labels</title>
+    <updated>2026-10-10T06:52:16Z</updated>
+    <link href="https://arxiv.org/abs/2610.14642v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.14642v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Human reference labels used to evaluate medical AI can vary across readers and annotation workflows. We quantified agreement of a fixed pathology AI system with a future qualified reader without treating inferred consensus as error-free biological truth. Linked Evaluation and Unbiased NuCLS multirater data were analyzed using a fixed external HoVer-Net decision vector. The selected frame contained 1,144 anchors, 52 fields of view, five slides/patients, and five primary readers. The target was fixed-AI agreement with a future reader, with descriptive contrast $Δ=θ_E-θ_U$. Analyses included raw agreement and iMRMC benchmarks, reader-only and shared-detectability Bayesian models, structural sensitivities, adversarial simulations, and predictive assessment. Among 5,188 reader-anchor pairs observed in both conditions, 19.62% changed AI-agreement state, while raw agreement was 0.5466 in Unbiased and 0.5473 in Evaluation. The reader-only model gave $Δ=-0.0008$ (95% CrI, $-0.0033$ to $0.0008$), and the shared-detectability model gave $Δ\approx0$ ($-0.0140$ to $0.0127$). Across structural perturbations, absolute agreement ranged from 0.420 to 0.646 in Unbiased and 0.409 to 0.640 in Evaluation. Frozen adversarial simulations met the comparative-stability criterion (median $R=0.295$; 14/16 model-scenario cells had $R&lt;1$). Held-out-AI prediction supported shared predictive information, but varied by slide composition. The Evaluation-minus-Unbiased contrast was comparatively stable, whereas absolute agreement was structurally sensitive. These findings do not establish equivalence, causal assistance effects, biological accuracy, or new-patient transportability. Evaluations using variable human references should report reader population, selected frame, observation mechanism, and structural sensitivity.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.CO" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-10T06:52:16Z</published>
+    <arxiv:comment>In Review with Journal of Medical Imaging</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Hammed A. Olayinka</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.13779v1</id>
+    <title>PhySeqNet: physics-informed fluorescent foci detection for BARseq spatial transcriptomics</title>
+    <updated>2026-10-09T15:59:41Z</updated>
+    <link href="https://arxiv.org/abs/2610.13779v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.13779v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>BARseq enables spatially resolved gene-expression profiling across intact tissue, but its sensitivity depends on accurate detection and decoding of dense fluorescent rolonies. Existing spot-calling approaches can be conservative where signals overlap, while supervised deep learning is limited by the lack of reliable manual ground truth in real tissue images. Here we present PhySeqNet, a physics-informed deep learning framework for annotation-free fluorescent foci detection in BARseq. PhySeqNet trains U-Net detectors entirely on semi-synthetic images generated from an instrument-matched optical model combined with real sample-free experimental noise, and is integrated into pyBARseq, a modular Python pipeline for BARseq analysis. PhySeqNet achieved high detection performance on held-out simulated data across wavelength bands. On real tissue images, where ground truth is unavailable, we evaluated detections by forward-model reconstruction: PhySeqNet with conservative barcode-aware non-maxima suppression (NMSB) achieved higher reconstruction fidelity (NCC and MS-SSIM) than the BarDensr single-shot estimator, tuned classical spot detectors, and a pretrained deep-learning detector. In the analyzed brain section, PhySeqNet with NMSB yielded a median of 51 counts per cell versus 47 for BarDensr, with a similar number of genes detected per cell. The recovered transcripts produced spatial expression patterns qualitatively consistent with Allen MERFISH reference data and preserved cell-type composition after scANVI label transfer. These results show that physics-informed simulation can train practical, annotation-free detectors that improve BARseq sensitivity without disrupting downstream biological interpretation.</summary>
+    <category term="physics.optics" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-09T15:59:41Z</published>
+    <arxiv:comment>Correspondence: zador@cshl.edu</arxiv:comment>
+    <arxiv:primary_category term="physics.optics"/>
+    <author>
+      <name>Neha Goswami</name>
+      <arxiv:affiliation>Cold Spring Harbor Laboratory, Cold Spring Harbor, NY, USA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>John Hover</name>
+      <arxiv:affiliation>Cold Spring Harbor Laboratory, Cold Spring Harbor, NY, USA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Renae Galluccio</name>
+      <arxiv:affiliation>Cold Spring Harbor Laboratory, Cold Spring Harbor, NY, USA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Yichen Wu</name>
+      <arxiv:affiliation>Cold Spring Harbor Laboratory, Cold Spring Harbor, NY, USA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Huiqing Zhan</name>
+      <arxiv:affiliation>Cold Spring Harbor Laboratory, Cold Spring Harbor, NY, USA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Xiaoyin Chen</name>
+      <arxiv:affiliation>Allen Institute for Brain Science, Seattle, WA, USA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Anthony M. Zador</name>
+      <arxiv:affiliation>Cold Spring Harbor Laboratory, Cold Spring Harbor, NY, USA</arxiv:affiliation>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.14151v1</id>
+    <title>Beyond Discrimination: Evaluating Probability Calibration in Radiomics-Image Fusion for Renal Cell Carcinoma Classification</title>
+    <updated>2026-10-09T15:50:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.14151v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.14151v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Reliable probability estimates are important for the clinical interpretation of machine-learning classifiers, yet radiomics--image fusion models for renal cell carcinoma (RCC) are commonly evaluated primarily by discrimination. Using 396 patients from the KiTS23 dataset, we evaluated whether adding radiomics to four image-model families improved probabilistic performance in addition to discrimination. Seventeen individual models and four probability-average ensembles were assessed using discrimination, probability calibration, and proper scoring measures. Across 12 matched image-only versus fusion comparisons, AUC and AP improved in all 12, while Brier score and negative log likelihood (NLL) improved in 11 of 12 and expected calibration error (ECE) in eight of 12. The 3D MedVAE gated-fusion model achieved the strongest overall individual-model profile. Probability averaging across concatenation, cross-attention, and gated fusion produced favourable point estimates across all five primary metrics relative to image-only models in all four families, although paired-bootstrap support was stronger for Brier score and NLL than for ECE. These findings show that radiomics--image fusion can improve probabilistic prediction quality beyond discrimination, while calibration behaviour varies across image architectures and fusion strategies. We show that our proposed probability-average ensemble models improve discrimination and calibration simultaneously across all architectures in the study.</summary>
+    <category term="eess.IV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-09T15:50:47Z</published>
+    <arxiv:comment>12 pages. 1 figure. Accepted at the 2026 Irish Conference on Artificial Intelligence and Cognitive Science (AICS 2026). Proceedings forthcoming</arxiv:comment>
+    <arxiv:primary_category term="eess.IV"/>
+    <author>
+      <name>Yuan Liang</name>
+    </author>
+    <author>
+      <name>Morgan May</name>
+    </author>
+    <author>
+      <name>Abraham Campbell</name>
+    </author>
+    <author>
+      <name>Sourav Bhattacharjee</name>
+    </author>
+    <author>
+      <name>Simon Caton</name>
+    </author>
+    <author>
+      <name>Pierpaolo Dondio</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.13639v1</id>
+    <title>RetroTAC: Learning Route-Derived Synthetic Accessibility for PROTACs</title>
+    <updated>2026-10-09T14:18:03Z</updated>
+    <link href="https://arxiv.org/abs/2610.13639v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.13639v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Proteolysis-targeting chimeras (PROTACs) enable targeted protein degradation, expanding therapeutic opportunities beyond conventional inhibition. However, assembling their large, multifunctional structures creates synthetic challenges that hinder their discovery. Traditional synthetic-accessibility scores can overestimate this difficulty by penalizing PROTACs' molecular complexity while overlooking modular assembly from accessible building blocks. In contrast, retrosynthesis planning tools provide explicit routes but are computationally expensive, particularly for large molecules. Here, we introduce a human-interpretable, PROTAC-oriented route-derived score that rewards short synthetic depth and balanced joining of molecular fragments, and RetroTAC, a machine-learning surrogate that predicts this score directly from molecular structures. RetroTAC combines complementary models in an ensemble, achieving a root mean squared error of 0.13 and an $R^2$ of 0.65 on held-out molecules. We further evaluate its utility on PROTACs enumerated by recombining warheads, linkers, and E3-ligase ligands, followed by retrosynthetic planning and route analysis. Candidates selected for high predicted scores achieve a mean route-derived synthesizability of 0.73, compared with 0.31 for low-score candidates; 98.75% versus 51.00% are fully resolved under the tested search settings. These results support RetroTAC as a fast prioritization tool for virtual PROTAC libraries, connecting molecular screening with interpretable route characteristics while reserving explicit planning for selected candidates.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-09T14:18:03Z</published>
+    <arxiv:comment>26 pages, 11 figures, code available at: https://github.com/ribesstefano/RetroTAC</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Stefano Ribes</name>
+      <arxiv:affiliation>Andrea</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Jia Xin</name>
+      <arxiv:affiliation>Andrea</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Zhu Zhu</name>
+    </author>
+    <author>
+      <name>Tingting Mo</name>
+    </author>
+    <author>
+      <name>Lukáš Hudec</name>
+    </author>
+    <author>
+      <name>Kostas Papadopoulos</name>
+    </author>
+    <author>
+      <name>Atanas Patronov</name>
+    </author>
+    <author>
+      <name>Rocío Mercado</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.13221v1</id>
+    <title>Tensor-based Fusion of Multi-modal Data for Predicting Cancer Risk Levels</title>
+    <updated>2026-10-09T08:37:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.13221v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.13221v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Cancer diagnosis and treatment increasingly rely on multi-modal diagnostic technologies that generate high-dimensional datasets. Although these datasets are rich in pathological information, they pose considerable challenges in interpretation, dimensionality reduction, and clinical applicability. Conventional machine learning approaches often fail to extract meaningful cross-modal features, thereby limiting predictive accuracy in patient risk stratification. To address these limitations, this paper proposes an unsupervised machine learning framework that integrates feature extraction, tensor decomposition, and clustering to improve cancer risk prediction. The framework employs tensor decomposition to fuse heterogeneous genomic and clinical data, enabling the extraction of latent, biologically meaningful features that outperform unimodal feature sets. Multiple feature extraction strategies are investigated, and the resulting features are subsequently clustered using a range of clustering algorithms. Comparative evaluations based on internal and external metrics are then used to identify the most effective configurations. The framework is validated on LinkedOmics data comprising 11,158 patients across 32 cancer types. For patient risk stratification, clinically relevant attributes such as tumor purity, pathological stage, and survival outcomes serve as ground-truth indicators. Experimental results demonstrate the superiority of tSVD+GMM, which consistently outperforms other configurations across clinical benchmarks.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-09T08:37:53Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Ali Anaissi</name>
+    </author>
+    <author>
+      <name>Yuanzhe Jia</name>
+    </author>
+    <author>
+      <name>Qishun Peng</name>
+    </author>
+    <author>
+      <name>Weidong Huang</name>
+    </author>
+    <author>
+      <name>Ali Braytee</name>
+    </author>
+    <author>
+      <name>Junaid Akram</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.13073v1</id>
+    <title>Double-Take: Improving Capacity, Binding, and Selectivity In Long-Context Within Bidirectional Memory</title>
+    <updated>2026-10-09T06:31:57Z</updated>
+    <link href="https://arxiv.org/abs/2610.13073v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.13073v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Processing a long sequence does not guarantee that distant information remains usable. As context grows, a fixed-size memory must retain many associations, connect information across positions, and preserve relevant structure without being overwhelmed by everything it observes. These are distinct requirements: a memory may store more information without representing the relationships needed for retrieval, and it may transport those relationships without preserving the ones that matter. Thus, the challenge is not simply extending context length, but constructing a memory that remains usable as context grows. We study this problem in large-chunk test-time training (TTT) and identify two basic failures: single-step writes accumulate interference, limiting capacity, while self-associative writes cannot form cross-position bindings. We introduce Double-Take (DT), which repairs these failures with multi-step unpinned updates and cross-position mixing, and adds bidirectional change-sensitive writes for selective retention. Capacity alone leaves end-to-end recall at the $0.10$ chance floor; adding binding raises it to $0.92$. Trained only on $32\,\mathrm{kb}$ genomic contexts, DT reaches $0.927$ AUROC at $131\,\mathrm{kb}$ and $0.856$ near $1\,\mathrm{Mb}$, while transferring zero-shot from human to mouse. Together, these results identify capacity, binding, and selectivity as three requirements for usable long-range memory.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.GN" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-09T06:31:57Z</published>
+    <arxiv:comment>23 pages, 4 figures, 15 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Vakul Raghavan</name>
+    </author>
+    <author>
+      <name>Utkarsh Grover</name>
+    </author>
+    <author>
+      <name>Mingyang Mao</name>
+    </author>
+    <author>
+      <name>Chengwen Wang</name>
+    </author>
+    <author>
+      <name>Xiaomin Lin</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.11694v1</id>
+    <title>Elucidating the Space of Enzymatic Reaction: A Unified Benchmark and Pretrained Model</title>
+    <updated>2026-10-08T11:05:48Z</updated>
+    <link href="https://arxiv.org/abs/2610.11694v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.11694v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Existing reaction models primarily learn molecular transformations, whereas enzy- matic reactions depend jointly on molecular structure and catalytic function. We formulate this problem as learning an enzymatic reaction space linking reactants, products, and Enzyme Commission (EC) annotations. To characterize this space, we introduce VenusRX-Bench, a unified benchmark for forward reaction prediction, single-step retrosynthesis, and EC-number prediction. VenusRX-Bench integrates reactions from multiple biochemical databases with standardized curation, leakage- controlled splits, and consistent evaluation. Benchmarking representative chemical and enzymatic models reveals a clear chemical-to-enzymatic domain gap, driven by limited domain data, catalytic-context dependency, and the difficulty of modeling large biomolecular structures. To bridge this gap, we develop VenusRX, a unified T5-style sequence-to-sequence model for enzymatic reactions. VenusRX jointly learns forward prediction, ret- rosynthesis, and reaction reconstruction, with two-stage training on millions of template-expanded reactions followed by real biochemical reactions. In addition, optional EC conditioning incorporates catalytic context, while Molecule Library- Constrained Decoding improves the generation of complex biomolecules. Across benchmark tasks and challenging generalization splits, VenusRX achieves the best or competitive performance on most evaluated settings over representative chem- ical and enzymatic baselines. Moreover, EC information consistently improves reaction prediction, while learned reaction representations support accurate EC prediction, revealing a bidirectional relationship between reaction structure and catalytic function. Together, VenusRX-Bench and VenusRX provide a unified framework for elucidating and modeling enzymatic reaction space</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T11:05:48Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Yutong Hu</name>
+    </author>
+    <author>
+      <name>Tianming Huang</name>
+    </author>
+    <author>
+      <name>Yanbo Zhao</name>
+    </author>
+    <author>
+      <name>Qiongyu Zhang</name>
+    </author>
+    <author>
+      <name>Shixiang Tang</name>
+    </author>
+    <author>
+      <name>Lei Bai</name>
+    </author>
+    <author>
+      <name>Ziyi Zhou</name>
+    </author>
+    <author>
+      <name>Liang Hong</name>
+    </author>
+    <author>
+      <name>Pan Tan</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.11660v1</id>
+    <title>Certified Scalable Enclosures for Uncertain Underdetermined Systems</title>
+    <updated>2026-10-08T10:36:11Z</updated>
+    <link href="https://arxiv.org/abs/2610.11660v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.11660v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The central challenge in underdetermined models with bounded uncertainty, such as in nonlinear design and estimation, is certifying the solution sets. Conventional solution methodologies, such as those based on Newton's method or on sampling-based uncertainty quantification, are either not applicable due to the underdetermined nature or do not give guarantees that all solutions have been found, assuming they converge. We addressed this issue for a problem that arises in nonlinear design, where a target steady-state box is prescribed and the parameters have to be found. We developed a trapezoidal linearisation method that rigorously encloses all solutions and combined it with a tractable linear programming method to compute the component-wise bounds. We showed that the resulting families of linear programs can iteratively contract an initial parameter region. A subdivision of the target state and the initial parameter region can improve the contraction and provide tighter enclosures. The trapezoidal relaxation gives a family of linear programs that can also be used for finding solutions for interval linear systems via the Oettli-Prager characterisation. We demonstrate the generality of the method through different applications, including nonlinear design in biomolecular circuits, a sensitivity analysis method, and in a compressed sensing context, and discuss the trade-off between enclosure tightness and computational cost.</summary>
+    <category term="eess.SY" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T10:36:11Z</published>
+    <arxiv:comment>18 pages, 1 figure (2 panels), 1 table</arxiv:comment>
+    <arxiv:primary_category term="eess.SY"/>
+    <author>
+      <name>Rudra Prakash</name>
+    </author>
+    <author>
+      <name>Shaunak Sen</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.11222v1</id>
+    <title>Cross-species representation learning aligns mouse and human neural dynamics and tracks clinical drug efficacy</title>
+    <updated>2026-10-08T04:19:41Z</updated>
+    <link href="https://arxiv.org/abs/2610.11222v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.11222v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Preclinical models poorly predict human drug efficacy, particularly in neurological disorders. Neural activity offers a uniquely rich source of translational information because it captures high-dimensional variation in nervous-system function that can be measured in both animals and humans. However, its high dimensionality makes it difficult to distinguish conserved disease-related features from variation arising from species, recording modality and experimental context. Here, we test whether shared neural dynamics can be identified directly from electrophysiology data by learning representations organized by biological state rather than species. We develop a dual-rule contrastive learning framework that aligns corresponding mouse and human states while preserving separation between distinct phenotypes. This framework recovered conserved sensory-response structure across species and, in epilepsy, resolved distinct relationships between three mouse models and heterogeneous human patient populations. When treated animals were projected into a frozen cross-species representation, drug-induced movement towards the human-aligned healthy state retrospectively tracked known clinical efficacy across ten model-drug combinations including a disease-specific detrimental effect. The framework also identified shared disease-associated neural dynamics between Fmr1-knockout mice and human 16p11.2 copy-number variant carriers despite differences in genetic aetiology and recording modality. Together, these findings show the potential of cross-species neural representation learning to map heterogeneous human disease onto experimentally tractable preclinical states and assess whether interventions restore human-relevant circuit function.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.NC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T04:19:41Z</published>
+    <arxiv:comment>33 pages, 5 figures; supplementary material included (2 supplementary figures, 3 supplementary tables)</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Marko Tvrdic</name>
+    </author>
+    <author>
+      <name>Justin Richmond Domingo</name>
+    </author>
+    <author>
+      <name>Jae Ann Buenaluz</name>
+    </author>
+    <author>
+      <name>Jydell Ashley Palomo Penollar</name>
+    </author>
+    <author>
+      <name>Edmayelle Villavicencio Alforja</name>
+    </author>
+    <author>
+      <name>Jobi Fallaeria Subosa</name>
+    </author>
+    <author>
+      <name>Gabriel Ocana-Santero</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.10913v1</id>
+    <title>Toward Reliable Patient-Specific Aortic Strain Mapping from 4D CTA: Validation, Spectral Structure, and Clinical Potential</title>
+    <updated>2026-10-07T21:11:26Z</updated>
+    <link href="https://arxiv.org/abs/2610.10913v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.10913v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Objective: To develop and validate a framework for spatially resolved ascending aortic strain estimation from 4D computed tomography angiography (CTA) and characterize reliability across segmentation sources and spatial scales.
+  Methods: We constructed patient-specific aortic strain maps using nnU-Net segmentation, optimized surface remeshing, deformable registration, and mesh-based strain estimation. Finite element (FE)-derived synthetic 4D CT sequences provided controlled reference deformations for registration validation. Strain reliability was characterized across segmentation sources and Laplace-Beltrami (LB) spectral scales. Associations with diameter, aortic height index (AHI), and age were assessed.
+  Results: Registration-derived median strain showed minimal bias relative to FE-reference strain for observer-derived (0.0013) and nnU-Net-derived meshes (0.0056). Median strain exhibited low bias and narrow 95% limits of agreement (LoA) across segmentation sources (interobserver: bias = -0.0045, LoA [-0.0490, 0.0399]; nnU-Net versus observer: bias = -0.0052, LoA [-0.0340, 0.0237]). Differences were greater for 95th-percentile strain, particularly in the interobserver comparison. LB spectral analysis showed preferential preservation of low-frequency strain organization, with k = 5 reconstructions reducing segmentation-related disagreement by 52-56%. The 95th-percentile areal strain was inversely associated with maximum ascending aortic diameter (r = -0.493, p = 0.005), AHI (r = -0.488, p = 0.005), and age (r = -0.479, p = 0.006). Three high-grade AR cases showed heterogeneous regional strain patterns.
+  Conclusion: This framework reproducibly estimates ascending aortic strain from 4D CTA, characterizes its reliability across segmentation sources and spatial scales, and demonstrates its potential for noninvasive assessment of patient-specific aortic mechanics.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-07T21:11:26Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Tricia Lobo</name>
+    </author>
+    <author>
+      <name>Wensi Wu</name>
+    </author>
+    <author>
+      <name>Harold I. Litt</name>
+    </author>
+    <author>
+      <name>Nimesh D. Desai</name>
+    </author>
+    <author>
+      <name>Alison M. Pouch</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.09643v1</id>
+    <title>CircuitATLAS: Agentic reasoning over a systems neuroscience knowledge graph for target discovery in circuitopathies</title>
+    <updated>2026-10-07T08:19:27Z</updated>
+    <link href="https://arxiv.org/abs/2610.09643v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.09643v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Drug discovery for neurological disease has traditionally centered on the molecules altered by disease. But the molecules that cause pathology are not necessarily the best points from which to reverse it. Here, we ask which otherwise unaltered molecular control points can be engaged to restore pathological neural circuits toward functional states. We present CircuitATLAS, a provenance-grounded systems-neuroscience knowledge graph and agentic framework for target discovery in circuitopathies. It structures literature-derived relationships across diseases, phenotypes, electrophysiology, circuits, brain regions, cell types and molecular effectors, while deliberately excluding direct disease-gene and disease-protein edges to reduce shortcut reasoning. The graph contains 3.83 million nodes and 7.66 million edges, including 5.31 million LLM-extracted relations, and incorporates structured datasets such as the Human Cell Atlas and new multimodal in vivo measurements. We then introduce an agentic workflow that reasons from measurable disease phenotypes through their circuit and cellular substrates to molecular interventions, therapeutic feasibility and clinical constraints. Finally, we introduce a human-governed in vivo lab-in-the-loop linking hypothesis generation to experimental iteration. Within this framework an agent nominated ATP1A3, the neuronal alpha3 Na+/K+-ATPase, as a control point on cortical excitability; interneuron-restricted expression of ATP1A3 abolished the beta- and gamma-band response to a focal 4-aminopyridine challenge in vivo, and the validated target was then carried into a structure-guided small-molecule campaign terminating in a defined assay to resolve the direction of modulation. CircuitATLAS thus provides a framework for discovering therapeutics based not only on what is molecularly disrupted in disease, but on what can be controlled to restore circuit function.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.NC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-07T08:19:27Z</published>
+    <arxiv:comment>22 pages, 5 figures, 4 tables</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Gabriel Ocana-Santero</name>
+    </author>
+    <author>
+      <name>Marko Tvrdic</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.09352v1</id>
+    <title>Many Brains, One Geometry: A Shared Visual-Semantic Space for Cross-Dataset fMRI Decoding</title>
+    <updated>2026-10-07T03:11:16Z</updated>
+    <link href="https://arxiv.org/abs/2610.09352v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.09352v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Visual decoding from fMRI is typically siloed by participant and experiment, obscuring whether heterogeneous neural measurements can be organized within a common computational geometry. Here we introduce BRAID-fMRI (Brain Representation Alignment across Individuals and Datasets), a shared CLIP-supervised decoding framework. BRAID-fMRI uses a single ROI-wise Transformer with optional participant conditioning across eight visual-fMRI datasets comprising 93 dataset-specific participant entries, 430,007 single-trial responses and 162,839 unique stimuli. Regional brain activity is aligned with 512-dimensional CLIP ViT-B/32 representations using a multi-positive contrastive objective that treats repeated stimuli across participants and datasets as positives. BRAID-fMRI supports retrieval across seven evaluation datasets. On eight matched participant entries, it achieves 35.0 +/- 11.1% Top-10 accuracy, exceeding the observed mean accuracy of the two evaluated baselines - the MindEye-style pooled-CLIP decoder (27.1 +/- 5.1%) and ridge regression (21.1 +/- 9.1%) - and attaining the highest observed accuracy for seven of eight entries. In separately trained participant-agnostic models, expanding the source pool increased target-dataset holdout accuracy by up to 92.1% relative to the initial source-training condition. The learned space preserves graded semantic structure, while ablations and saliency highlight ventral and early visual cortex and category-specific motion and attentional systems. These results support scalable cross-dataset decoding into a common CLIP-aligned space, with model sensitivity concentrated in ventral and early visual inputs.</summary>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.NC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-07T03:11:16Z</published>
+    <arxiv:comment>21 pages, 5 figures, 1 table, 3 supplementary figures, 2 supplementary tables</arxiv:comment>
+    <arxiv:primary_category term="cs.HC"/>
+    <author>
+      <name>Moein Khajehnejad</name>
+    </author>
+    <author>
+      <name>Michelangelo Tronti</name>
+    </author>
+    <author>
+      <name>Forough Habibollahi</name>
+    </author>
+    <author>
+      <name>Tommaso Boccato</name>
+    </author>
+    <author>
+      <name>Matteo Ferrante</name>
+    </author>
+    <author>
+      <name>Nicola Toschi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.09288v1</id>
+    <title>FaceKit: a Toolkit for Interpretable Facial Phenotyping, Synthetic Image Generation and Privacy Analysis in Rare Diseases</title>
+    <updated>2026-10-07T01:43:49Z</updated>
+    <link href="https://arxiv.org/abs/2610.09288v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.09288v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Many rare genetic diseases are associated with recognizable craniofacial features. However, traditional approaches for describing facial morphology rely largely on qualitative clinical observation and free-text descriptions, which are often subjective, non-standardized, and difficult to reproduce across observers and institutions. Although the Human Phenotype Ontology (HPO) provides controlled terms for describing facial features, these terms are typically categorical rather than quantitative and may vary depending on examiner experience and interpretation. Here, we present FaceKit, a computational framework for quantitative facial phenotyping from frontal facial photographs. FaceKit extracts standardized measurements of facial landmarks and derived 120 morphological features, then reports feature-level z-scores representing deviation from population reference distributions. The reference distributions are built from the FairFace dataset spanning diverse ancestral groups. We evaluated FaceKit on a curated subset of the GestaltMatcher Database covering 50 rare-disease cohorts. In addition to quantitative facial analysis, FaceKit includes synthetic facial image generation to support rare disease model development and data augmentation. We also performed privacy evaluation to assess whether synthetic images reveal identifiable information from real patient photographs and could compromise patient privacy. Across disease case studies, FaceKit-derived quantitative measurements captured known facial features associated with rare genetic disorders and provided objective support for clinical phenotyping. Together, these results establish FaceKit as a useful tool for quantitative phenotyping, and has the potential to improve rare disease diagnosis, support genotype-phenotype studies, and enable more reproducible clinical characterization across diverse patient populations.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-07T01:43:49Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Hongzhuo Chen</name>
+    </author>
+    <author>
+      <name>Zhanliang Wang</name>
+    </author>
+    <author>
+      <name>Florent Pollet</name>
+    </author>
+    <author>
+      <name>Mian Umair Ahsan</name>
+    </author>
+    <author>
+      <name>Joshua Bie</name>
+    </author>
+    <author>
+      <name>Tzung-Chien Hsieh</name>
+    </author>
+    <author>
+      <name>Peter Krawitz</name>
+    </author>
+    <author>
+      <name>Cong Liu</name>
+    </author>
+    <author>
+      <name>Wendy K Chung</name>
+    </author>
+    <author>
+      <name>Chunhua Weng</name>
+    </author>
+    <author>
+      <name>Gamze Gürsoy</name>
+    </author>
+    <author>
+      <name>Kai Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.08750v1</id>
+    <title>Neural Petri flows for chemical reactions</title>
+    <updated>2026-10-06T17:44:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.08750v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.08750v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Petri nets have been used to describe chemical processes such as reactions.They map well to chemistry: Places are the bonds between atoms and the free valence of each atom, a token is a unit of bond order, a transition forms or breaks a bond, the conserved quantities are the valence budgets of the atoms, and the enabling rule is the valence rule. These semantics are not guaranteed by learned models of reactions or neural networks that are built on Petri nets that use the net as a scaffold for message passing. Here, we ask what architecture remains a Petri net for every value of its weights. We find the answer in the theory, where all semantics of a net share the firing form $m^\prime=m+Cσ$, locality, as enabling reads only the inputs of a transition, and the enabling rule, and we prove that conservation forces the firing form and that non-negativity forces the enabling rule on local rate laws. This leaves free the rate law, which is the propensity of each transition to fire. We introduce Neural Petri Flow, which learns this rate law, or a readout for classification, and hard-wires the rest as parameter-free layers. On what we denote a valence net, atom mapping, reaction classification, and forward prediction become three tasks on one firing vector. Without training, the minimum firing vector maps 88.8% of the curated Golden set against 85.6% for RXNMapper, and 88.7 against 77.9% of the enzymatic reactions of EnzymeMap. On USPTO-480K, NPF trained on these firing vectors predicts 87.7% of the products and 67.4% when trained on a 1% subset of the training reactions. EC numbers of ECREACT are predicted at the third level for 90.2% of reactions, 5.6 points ahead of the best published method. With electrons as tokens, the same token game predicts 90.5% of the elementary steps of FlowER first, ahead of the published baseline, and every top-1 prediction is a valid molecule without a filter.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="physics.chem-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-06T17:44:56Z</published>
+    <arxiv:comment>30 pages, 3 figures, 19 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Jose Eduardo Escrig Molina</name>
+    </author>
+    <author>
+      <name>Daniel Probst</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.08392v1</id>
+    <title>A Time-Resolved Framework for Quantifying Neuronal Network State Transitions</title>
+    <updated>2026-10-06T14:10:50Z</updated>
+    <link href="https://arxiv.org/abs/2610.08392v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.08392v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Electrophysiological recordings provide powerful tools for characterizing the dynamics of neuronal networks. In vitro neuronal cultures offer a controlled setting for investigating network responses to diverse interventions, including pharmacological and optogenetic stimulation. However, conventional analyses often reduce electrophysiological activity to aggregate measures calculated over fixed temporal windows, providing only a static representation of the network state. Here, we introduce a comprehensive, multiparametric analytical framework designed to characterize both the temporal evolution of network activity and the transitional states induced by external interventions. The framework combines multiple network discriminators with a compositional analysis that resolves electrode-level responses into excited, inhibited, and unchanged states over successive temporal segments. We apply the framework to electrophysiological recordings obtained under pharmacological interventions with 4-aminopyridine (4-AP), optogenetic stimulation, and additional benchmark conditions. The results demonstrate that the proposed analysis can reveal subtle and transient responses that may be difficult to detect using conventional aggregate measures, including responses to low-dose pharmacological interventions. These findings highlight the value of temporally resolved and compositional analyses for characterizing heterogeneous neuronal network responses in vitro.</summary>
+    <category term="q-bio.NC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-06T14:10:50Z</published>
+    <arxiv:primary_category term="q-bio.NC"/>
+    <author>
+      <name>Ilya Auslender</name>
+    </author>
+    <author>
+      <name>Yasaman Heydari</name>
+    </author>
+    <author>
+      <name>Asiye Malkoç</name>
+    </author>
+    <author>
+      <name>Clara Zaccaria</name>
+    </author>
+    <author>
+      <name>Yuri Bozzi</name>
+    </author>
+    <author>
+      <name>Lorenzo Pavesi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.07607v1</id>
+    <title>Linear Fitness Subspace in Protein Language Models Enables Sample-Efficient Directed Evolution</title>
+    <updated>2026-10-06T01:50:13Z</updated>
+    <link href="https://arxiv.org/abs/2610.07607v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.07607v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Model-guided directed evolution seeks to identify high-fitness protein variants under limited oracle budgets. Protein language models (PLMs) provide rich representations for this task, but task-agnostic zero-shot scores can be misaligned with a target assay, while supervised search in high-dimensional embedding spaces can make surrogate modeling and uncertainty estimation sample-inefficient. We propose the Linear Fitness Subspace (LFS) hypothesis: within mutation-induced residue-level representation changes, a compact, assay-specific set of directions makes fitness variation linearly accessible from few labeled variants. This is a local, supervision-recoverable statement rather than a claim that protein fitness landscapes or global PLM geometry are universally linear. Building on this observation, we introduce Subspace-Guided Evolutionary Search (SGES), which estimates an LFS from a small initial sample and performs surrogate modeling, uncertainty estimation, and acquisition in the learned subspace. Across 10 core ProteinGym assays, 87 extended static-validation assays, and an 18-assay budgeted-search evaluation, SGES improves fitness prediction and search efficiency over zero-shot PLMs and recent ML-guided protein optimization baselines. Controlled comparisons with PCA, random projections, label-shuffled PLS, classical mutation features, and acquisition ablations further isolate the benefit of a fitness-aligned site-delta coordinate.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-06T01:50:13Z</published>
+    <arxiv:comment>Accepted to Findings of the Association for Computational Linguistics: EMNLP 2026</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>SiYuan Ma</name>
+    </author>
+    <author>
+      <name>Canran Xiao</name>
+    </author>
+    <author>
+      <name>Zikai Xiao</name>
+    </author>
+    <author>
+      <name>Albert Gao</name>
+    </author>
+    <author>
+      <name>Liang He</name>
+    </author>
+    <author>
+      <name>Xuan-Yu Wang</name>
+    </author>
+    <author>
+      <name>Shuying Cao</name>
+    </author>
+    <author>
+      <name>Xiaojun Jia</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.07341v1</id>
+    <title>Identifiability of a linear dynamical reaction-diffusion system with directed interactions from the second-order statistics of a single snapshot</title>
+    <updated>2026-10-05T20:15:02Z</updated>
+    <link href="https://arxiv.org/abs/2610.07341v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.07341v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>A single spatial snapshot of a system with multiple interacting populations captures positions but not the underlying dynamics that have led to the observation. This work asks what the stationary second-order spatial statistics of a snapshot can reveal about the structure of the linear reaction-diffusion dynamical model, and in particular about the pairwise directed entries of its interaction operator. The observation is the matrix-valued structure factor $S(k)$ as a one-parameter family in the diffusion-inherited dependence on the wavenumber $κ=|k|^2$. The main result is that the directed interaction operator $A$ and the diffusivity matrix $D$ are generically identifiable for any number of interacting populations from $\{S(κ)\}$ up to a single global time rescaling. The findings do not contradict known bounds and the recent result that spatial observational data only determine the Markov equivalence class of the underlying graph. In this work, we identify physical assumptions that lift this barrier. The absolute time scale is not identifiable from a single snapshot of any sample size and requires an external clock. For tumor-immune tissue, the results imply that directed cell-cell interactions are in principle recoverable from one section, that the direction cannot be inferred from the mean densities or a covariance matrix, but from the wavenumber dependence of the cross and autospectra, and that a baseline section determines the interaction structure but not the absolute rates.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.PR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-05T20:15:02Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Pirmin Schlicke</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.06227v1</id>
+    <title>APOD: reasoning-guided agentic population ordinary differential equation discovery for pharmacological digital twins</title>
+    <updated>2026-10-05T12:33:10Z</updated>
+    <link href="https://arxiv.org/abs/2610.06227v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.06227v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Establishing ordinary differential equations (ODEs) describing population data is a fundamental part of mathematical modeling in pharmacology, crucial to developing digital twins. However, doing so from sparse, noisy data is a slow, expert-driven task. Existing automated methods either search a restricted model space or ignore population inter-individual variability. Here we introduce APOD (Agentic Population ODE Discovery), a language-model agent that iteratively reasons over biological knowledge and fit diagnostics in an open-ended search space to discover a population digital twin (PDT), i.e., a shared ODE system with between-subject variability. On synthetic pharmacokinetic and tumor-dynamics benchmarks, APOD recovered ground-truth structures in 94-100\% of runs, 12-fold faster in median than an established library-based search. On real cohorts it converged to valid structures, and proposed a PDT of radioligand-therapy-induced platelet dynamics that predicts thrombocytopenia from first-cycle data and simulates alternative dosing schedules that lower the predicted risk of toxicity.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-05T12:33:10Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Romain Ferrara</name>
+    </author>
+    <author>
+      <name>Martin Soucail</name>
+    </author>
+    <author>
+      <name>Victor Gertner</name>
+    </author>
+    <author>
+      <name>Adil Moussali</name>
+    </author>
+    <author>
+      <name>Joris Cocquebert</name>
+    </author>
+    <author>
+      <name>Sandrine Oziel-Taieb</name>
+    </author>
+    <author>
+      <name>Julien Nicolas</name>
+    </author>
+    <author>
+      <name>Florence Gattacceca</name>
+    </author>
+    <author>
+      <name>Mihaela van der Schaar</name>
+    </author>
+    <author>
+      <name>Sébastien Benzekry</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.06027v2</id>
+    <title>Unraveling phenotypic variation in multiscale behavioral dynamics</title>
+    <updated>2026-10-11T09:41:01Z</updated>
+    <link href="https://arxiv.org/abs/2610.06027v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.06027v2" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Behavioral variability reflects differences in internal and external parameters and provides a substrate for natural selection. However, uncovering its structure is challenging because behavior evolves nonlinearly across multiple timescales. Our goal is to reconstruct phenotypic variation from finite behavioral observations without prescribing the scales at which individuals should be compared. To achieve this, we introduce a multiscale dissimilarity that compares dynamics across all statistically resolvable resolutions by constructing reduced transfer operators at progressively finer scales and weighting their differences by finite-sampling uncertainty. This dissimilarity defines a geometry of dynamical phenotypes, which we reconstruct using diffusion maps. We show that the resulting phenotypic coordinates locally follow the parameter directions to which dynamics are most sensitive. We validate our approach in a stochastic model and apply it to bacterial and larval zebrafish behavior. In bacteria, we identify run speed as a major component of inter-individual variability, associated with the chemotaxis protein CheB. In zebrafish, we find that prior prey experience reshapes behavioral dynamics and phenotypic variability, with paramecia experience concentrating fish in a prey-capture-associated region of phenotypic space. Together, these results provide a framework for identifying internal and environmental variables that structure dynamical phenotypes across scales.</summary>
+    <category term="physics.bio-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-05T09:26:23Z</published>
+    <arxiv:comment>Main text: 11 pages, 6 figures; SI: 13 pages, 9 figures</arxiv:comment>
+    <arxiv:primary_category term="physics.bio-ph"/>
+    <author>
+      <name>Gautam Sridhar</name>
+    </author>
+    <author>
+      <name>Claire Wyart</name>
+    </author>
+    <author>
+      <name>Antonio Carlos Costa</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.05857v1</id>
+    <title>Stochastic evolutionary dynamics in structured populations: Network degree governs evolutionary stability</title>
+    <updated>2026-10-05T06:21:23Z</updated>
+    <link href="https://arxiv.org/abs/2610.05857v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.05857v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Stochasticity shapes evolutionary dynamics in finite populations beyond the reach of infinite-population theories. Using a stochastic birth--death framework on random regular networks, we establish evolutionary stability criteria for finite structured populations playing three-strategy games and identify critical degree thresholds governing invasion dynamics. Our framework goes beyond two-strategy evolutionary games to reveal that the initial composition of multi-type mutants, together with population structure and stochasticity, shapes the evolutionary fate of the resident population.</summary>
+    <category term="q-bio.PE" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="physics.soc-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-05T06:21:23Z</published>
+    <arxiv:primary_category term="q-bio.PE"/>
+    <author>
+      <name>Vikash Kumar Dubey</name>
+    </author>
+    <author>
+      <name>Sagar Chakraborty</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.05566v1</id>
+    <title>LifeLong Digital Twin: A Unified Modeling Paradigm and Agent Harness for Event-Driven Lifelong Health State Trajectories</title>
+    <updated>2026-10-04T21:59:33Z</updated>
+    <link href="https://arxiv.org/abs/2610.05566v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.05566v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Human health is a continuous, dynamic trajectory shaped by the cumulative interplay of biological processes, clinical events, behaviors and environmental exposures across the life course. Unifying the full breadth of lifelong health information, including longitudinal records, genetic variation, molecular profiles and environmental histories, is essential for whole-person modeling and remains a major challenge. We introduce LifeLong Digital Twin, a unified, event-driven modeling paradigm that organizes Life Events into daily Health States and accumulates them into Lifelong Health Context. An accompanying Agent Harness incorporates multimodal evidence beyond the language model's textual context. We evaluate four language models across 25 disease endpoints on three tasks: Disease Trajectory Forecasting, Disease Risk Ranking and Multi-horizon Disease Prediction. The approach yields marked gains over the reference condition: model-averaged F1 increases by 22.0% for disease identification in trajectory forecasting and 18.3% for five-year disease outcomes; thyroid-disease F1 reaches 0.669. The framework provides a foundation for whole-person digital twins and research on personalized lifelong disease prevention.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-04T21:59:33Z</published>
+    <arxiv:comment>15 pages, 5 figures, 2 tables. Technical report</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Jin Jiang</name>
+    </author>
+    <author>
+      <name>Sean Yates</name>
+    </author>
+    <author>
+      <name>Jasper Chong</name>
+    </author>
+    <author>
+      <name>Raymond Brooks</name>
+    </author>
+    <author>
+      <name>Alex Lawson</name>
+    </author>
+    <author>
+      <name>Yuqin Qin</name>
+    </author>
+    <author>
+      <name>Liangcai Gao</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.05553v1</id>
+    <title>A multimodal computer-vision based pipeline for eye-hand coordination quantification during the Nine-Hole Peg Test</title>
+    <updated>2026-10-04T21:42:18Z</updated>
+    <link href="https://arxiv.org/abs/2610.05553v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.05553v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The Nine-Hole Peg Test (9-HPT) is a widely used clinical measure of manual dexterity in multiple sclerosis (MS), but its primary outcome, task completion time, provides limited information about the visuomotor mechanisms contributing to impaired performance. Instrumented approaches can provide richer kinematic information but often require modifications to the task or physical instrumentation that may alter natural hand-object interaction. We developed a multimodal computer-vision pipeline that enables synchronized analysis of gaze, hand kinematics, and object state during an unmodified 9-HPT. Gaze was recorded using Pupil Labs Invisible glasses, three-dimensional hand landmarks were reconstructed using WiLoR, and a custom YOLO26x-seg model detected and tracked the pegboard, holes, pegs, and collection bin. Eye-tracking, hand, and object data were temporally synchronized at the video-frame level and spatially registered to a common pegboard-centered coordinate system using frame-specific projective transformations. The pipeline further integrated hole-state transitions, hand-zone classification, and fingertip kinematics to identify PICK and PLACE events and segment hand transport and stationary phases, while fixation and saccade labels were derived from the eye-tracking system. Automated detections were visually reviewed and corrected when necessary. The resulting framework provides synchronized, event-resolved measures of gaze behavior, hand movement, object interaction, and eye-hand coordination while preserving standardized 9-HPT administration. This approach extends the 9-HPT beyond completion time and provides a reproducible platform for investigating the visuomotor mechanisms underlying dexterity impairment in MS and other neurological disorders.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-04T21:42:18Z</published>
+    <arxiv:comment>13 pages, 3 figures</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Rajvardhan Gadde*</name>
+    </author>
+    <author>
+      <name>Mahya Beheshti*</name>
+    </author>
+    <author>
+      <name>Anjali Rajkumar</name>
+    </author>
+    <author>
+      <name>Silvana L. Costa</name>
+    </author>
+    <author>
+      <name>John-Ross Rizzo</name>
+    </author>
+    <author>
+      <name>Todd E. Hudson</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.05242v1</id>
+    <title>Approximating Parameter Regions for Multistationarity and Multistability in Mass-Action Systems</title>
+    <updated>2026-10-04T14:18:13Z</updated>
+    <link href="https://arxiv.org/abs/2610.05242v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.05242v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Identifying kinetic parameters and conserved quantities that support multistationarity and multistability remains challenging in chemical reaction network analysis. Structural theory provides existence and exclusion results, but does not always yield explicit, interpretable descriptions of the corresponding parameter regimes. We present a computational and machine-learning framework for discovering and characterizing parameter regimes with numerical evidence of multistationarity and multistability in mass-action systems. We refer to these numerically detected behaviors as approximate multistationarity and approximate multistability. The framework combines Latin hypercube sampling, adaptive sampling, and interpretable surrogate modeling. Logistic-regression and neural-network surrogates are trained separately on accumulated detection labels and independently guide later sampling toward regions with high scores for approximate multistationarity or multistability. Boundary refinement targets transitions between detected and undetected numerical classes. Buckingham--Pi groups are then used with CN2 rule induction to obtain interpretable empirical descriptions of detected regimes. Illustrative networks yield rules consistent with known multistationarity conditions, while the Schlögl model demonstrates adaptive enrichment of multistationarity detections. In the hybrid histidine kinase model and the sequential dual phosphorylation cycle, adaptive sampling substantially increased the number of parameter - total pairs with detected multistability relative to global sampling under equal sampling budgets. The framework complements analytical chemical reaction network theory by providing efficient, parameter-resolved discovery and characterization of multistationary and multistable regimes.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.DS" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.MN" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-04T14:18:13Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Dylan Antonio S. J. Talabis</name>
+    </author>
+    <author>
+      <name>Victoria May P. Mendoza</name>
+    </author>
+    <author>
+      <name>Bryan S. Hernandez</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.04970v1</id>
+    <title>Integrated omics reveals actionable drivers of bioactive variation in US milk</title>
+    <updated>2026-10-04T05:35:46Z</updated>
+    <link href="https://arxiv.org/abs/2610.04970v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.04970v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Despite milk being a global dietary staple, the molecular basis of its health-relevant bioactivity and the factors governing fine-scale compositional variation remain poorly understood. Here, we present an integrated seven-layer omics characterization of 60 US retail milk samples from ten geographic regions, combining genomics, transcriptomics, peptidomics, proteomics, lipidomics, metabolomics, and glycomics on the same samples. We also organized the identified and quantified compounds into the Dairy Molecule Database (DMD), a web-accessible resource for linking milk compound concentrations with SNPs, miRNAs, and product-level factors to support future milk quality optimization. In total, we identified 6,714 compounds and quantified 5,288 with absolute concentrations, including 5,220 compounds not previously available with absolute concentration estimates in existing milk compound databases. These profiles enabled bioactivity efficacy estimation and association analyses of factors linked to milk compound variation. We tested 54 computationally predicted antimicrobial candidate peptides; 35 showed activity and 6 had IC50 values below 256 μg/mL against A. baumannii, an ESKAPE pathogen. We further identified associations between downstream bioactive compound concentrations or estimated bioactivity efficacy and product-level factors, including purchase region, purchase ambient temperature, and packaging opacity, as well as SNPs, estimated Jersey breed proportion, and miRNA abundance. Overall, bioactivity efficacy profiles were associated with purchase region, selected SNPs, Jersey breed proportion, and selected miRNAs. These findings suggest that selective breeding and supply-chain optimization could help improve the bioactive quality of commercial milk.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-04T05:35:46Z</published>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Cheng-En Tan</name>
+    </author>
+    <author>
+      <name>Mariana Barboza</name>
+    </author>
+    <author>
+      <name>Pagkratios Tagkopoulos</name>
+    </author>
+    <author>
+      <name>Shanghyeon Kim</name>
+    </author>
+    <author>
+      <name>Lukas Maximilian Masopust</name>
+    </author>
+    <author>
+      <name>Ivor Prado</name>
+    </author>
+    <author>
+      <name>Muhammad Adil Salim</name>
+    </author>
+    <author>
+      <name>Fangzhou Li</name>
+    </author>
+    <author>
+      <name>George Berdovskiy</name>
+    </author>
+    <author>
+      <name>Ilias Apostolakos</name>
+    </author>
+    <author>
+      <name>Brandon Invergo</name>
+    </author>
+    <author>
+      <name>Karen M. Kalanetra</name>
+    </author>
+    <author>
+      <name>Danielle G. Lemay</name>
+    </author>
+    <author>
+      <name>David A. Mills</name>
+    </author>
+    <author>
+      <name>Armin Oloumi</name>
+    </author>
+    <author>
+      <name>Cheng-Yu Weng</name>
+    </author>
+    <author>
+      <name>Carlito B. Lebrilla</name>
+    </author>
+    <author>
+      <name>Xuan He</name>
+    </author>
+    <author>
+      <name>Carolyn Slupsky</name>
+    </author>
+    <author>
+      <name>Oliver Fiehn</name>
+    </author>
+    <author>
+      <name>Ibuki Kusumoto</name>
+    </author>
+    <author>
+      <name>Ameer Y. Taha</name>
+    </author>
+    <author>
+      <name>Yu Wang</name>
+    </author>
+    <author>
+      <name>Daniela Barile</name>
+    </author>
+    <author>
+      <name>Alexis Davis</name>
+    </author>
+    <author>
+      <name>David E. Olson</name>
+    </author>
+    <author>
+      <name>Justin B. Siegel</name>
+    </author>
+    <author>
+      <name>Ilias Tagkopoulos</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.04926v1</id>
+    <title>Reproducibility and Leakage-Controlled Evaluation of Machine-Learning Models for Chronic Kidney Disease Classification</title>
+    <updated>2026-10-04T04:10:01Z</updated>
+    <link href="https://arxiv.org/abs/2610.04926v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.04926v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Near-perfect classification of small clinical datasets can hinge on preprocessing, data leakage, missing-data handling, and the evaluation sample. We reproduced a published chronic kidney disease (CKD) classification study on the UCI CKD dataset (400 records, 24 predictors) under explicit leakage controls. A stratified 70:30 development-holdout partition was fixed before any learned preprocessing; imputation, encoding, scaling, supervised feature selection, and PCA were fitted only within training folds. Nine classifiers, three feature representations, and three missing-data strategies were compared by 5x3 repeated stratified cross-validation and ranked on training cross-validation only (ties reported); a frozen set of finalists was evaluated once on the holdout (discrimination, calibration, Brier score), treated as a locked historical internal sample. Ablation, grouped SHAP values, three further seeds, and post hoc sensitivity analyses examined robustness. The top-ranked selected-feature pipeline (KNN imputation, Extra Trees) reached a repeated cross-validation accuracy of 0.9869 and a holdout accuracy of 0.9833 (exact 95% interval 0.9411-0.9980). PCA (27 components, 95.96% of variance) gave only a marginal, seed-dependent advantage over interpretable original-feature representations, and several pipelines were statistically indistinguishable. Nested resampling of the selection procedure gave an outer accuracy of 0.9845, 0.0095 below the top-ranked pipeline on the same folds; missingness indicators alone yielded a ROC area of 0.85-0.88, and removing renal, urinary, and hematologic fields cut accuracy to 0.89. High internal performance persisted after leakage controls but appears driven largely by clinically proximal laboratory and urinalysis variables and CKD-associated missingness; it is not clinical validation, and external, prospective evaluation remains necessary.</summary>
+    <category term="stat.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-04T04:10:01Z</published>
+    <arxiv:comment>16 pages, 9 figures</arxiv:comment>
+    <arxiv:primary_category term="stat.AP"/>
+    <author>
+      <name>Lening Yang</name>
+    </author>
+    <author>
+      <name>Yichuan Zhao</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.04732v1</id>
+    <title>On the Spread of a Virus and Traveling Waves, Part I</title>
+    <updated>2026-10-03T19:51:15Z</updated>
+    <link href="https://arxiv.org/abs/2610.04732v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.04732v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>This paper develops a one-dimensional model for a mobile viral component propagating through a spatially distributed susceptible population. Random viral motion produces diffusion, whereas a response to the relative gradient of susceptible density generates directed transport. The existence of a positive entire traveling wave is proved when directed transport dominates diffusion, and the limiting case of equal transport and diffusion coefficients is constructed separately. A dimensionless transformation then converts the remaining equation into a logistic equation and supplies closed-form profiles. These formulas identify the unique viral maximum and the far-field behavior. A conservative implicit-explicit finite-difference method provides an independent numerical check. Diffusion is evaluated at the new time level, the gradient-driven flux explicitly at cell interfaces, and susceptible depletion pointwise. Exact traveling-wave values specify the initial data and time-dependent Dirichlet conditions at both endpoints. Thus, the computation tests preservation and translation of the analytical profiles. A calculation with eight hundred spatial subintervals reproduces the localized viral band and the monotone susceptible front. The largest uniform errors are approximately $1.70\cdot10^{-2}$ for viral density and $2.22\cdot10^{-3}$ for susceptible density. The numerical results corroborate the analytical construction and show that the conservative discretization captures the proposed propagation mechanism.</summary>
+    <category term="math.DS" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-03T19:51:15Z</published>
+    <arxiv:comment>14 pages, 4 figures</arxiv:comment>
+    <arxiv:primary_category term="math.DS"/>
+    <author>
+      <name>Yizhou Wang</name>
+    </author>
+    <author>
+      <name>Akif Ibragimov</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.04029v1</id>
+    <title>On non-monotonic steady state response curves</title>
+    <updated>2026-10-02T20:31:30Z</updated>
+    <link href="https://arxiv.org/abs/2610.04029v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.04029v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Non-monotonic steady state response curves can readily arise from an incoherent feedforward loop (IFFL), which has also been conjectured to be a necessary mechanism. In a previous work, we showed this conjecture to be false for systems where the control parameter directly influences only one state variable. Here, we extend this result to arbitrary systems. We show that a stable non-monotonic response requires either an IFFL or a combination of positive and negative feedback loops. Finally, we apply our theoretical findings to three network-structured biological contexts: signaling pathways, gene regulation, and ecological consumer-resource models. For the first two contexts, we identify necessary motifs for non-monotonic responses, while for consumer-resource models, we provide an alternative proof of the Competitive Exclusion Principle.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-02T20:31:30Z</published>
+    <arxiv:comment>38 pages, 23 pages appendix</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Polly Y. Yu</name>
+    </author>
+    <author>
+      <name>Eduardo D. Sontag</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.03829v1</id>
+    <title>OncoNoteBERT: A Foundation Representation Model for Natural Language Processing of Real-World Outpatient Oncology Notes</title>
+    <updated>2026-10-02T11:38:07Z</updated>
+    <link href="https://arxiv.org/abs/2610.03829v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.03829v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Real-world outpatient oncology notes contain specialised terminology, tumour staging expressions, treatment names, toxicity descriptions, and institution-specific de-identification markers that may not be represented efficiently by general biomedical or adjacent clinical language models. We developed and evaluated oncology-specific BERT-style encoders using a governed UK outpatient oncology corpus comprising 290,026 notes from 21,564 patients treated for lung and head-and-neck cancer. We compared RadBERT and PathologyBERT with two local strategies: OncoNote-RadBERT, produced by continued masked language model pretraining, and OncoNoteBERT, trained from scratch with an oncology WordPiece tokenizer. Models were evaluated using masked language modelling loss and perplexity on the validation set, tokenizer fragmentation metrics, clinical term tokenisation, masked-token probes, and exploratory representation analysis. Both external encoders fit the oncology corpus poorly in zero-shot evaluation (perplexity 113.04 for RadBERT; 2035.03 for PathologyBERT), while continued pretraining produced the strongest fit (2.10 for OncoNote-RadBERT). OncoNoteBERT achieved perplexity 2.83 but produced the most efficient tokenisation, with lower subword fertility and shorter normalised sequence length. It also returned a clinically acceptable prediction for 12 of 13 masked-token probes, compared with 7 of 13 for OncoNote-RadBERT. This divergence between corpus-level fit and masked-token performance was partly attributable to tokenizer fragmentation rather than learned semantics alone. Both locally developed models represented the institutional placeholder as a single learnable token. These findings show that continued adaptation and bespoke tokenisation provide complementary benefits, and that representation-layer design matters before adjacent-domain encoders are applied to oncology NLP.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-02T11:38:07Z</published>
+    <arxiv:comment>Accepted at the AI at Scale for Clinical Impact (ASCI): Cancer Pathology Foundation Models Workshop at NeurIPS 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Wuraola Oyewusi</name>
+    </author>
+    <author>
+      <name>Eliana Vasquez Osorio</name>
+    </author>
+    <author>
+      <name>Goran Nenadic</name>
+    </author>
+    <author>
+      <name>Gareth Price</name>
+    </author>
+  </entry>
+</feed>
