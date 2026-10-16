@@ -93,6 +93,56 @@ def valid_codex(r):
             and isinstance(r["log_path"], str) and bool(LOG_PATH_RE.fullmatch(r["log_path"])))
 
 
+EN_DRAFT_SUFFIX = "-en"      # 与 route.EN_SUFFIX 一致：<section>/<name>.en.md → <section>-<name>-en
+CODEX_LANGS = ("zh", "en")
+
+
+def record_lang(draft_path=None, lang=None):
+    """写入前判定记录对应稿件的语言：draft_path 以 .en.md 结尾或 lang == "en" → en。
+    两者都没给、lang 不合法，或二者矛盾 → E-APPROVALS-EN-DRAFT-ID（拒绝写入，fail-closed）。"""
+    by_path = None
+    if draft_path is not None:
+        by_path = "en" if str(draft_path).endswith(".en.md") else "zh"
+    if lang is not None and lang not in CODEX_LANGS:
+        raise ApprovalsError("E-APPROVALS-EN-DRAFT-ID")
+    if by_path and lang and by_path != lang:
+        raise ApprovalsError("E-APPROVALS-EN-DRAFT-ID")
+    out = lang or by_path
+    if out is None:
+        raise ApprovalsError("E-APPROVALS-EN-DRAFT-ID")
+    return out
+
+
+def check_codex_lang(r, draft_path=None, lang=None):
+    """2026-10-17 Grok Bot：英文稿的 Codex 记录 draft_id 必须以 -en 结尾，否则拒绝写入。
+    只在写入时检查（write_codex_record）；读取与 audit-approvals 不追溯已有记录（approvals/ 只追加，历史记录保持原样）。"""
+    lg = record_lang(draft_path, lang)
+    did = r.get("draft_id") if isinstance(r, dict) else None
+    if lg == "en" and not (isinstance(did, str) and did.endswith(EN_DRAFT_SUFFIX)):
+        raise ApprovalsError("E-APPROVALS-EN-DRAFT-ID")
+    return lg
+
+
+def write_codex_record(repo, r, *, draft_path=None, lang=None, for_date=None):
+    """写一条 Codex 记录到工作树 approvals/codex/<sha>[.<D>].json（只新建，不覆盖）。返回写入路径。
+    先按严格 schema 校验（E-ROUTE-RECORD-INVALID），再查英文 draft_id（E-APPROVALS-EN-DRAFT-ID），
+    文件已存在 → E-ROUTE-APPROVALS-REWRITTEN（只追加）。"""
+    from pathlib import Path
+    if not valid_codex(r):
+        raise ApprovalsError("E-ROUTE-RECORD-INVALID")
+    check_codex_lang(r, draft_path, lang)
+    if for_date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(for_date)):
+        raise ApprovalsError("E-ROUTE-RECORD-INVALID")
+    name = r["content_sha256"] + (f".{for_date}" if for_date else "") + ".json"
+    path = Path(repo) / CODEX_DIR / name
+    if path.exists():
+        raise ApprovalsError("E-ROUTE-APPROVALS-REWRITTEN")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "x", encoding="utf-8") as f:
+        f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return path
+
+
 def _strip(r):
     if isinstance(r, dict) and "_for_date" in r:      # 读取时附加的内存字段（文件名日期），不属于 schema
         return {k: v for k, v in r.items() if k != "_for_date"}
