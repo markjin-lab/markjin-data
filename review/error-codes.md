@@ -80,7 +80,7 @@
 | `E-ROUTE-NOT-YET` | 未到可发布日（稿件日期在未来），HOLD，不得提前自动批准 |
 | `E-ROUTE-MAC-STALE` | 需审查稿：Mac 心跳超过 30 分钟未更新（状态未知），HOLD，可重试，不归档（不需要王总批准且已有有效 Codex APPROVED 的日报不受心跳影响） |
 | `E-ROUTE-PAIR-MISSING` | 只有 <name>.en.md、没有同 PR 的 <name>.md（t145u） |
-| `E-ROUTE-DISCLAIMER-MISSING` | 日报缺少固定免责声明（中文「本文不含投资建议。」/ 英文 "This article does not constitute investment advice."），不得发布 |
+| `E-ROUTE-DISCLAIMER-MISSING` | 日报缺少固定免责声明（中文「本文不含投资建议。」/ 英文 "This article does not constitute investment advice."），不得发布；只适用于 2026-10-13 之前的日报类稿件，2026-10-13 起只用站点页脚免责声明 |
 | `E-ROUTE-RETRY` | 判定可能已失效，整批 HOLD、重跑：开始时与结束时（end，即 decided_at）两遍判定结论（state/codes）不一致（如心跳在路由期间过期），开始到 end 之间跨过 06:55 / 07:00 / SGT 午夜，或记下 decided_at 之后核对发现远端 main 已变化（整体验收 r3–r6，r7） |
 | `E-ROUTE-PR-FILES` | PR 稿件组合不合法：只允许单篇 <name>.md，或同 section、同 name 的 <name>.md + <name>.en.md |
 | `E-ROUTE-PAIR-MISMATCH` | 中英配对的 Codex 记录 pair_sha256 未互相引用、reviewed_at 不同，或单篇稿使用了配对记录 |

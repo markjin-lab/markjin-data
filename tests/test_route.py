@@ -1068,6 +1068,27 @@ class R11Route(FromMain):
             sc, d = self.one(rel, text.encode(), date=date, ct="signal" if rel.startswith("cards/") else "daily")
             self.assertEqual("E-ROUTE-DISCLAIMER-MISSING" in d.codes, not ok, (rel, date, text[-40:]))
 
+    def test_daily_footer_only_from_2026_10_13(self):
+        # 2026-10-16 王总／Grok Bot：2026-10-13 起日报只用站点页脚免责声明，正文没有固定免责声明不再拦
+        self.setup_ok()
+        EN = "\nThis article does not constitute investment advice.\n"
+        for rel, text, date in (("daily/x.md", INFER, "2026-10-13"), ("daily/x.en.md", INFER, "2026-10-16"),
+                                ("digest/x.md", INFER, "2026-10-13"), ("daily/x.md", INFER + DISC, "2026-10-16"),
+                                ("daily/x.en.md", INFER + EN, "2026-10-13")):
+            sc, d = self.one(rel, text.encode(), date=date)
+            self.assertNotIn("E-ROUTE-DISCLAIMER-MISSING", d.codes, (rel, date))
+        sc, d = self.one("daily/x.md", INFER.encode(), date="2026-10-12")      # 2026-10-12 仍按正文规则
+        self.assertIn("E-ROUTE-DISCLAIMER-MISSING", d.codes)
+
+    def test_disclaimer_required_matrix(self):
+        corr = {"corrects": "daily-x"}
+        for did, date, c, want in (("daily-x", "2026-10-11", None, False), ("daily-x", "2026-10-12", None, True),
+                                   ("daily-x", "2026-10-13", None, False), ("digest-x", "2026-10-16", None, False),
+                                   ("daily-x", "2026-01-05", corr, True), ("daily-x", "2026-10-12", corr, True),
+                                   ("daily-x", "2026-10-13", corr, False), ("daily-x.en", "2026-10-16", corr, False),
+                                   ("cards-x", "2026-10-12", corr, False), ("cards-x", "2026-10-12", None, False)):
+            self.assertEqual(R.disclaimer_required(did, date, c), want, (did, date, c))
+
     def test_route_pr_requires_pr_number_and_open(self):
         self.setup_ok()
         for bad in ("21", None, 0, -1, True):
