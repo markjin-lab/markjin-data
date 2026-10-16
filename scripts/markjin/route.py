@@ -683,8 +683,8 @@ def _route_one(rel, data, tree, date, card_type, now, link_checker=None, pair=No
     if isinstance(corr, str):
         return sc, _hold(corr)
     daily_like = did.split("-", 1)[0] in DAILY_SECTIONS
-    if (needs_disclaimer(did, date) or (corr and daily_like)) and not has_disclaimer(text, did.endswith(EN_SUFFIX)):
-        return sc, _hold("E-ROUTE-DISCLAIMER-MISSING")   # r12/r13：日报类稿件须有可见的固定免责声明；日报类更正稿不论日期都查
+    if disclaimer_required(did, date, corr) and not has_disclaimer(text, did.endswith(EN_SUFFIX)):
+        return sc, _hold("E-ROUTE-DISCLAIMER-MISSING")   # r12/r13：日报类稿件须有可见的固定免责声明；2026-10-13 起只用站点页脚（见 disclaimer_required）
     d = _diagnose_from_git(sc, draft, records_repo or tree, now, pair, correction=corr, force_wang=force_wang)
     if did.endswith(EN_SUFFIX) and "R-TRANSLATION" not in sc["error_codes"]:
         d.codes.append("R-TRANSLATION")
@@ -693,12 +693,27 @@ def _route_one(rel, data, tree, date, card_type, now, link_checker=None, pair=No
 
 DAILY_SECTIONS = ("daily", "digest")       # r13：日报类稿件放在 daily/ 或 digest/ 都查免责声明
 DISCLAIMER_FROM = "2026-10-12"              # r13：从 2026-10-12 的稿件起执行，历史稿不追溯
+FOOTER_ONLY_FROM = "2026-10-13"             # 2026-10-16 王总／Grok Bot：此日起日报只用站点页脚免责声明（smoke 查 footer_disclaimer），正文不加、不查
 _COMMENT_RE = re.compile(r"<!--.*?(?:-->|\Z)", re.S)
 _FENCE_RE = re.compile(r"^[ ]{0,3}((`|~)\2{2,}).*?(?:^[ ]{0,3}\1\2*[ \t]*$|\Z)", re.S | re.M)   # r8：闭围栏同字符、长度 ≥ 开围栏（与台账一致）
 
 
+def footer_only(date):
+    """2026-10-13 起的日报类稿件（含其更正稿，按稿件日期）只用站点页脚免责声明，正文不查。"""
+    return isinstance(date, str) and date >= FOOTER_ONLY_FROM
+
+
 def needs_disclaimer(did, date):
-    return did.split("-", 1)[0] in DAILY_SECTIONS and isinstance(date, str) and date >= DISCLAIMER_FROM
+    return (did.split("-", 1)[0] in DAILY_SECTIONS and isinstance(date, str) and date >= DISCLAIMER_FROM
+            and not footer_only(date))
+
+
+def disclaimer_required(did, date, corr=None):
+    """正文固定免责声明是否必需：2026-10-12 的日报类稿件必需；更早日期的日报类更正稿仍必需（r13）；
+    2026-10-13 起一律不查正文（只用站点页脚）。"""
+    if did.split("-", 1)[0] not in DAILY_SECTIONS or footer_only(date):
+        return False
+    return needs_disclaimer(did, date) or bool(corr)
 
 
 def visible_text(text):

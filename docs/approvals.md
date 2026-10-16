@@ -230,8 +230,11 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
 
 - **一律走 route_pr**（r12/r13）：发布入口 `scripts/route.py --pr <编号>`，只接受 PR 编号。`route.route_pr` 自己用 `gh pr view` 取 baseRefOid、headRefOid、state 与文件列表，PR 须为 open，取到的 head 须是 PR 当前 head；gh 的文件列表须与 `git diff --name-status --no-renames base...head` 完全一致。PR 中任何删除、改名、类型变更的文件一律 `ValueError(E-ROUTE-PR-FILES)`，CLI 输出 HOLD（退出码 1）。
 - **自检结果绑定稿件**（r12）：私有的 `_decide_full()` 核对自检结果的 `content_sha256` 与稿件一致，不一致或缺失即 HOLD `E-ROUTE-INPUT`。
-- **r13（王总 2026-10-11 定）**：`_decide_full()` 为私有函数，不对外调用；Codex 与王总记录只从 `origin/main` 的 `approvals/` 读取（调用方不能指定 ref），记录缺任一字段或格式不合 → HOLD `E-ROUTE-RECORD-INVALID`。稿件、`raw/` 与 `MANIFEST` 全部从 PR head 提交（`git archive`）读取，不读工作树。免责声明与其他检查先去掉 HTML 注释（含未闭合注释）与围栏代码块再判断。日报类稿件放在 `daily/` 或 `digest/` 都查固定免责声明，自 2026-10-12 的稿件起执行，历史稿不追溯。
-- **日报免责声明**（r12）：`daily/` 下的日报必须有单独成行的固定免责声明——中文稿「本文不含投资建议。」，英文稿（`.en.md`）"This article does not constitute investment advice."——缺失、改写或中英互换即 HOLD `E-ROUTE-DISCLAIMER-MISSING`。
+- **r13（王总 2026-10-11 定）**：`_decide_full()` 为私有函数，不对外调用；Codex 与王总记录只从 `origin/main` 的 `approvals/` 读取（调用方不能指定 ref），记录缺任一字段或格式不合 → HOLD `E-ROUTE-RECORD-INVALID`。稿件、`raw/` 与 `MANIFEST` 全部从 PR head 提交（`git archive`）读取，不读工作树。免责声明与其他检查先去掉 HTML 注释（含未闭合注释）与围栏代码块再判断。日报类稿件放在 `daily/` 或 `digest/` 都查固定免责声明，只对 2026-10-12 的稿件执行，更早的历史稿不追溯；2026-10-13 起改为只用站点页脚免责声明（见下条）。
+- **日报免责声明**（r12；2026-10-16 王总／Grok Bot 修订）：
+  - **2026-10-12 的日报**（含其更正稿）：`daily/`、`digest/` 下的稿件正文必须有单独成行的固定免责声明——中文稿「本文不含投资建议。」，英文稿（`.en.md`）"This article does not constitute investment advice."——缺失、改写或中英互换即 HOLD `E-ROUTE-DISCLAIMER-MISSING`。2026-10-12 之前的日报不查（历史稿不追溯）；更早日期的日报类更正稿仍按原规则查正文免责声明。
+  - **2026-10-13 起的日报**（含其更正稿，按稿件日期判断）：**只用站点页脚免责声明**（i18n `footer_disclaimer`：中「本站内容不构成投资建议。」／英 "Content on this site does not constitute investment advice."），由站点 smoke（site #56 起，`smoke_check.py` 页脚规则）检查。正文**不得**再加免责声明；`route_pr` 对这些稿件不再报 `E-ROUTE-DISCLAIMER-MISSING`；审查员（Codex 或人工）**不得**因正文没有免责声明判 BLOCKER 或任何严重度问题。
+- **关于页链接不算触碰内核**（Grok Bot 2026-10-16 约 06:41、约 07:07）：日报链接到公开关于页（`/about/`、`/en/about/`）上的定位与概括定义（如「统一系统观是什么，见关于页」）**不算**触碰或展开内核，审查员不得因此判 BLOCKER。BLOCKER 只针对：在公开稿件中展开私有内核内容，或链接、引用私有材料（如 `/workspace/markjin-core/` 一类本机私有路径）。
 - **王总记录只收 v2**（r12）：需要王总批准的稿件（宏观、医疗、宗教、tongyi、信号卡）只接受绑定 `draft_id` 的 v2 记录；v1 记录一律 `E-ROUTE-RECORD-V2-REQUIRED`。
 - **快通道顺序**（r12）：日报 Codex 快通道排在 `codex_in_production`（`A-NO-REVIEW-PATH`）检查之后。
 - **section 不得含 '-'**：`<section>` 只允许小写字母与数字（`^[a-z0-9]+$`），name 规则不变；draft_id 仍为 `<section>-<name>`（分隔符不变）。因此 `a-b/c.md` 非法（E-ROUTE-DRAFT-PATH），`a/b-c.md` → `a-b-c`，不会碰撞。现有 section（daily、digest、cards、tongyi）都不含 '-'，生产 bot 无需改 draft_id 格式。
@@ -264,7 +267,7 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
   - 原稿的日期和类别取站点 main 上那一版的 front matter 和路径：front matter 无合法 `date` → `E-ROUTE-CORRECTION-TARGET`；`date` 须等于 `--date`；路径 section 为 macro / tongyi / cards，或 front matter 的 categories / tags / type / series 含宏观、医疗、中医、佛学、宗教、tongyi、信号卡等 → 仍须王总批准（v2 记录）。本稿自检命中宏观/医疗/宗教同样须王总批准。
   - `corrected_at` 不早于原稿日期、不晚于实际发布当天（SGT）→ 否则 `E-ROUTE-CORRECTION-DATE`；Codex `reviewed_at` 不得早于 `corrected_at`。
   - 标题行（如 `## 更正 YYYY-MM-DD`）渲染后可见的文字里须出现 `corrected_at` 日期（链接目标、图片、HTML 属性里的日期不算；整体验收 r2/r3） → 否则 `E-ROUTE-CORRECTION-NOTE`。
-  - 免责声明（日报类更正稿不论原稿日期都查）、自检、配对审查、`codex_in_production` 照常；只跳过 06:55 / 07:00 的截止与顺延（以及 Mac 心跳/在岗检查）。`codex_in_production` 为真时只 HOLD（`E-ROUTE-CORRECTION` + `A-NO-REVIEW-PATH`），不归档已发布的原稿。
+  - 免责声明（日报类更正稿：原稿日期早于 2026-10-13 的都查正文免责声明；2026-10-13 起只用站点页脚，不查正文）、自检、配对审查、`codex_in_production` 照常；只跳过 06:55 / 07:00 的截止与顺延（以及 Mac 心跳/在岗检查）。`codex_in_production` 为真时只 HOLD（`E-ROUTE-CORRECTION` + `A-NO-REVIEW-PATH`），不归档已发布的原稿。
   - 获批 → `APPROVED` + `I-CORRECTION`；未获批 → `NEEDS_REVIEW`，不顺延、不归档。
 - markjin-data #31（10-10 更正稿）由 Grok Bot 破例处理，不等本脚本。
 
