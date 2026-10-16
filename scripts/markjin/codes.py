@@ -74,6 +74,7 @@ ERROR_CODES = {
     "E-ROUTE-RECORD-MISMATCH": "批准记录与稿件不符：draft_id 不一致，或渠道不符合要求（信号卡、tongyi 只接受 direct）",
     "E-ROUTE-RECORD-EXPIRED": "批准记录过期：王总记录时间非法、晚于当前时间或不是当天（Asia/Singapore 日历日）；Codex 记录早于稿件日期、早于更正时间，或顺延稿的 Codex 记录不是可发布日当天（前一日记录作废，r7）",
     "E-ROUTE-RECORD-V2-REQUIRED": "需要王总批准的稿件（宏观、医疗、宗教、tongyi、信号卡）只接受带 quote_ref、绑定 draft_id 的 v2 记录；信号卡、tongyi 与真实发信还须 direct",
+    "E-APPROVALS-EN-DRAFT-ID": "写入 Codex 记录被拒：英文稿（.en.md 或语言为 en）的 draft_id 必须以 -en 结尾；语言缺失或与稿件路径矛盾也拒绝（只查新写入，已有记录不追溯）",
     "E-ROUTE-APPROVALS-REWRITTEN": "approvals/ 历史被改写（不是只追加），记录不采信",
     "E-ROUTE-ARCHIVE-REVERTED": "发布状态历史中已归档条目被修改或删除，拒绝",
     "E-ROUTE-RECORD-INTERNAL": "批准记录的自由文本字段命中内部清单，该类记录全部不采信",

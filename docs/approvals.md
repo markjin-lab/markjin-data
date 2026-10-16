@@ -23,6 +23,7 @@
   - 顺延稿在可发布日 D（SGT）的重审 / 重新批准记录 `approvals/codex/<content_sha256>.<D>.json`、`approvals/wang/<content_sha256>.<D>.json`：顺延到 D 日只认这两份；文件名日期须是真实日期，且等于记录里 `reviewed_at`（Codex）/ `recorded_at`（王总）的 SGT 日期，否则判失败。
   - 写重审记录时**追加新的带日期文件**，绝不改写首日文件；同一 sha 同一日期只能有一份。
 - **只追加**：`approvals/codex/`、`approvals/wang/` 下已有文件不得修改、删除、改名。route 读取时与 `audit-approvals.py` 都用 `git log --no-renames --diff-filter=MDT` 检查，发现任何一次 → `E-ROUTE-APPROVALS-REWRITTEN`，全部记录不采信。
+- **英文稿 draft_id 写入检查**（Grok Bot 2026-10-17）：写 Codex 记录用 `scripts/write-codex-record.py`（`approvals.write_codex_record`）。英文稿（`--draft` 路径以 `.en.md` 结尾，或 `--lang en`）的 `draft_id` 必须以 `-en` 结尾，否则拒绝写入 `E-APPROVALS-EN-DRAFT-ID`；语言缺失或与路径矛盾也拒绝。只查新写入：已有记录不追溯，audit-approvals 不受影响。已知写错的 3 条（`6f3cf57b…`、`2e7da2ac…`、`b0264fec…`）按只追加规则保持原样，更正见 review/2026-10-16.md。
 - 时间一律 ISO 8601 且带时区（如 `2026-10-10T06:30:00+08:00`）。
 
 ## Codex 审查记录：`approvals/codex/<content_sha256>.json`（顺延日 `<content_sha256>.<D>.json`）
