@@ -8,13 +8,14 @@
   解压、提取、条目 JSON 只作派生物另存（derived/，登记 DERIVED.sha256，带 derived_from）。
 - 每次运行写入的公开文件都按运行戳独占创建（不覆盖），并追加到当天公开 MANIFEST.sha256。
 - 访问礼仪：如实 UA（含联系方式）；每次请求（含每一跳重定向、子 sitemap、robots.txt 本身）都按主机限速；
-  每一跳都先查目标主机 robots.txt 与停用状态；不自动跟随重定向；拒绝 t.co。
-- 403 / 验证页：持久写入停用状态（主机 + 源），人工复核后才恢复；只有 429、5xx、网络错误按
+  每一跳都先查目标主机 robots.txt、源状态与本轮失败 URL；不自动跟随重定向；拒绝 t.co。
+- 401/403 / 验证页（2026-10-18 新规则）：只让该 URL 本轮失败，给源记一次可疑；源连续 3 轮可疑 → pending-disable
+  并写报告交 Grok Bot 复核，人工确认后才 disabled（见 SourceHealth）。不按主机持久停用。只有 429、5xx、网络错误按
   Retry-After 或指数退避重试，次数与等待均有上限。
-- robots.txt 自身的跳转逐跳校验（scheme / t.co / 停用 / 跨主机即禁止）；robots 403 或验证页 → 持久停用。
+- robots.txt 自身的跳转逐跳校验（scheme / t.co / 跨主机即禁止）；robots 401/403 或验证页 → robots.txt 本轮失败，该站本轮按禁止。
 - 一切日志（公开与私有）不写本机路径、不写凭证：URL 不带查询值（只记参数个数，不记参数名；按源 public_params 声明的才留值），hops 只存脱敏 URL；
 - 地址策略强制安装（AddressPolicy，每一跳/子 sitemap 在任何请求前检查）；外部策略只能叠加更严。
-- robots.txt 返回 HTTP 200 的 HTML → 一律按验证页处理并持久停用。私有根目录必须显式给出且不能与公开根目录重叠。
+- robots.txt 返回 HTML 但不是验证页 → 本轮按禁止，不算可疑。私有根目录必须显式给出且不能与公开根目录重叠。
 """
 import datetime as dt
 import email.utils
@@ -35,7 +36,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from . import strictjson
 
 UA = "markjin-collector/0.1 (+https://markjin-lab.github.io)"     # 不写死任何邮箱
-# SEC（*.sec.gov）要求 UA 带联系方式：只从环境变量读取；未设置则 SEC 请求一律不发（not_configured），不停用
+# SEC（*.sec.gov）要求 UA 带联系方式：只从环境变量读取；未设置则 SEC 请求一律不发（not_configured），不算可疑
 SEC_UA_ENV = "MARKJIN_SEC_USER_AGENT"
 SEC_SUFFIX = "sec.gov"
 # 主机组全局限速（跨该组所有主机共用一个桶）：SEC 公示上限 10 次/秒，这里取 5 次/秒留余量
@@ -62,8 +63,9 @@ BACKOFF_BASE = 2.0
 BACKOFF_CAP = 120.0          # Retry-After 超过此值直接放弃本次（不长时间挂起）
 REFUSED_HOSTS = {"t.co"}
 REDIRECT_CODES = {301, 302, 303, 307, 308}
-# 验证页识别（collector 与 scrapers 共用这一份）。总原则：只有 403 和高置信的验证页（命中厂商标记）才持久停用；
-# 格式不对、只命中泛用短语，只记本轮失败/可疑，不停用。
+# 验证页识别（collector 与 scrapers 共用这一份）。厂商标记（vendor）与泛用短语（phrase）都只让该 URL 本轮失败、
+# 给源记一次可疑（2026-10-18 新规则，见 SourceHealth）；区分两者只为报告里写清原因。误判代价是该 URL 本轮丢失，
+# 并可能累积成源的 pending-disable，所以两类仍尽量收紧。
 # 高置信厂商标记：用 html.parser 逐个标签解析，只看精确属性（class、src、id、meta），不用字节正则。
 # 地址一律用 urljoin(响应 URL, src) 补全后比对：同源（scheme + 主机 + 端口与响应一致）的才算本站资源。
 #  - Cloudflare：<script src> 或脚本里 X.src = '…' 指向 challenges.cloudflare.com，或本站
@@ -72,21 +74,22 @@ REDIRECT_CODES = {301, 302, 303, 307, 308}
 #  - reCAPTCHA / hCaptcha：class 含 g-recaptcha；script src 指向 google.com/recaptcha.net 的 /recaptcha/…api.js、hcaptcha 的 api.js
 #  - Incapsula：<script src> 指向本站 /_Incapsula_Resource；或 <iframe src> 指向本站 /_Incapsula_Resource?…
 #    且正文含 "Incapsula incident ID"（组合证据）
-#  - PerimeterX：不在引号里的 window._pxAppId 赋值；script src（含 X.src 赋值）指向 captcha.px-cdn.net / captcha.px-cloud.net；
+#  - PerimeterX：script src（含 X.src 赋值）指向 captcha.px-cdn.net / captcha.px-cloud.net（r13：单独的 window._pxAppId
+#    赋值是正常页面的 Sensor，不算）；
 #    meta description 为 px-captcha 且标题为 "Access to this page has been denied"；div#px-captcha 且整页可见文本很短
 #  - form#challenge-form
-#  - 没闭合的 <script>（一直到文末）：只命中一个标记 → 只记本轮可疑；要有第二个独立标记才算高置信
+#  - 没闭合的 <script>（一直到文末）：永不算高置信；内容混入 HTML 标签时不判定，纯脚本命中标记 → 只算疑似（phrase）
 #  - 免检：<textarea>/<xmp>/<plaintext>/<title> 内（HTML 规范里的纯文本元素）、注释、可见文本；<pre>/<code> 照常检查。
 #    script 内容先去掉 JS 字符串字面量和注释，其余文字不解析为标签。data-class / data-src 等不是 class / src
 #  - 响应头 cf-mitigated: challenge（见 classify_page）
 _LITERAL_TAGS = frozenset({"textarea", "xmp", "plaintext", "title"})
 PX_TEXT_MAX = 1000
 _CF_CHL_OPT = re.compile(r"(?:^|[;{}()\s,])window\s*\.\s*_cf_chl_opt\s*=(?!=)")
-_PX_APPID = re.compile(r"(?:^|[;{}()\s,])window\s*\.\s*_pxAppId\s*=(?!=)")
 _JS_SRC = re.compile(r"""\.\s*src\s*=\s*(['"])""")
 _CF_ORCH = re.compile(r"^/cdn-cgi/challenge-platform/h/[a-z]/orchestrate/", re.I)
 _PX_CAPTCHA_HOSTS = frozenset({"captcha.px-cdn.net", "captcha.px-cloud.net"})
 PX_DENIED_TITLE = "access to this page has been denied"
+_HTML_IN_SCRIPT = re.compile(r"<(?:/?[a-z][a-z0-9-]*(?:\s|>|/>)|!--)", re.I)
 
 
 def _origin(u):
@@ -150,12 +153,11 @@ def _js_mask(js):
 
 
 def _script_markers(js, base=None):
-    """脚本内容里的独立标记集合：cf_chl_opt / px_appid / src（X.src = '…' 指向验证组件）。"""
+    """脚本内容里的独立标记集合：cf_chl_opt / src（X.src = '…' 指向验证组件）。
+    r13：window._pxAppId 赋值是 HUMAN/PerimeterX 正常页面传感器（Sensor）的标准写法，不拦截流量，不算标记。"""
     m, found = _js_mask(js), set()
     if _CF_CHL_OPT.search(m):
         found.add("cf_chl_opt")
-    if _PX_APPID.search(m):
-        found.add("px_appid")
     for x in _JS_SRC.finditer(m):          # 赋值本身在代码里；值是紧随其后的字符串字面量
         q, start = x.group(1), x.end()
         end = js.find(q, start)
@@ -233,11 +235,11 @@ def _vendor_scan(text, base=None):
     if sc.hit or (sc.px and sc.visible <= PX_TEXT_MAX) or (sc.meta_px and title == PX_DENIED_TITLE) or \
             (sc.incap_iframe and "incapsula incident id" in " ".join("".join(sc.text).split()).lower()):
         return "vendor"
-    if sc.in_script == "script":                       # 没闭合的 script：要两个独立标记才算高置信
-        n = len(_script_markers("".join(sc.sbuf), base))
-        if n >= 2:
-            return "vendor"
-        if n == 1:
+    if sc.in_script == "script":                       # r13：没闭合的 script 永不算高置信
+        js = "".join(sc.sbuf)
+        if _HTML_IN_SCRIPT.search(js):                 # 混入 HTML 标签（如 <pre>）：不是可执行的挑战脚本，不凭内部赋值判定
+            return None
+        if _script_markers(js, base):
             return "suspect"
     return None
 
@@ -292,7 +294,7 @@ def phrase_hit(body):
 
 
 def classify_page(ctype, body, headers=None, url=None):
-    """返回 'vendor'（厂商标记，高置信 → 持久停用）、'phrase'（只命中泛用短语或单一弱标记 → 本轮可疑，不停用）或 None。
+    """返回 'vendor'（厂商标记，高置信）、'phrase'（只命中泛用短语或单一弱标记，疑似）或 None。两者都只让该 URL 本轮失败。
     url = 响应 URL，用来把相对 / 协议相对 / 同主机绝对地址补全并核对同源。响应头 cf-mitigated: challenge 不论正文都算 vendor；
     正文只对 HTML 形态判断（JSON / XML / 普通文本交给格式校验）。"""
     for k, v in (headers or {}).items():
@@ -313,7 +315,7 @@ def is_challenge(body, ctype="", headers=None, url=None):
 
 
 def plain_html(ctype, body):
-    """text/plain 正文却以 HTML 标签开头（XML 文档不算）。只作辅助证据：须与短语或厂商标记同时命中才停用。"""
+    """text/plain 正文却以 HTML 标签开头（XML 文档不算）。只作辅助证据，单独命中不算可疑。"""
     return "text/plain" in (ctype or "").lower() and bool(body) and looks_html({}, body, xml_ok=True)
 
 
@@ -658,64 +660,141 @@ def ext_for(ctype, body):
     return "bin"
 
 
-# ---------------------------------------------------------------- 持久停用状态
+# ---------------------------------------------------------------- 逐 URL / 逐源可疑状态（2026-10-18 新规则）
+# 规则（王总 2026-10-18 决定）：
+#  - 单次可疑响应（401/403、验证页、厂商标记、只命中短语的疑似验证页、rss/api 格式校验不通过）只让「这个 URL」本轮失败：
+#    本轮内不再请求该 URL（跨进程同样生效），同主机的其他 URL、其他源照常。不按主机持久停用。
+#  - 一个源连续 DISABLE_AFTER_ROUNDS（3）轮都有可疑结果 → 状态 pending-disable，并写入报告条目交 Grok Bot 复核；
+#    从下一轮起不再请求该源（不静默：每轮都在报告里列出）。人工确认（confirm-disable / disable）后为 disabled，
+#    人工恢复（enable）后清零重新计数。中间任一轮该源跑过且没有可疑结果 → 连续计数清零。
+#  - 永不绕过付费墙、登录或验证：验证页只记失败，不重试、不换 UA、不跑 JS、不带 cookie。
+DISABLE_AFTER_ROUNDS = 3
+KEEP_ROUNDS = 10
+SOURCE_STATUSES = ("ok", "pending-disable", "disabled")
+_ROUND_ID = re.compile(r"\d{4}-\d{2}-\d{2}/r[12]")
+SUSPICIOUS_ERRORS = frozenset({"http_401", "http_403", "challenge", "suspected_challenge", "robots_http_401",
+                               "robots_http_403", "robots_challenge", "robots_suspected_challenge",
+                               "url_failed_this_round"})
+
+
+def is_suspicious(error):
+    """是否算「可疑结果」（计入源的连续可疑轮数）。网络错误、404、5xx、robots 禁止等不算。"""
+    e = error or ""
+    return e in SUSPICIOUS_ERRORS or e.startswith("suspected_challenge:")
+
+
+def round_id(date, rnd):
+    rid = f"{date}/r{int(rnd)}"
+    if not _ROUND_ID.fullmatch(rid):
+        raise ConfigError(f"bad round id {rid!r}")
+    return rid
+
+
 class StateError(ValueError):
-    """停用状态文件损坏或结构不对。"""
+    """状态文件损坏或结构不对。"""
 
 
-class HostState:
-    """{"hosts": {host: {...}}, "sources": {sid: {...}}}。只由采集器写入停用；恢复只能用 enable()（人工手改文件不受支持，结构不对即拒绝请求）。
-    磁盘为准：refresh() 用磁盘快照直接替换缓存（人工删掉的条目立即生效）；disable()/enable() 在 fcntl 排他锁
-    （状态文件同目录 locks/<name>.lock，即私有 state/locks/）内重读磁盘，只合并/删除本次这一条，再写唯一命名的临时文件，
-    最后 os.replace。旧进程不会把人工恢复的主机写回。disabled() 每次请求前都 refresh()。"""
+class SourceHealth:
+    """私有状态文件（默认 PRIVATE/state/source-health.json）：
+    {"version": 2,
+     "sources": {sid: {"status": ok|pending-disable|disabled, "rounds": {"YYYY-MM-DD/rN": {"suspicious": bool, "reasons": [..]}},
+                       ["status_at": ..., "status_reason": ...]}},
+     "urls": {sha256(完整 URL): {"round": "YYYY-MM-DD/rN", "reason": ..., "sid": sid 或 null, "host": 主机}}}
+    urls 只保留当前轮（写入时清掉别的轮），记的是完整 URL 的 sha256，不写 URL 本身。
+    严格读取：文件存在时 version、sources、urls 三个键都必须在且类型正确，否则 StateError（损坏不当作空状态）；
+    文件不存在 = 首次运行。损坏时 blocked() 对一切请求返回拒绝，写操作一律拒绝改写。
+    写入：fcntl 排他锁（同目录 locks/<name>.lock）内重读磁盘、只改本次条目，mkstemp + fsync + os.replace。"""
 
     def __init__(self, path):
         self.path = Path(path) if path else None
-        self.data = {"hosts": {}, "sources": {}}
+        self.data = {"version": 2, "sources": {}, "urls": {}}
+        self.error = None
         try:
             self.refresh()
-        except StateError:
-            pass                       # 损坏时不抛：disabled() 会对每次请求返回拒绝；disable()/enable() 拒绝改写
+        except StateError as e:
+            self.error = str(e)
 
+    # -- 读取与校验
     def _read(self):
-        """严格读取：顶层、hosts、sources 都必须是对象，每条记录是对象且带非空字符串 reason；否则 StateError。
-        文件不存在 = 空状态；空文件、坏 JSON、结构不对都算损坏（不能当成人工恢复）。"""
         if not (self.path and self.path.exists()):
-            return {}, {}
+            return {"version": 2, "sources": {}, "urls": {}}
         try:
             d = strictjson.loads(self.path.read_text(encoding="utf-8"))
         except (ValueError, UnicodeDecodeError) as e:
-            raise StateError(f"host state unreadable: {type(e).__name__}")
+            raise StateError(f"source health unreadable: {type(e).__name__}")
         if not isinstance(d, dict):
-            raise StateError("host state top level must be an object")
-        out = []
-        for k in ("hosts", "sources"):
-            m = d.get(k, {})
-            if not isinstance(m, dict):
-                raise StateError(f"host state '{k}' must be an object")
-            for name, rec in m.items():
-                if not isinstance(rec, dict) or not isinstance(rec.get("reason"), str) or not rec["reason"].strip():
-                    raise StateError(f"host state '{k}' entry without reason")
-            out.append(dict(m))
-        return out[0], out[1]
+            raise StateError("source health top level must be an object")
+        for k in ("version", "sources", "urls"):
+            if k not in d:
+                raise StateError(f"source health missing key '{k}'")
+        if d["version"] != 2 or isinstance(d["version"], bool):
+            raise StateError("source health version must be 2")
+        if not isinstance(d["sources"], dict) or not isinstance(d["urls"], dict):
+            raise StateError("source health 'sources' and 'urls' must be objects")
+        for sid, rec in d["sources"].items():
+            if not isinstance(rec, dict) or rec.get("status") not in SOURCE_STATUSES or \
+                    not isinstance(rec.get("rounds"), dict):
+                raise StateError("source health entry malformed")
+            for rid, rr in rec["rounds"].items():
+                if not _ROUND_ID.fullmatch(rid) or not isinstance(rr, dict) or \
+                        not isinstance(rr.get("suspicious"), bool) or not isinstance(rr.get("reasons"), list) or \
+                        not all(isinstance(x, str) for x in rr["reasons"]):
+                    raise StateError("source health round entry malformed")
+            if rec["status"] != "ok" and not (isinstance(rec.get("status_reason"), str) and rec["status_reason"].strip()):
+                raise StateError("non-ok source without status_reason")
+        for k, rec in d["urls"].items():
+            if not re.fullmatch(r"[0-9a-f]{64}", k) or not isinstance(rec, dict) or \
+                    not _ROUND_ID.fullmatch(str(rec.get("round"))) or \
+                    not (isinstance(rec.get("reason"), str) and rec["reason"].strip()) or \
+                    not (rec.get("sid") is None or isinstance(rec.get("sid"), str)) or \
+                    not isinstance(rec.get("host"), str):
+                raise StateError("source health url entry malformed")
+        return d
 
     def refresh(self):
         if self.path:
-            h, src = self._read()
-            self.data = {"hosts": h, "sources": src}
+            self.data = self._read()
+            self.error = None
 
-    def disabled(self, host, sid=None):
+    def _fresh(self):
+        """每次判定前以磁盘为准；损坏返回原因字符串。"""
         try:
-            self.refresh()             # 每次请求前重读：别的进程停用、人工恢复都立即生效
-        except StateError as e:        # 状态文件损坏 → 一律拒绝发请求
-            return f"host state invalid ({e}); refusing requests"
-        if sid and sid in self.data["sources"]:
-            return f"source disabled: {self.data['sources'][sid]['reason']}"
-        if host in self.data["hosts"]:
-            return f"host disabled: {self.data['hosts'][host]['reason']}"
+            self.refresh()
+        except StateError as e:
+            self.error = str(e)
+        return self.error
+
+    # -- 查询
+    def blocked(self, sid=None):
+        """返回拒绝原因或 None：状态文件损坏 → 一律拒绝；源为 pending-disable / disabled → 拒绝。"""
+        bad = self._fresh()
+        if bad:
+            return f"source health invalid ({bad}); refusing requests"
+        rec = self.data["sources"].get(sid) if sid else None
+        if rec and rec["status"] != "ok":
+            return f"source {rec['status']}: {rec['status_reason']}"
         return None
 
+    def url_failed(self, url, rid):
+        if not (self.path and rid) or self._fresh():
+            return None
+        rec = self.data["urls"].get(url_sha256(url))
+        return rec["reason"] if rec and rec["round"] == rid else None
+
+    @staticmethod
+    def streak(rec):
+        """按轮次 id 倒序数连续可疑的轮数（只数该源实际跑过的轮）。"""
+        n = 0
+        for rid in sorted(rec.get("rounds", {}), reverse=True):
+            if not rec["rounds"][rid]["suspicious"]:
+                break
+            n += 1
+        return n
+
+    # -- 写入（锁内重读）
     def _locked_update(self, fn):
+        if not self.path:
+            return fn(self.data)
         import fcntl
         import tempfile
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -724,50 +803,93 @@ class HostState:
         with open(locks / f"{self.path.name}.lock", "a+") as lk:
             fcntl.flock(lk, fcntl.LOCK_EX)
             try:
-                h, src = self._read()                  # 锁内以磁盘为准，只改本次这一条
-                fn(h, src)
-                data = {"hosts": h, "sources": src}
+                d = self._read()                       # 损坏 → StateError，不改写
+                out = fn(d)
                 fd, tmp = tempfile.mkstemp(prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent)
                 try:
                     with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        f.write(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
+                        f.write(json.dumps(d, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
                         f.flush(); os.fsync(f.fileno())
                     os.replace(tmp, self.path)
                 except BaseException:
                     if os.path.exists(tmp):
                         os.unlink(tmp)
                     raise
-                self.data = data
+                self.data, self.error = d, None
+                return out
             finally:
                 fcntl.flock(lk, fcntl.LOCK_UN)
 
-    def disable(self, host, sid, reason):
-        rec = {"reason": reason, "at": now(), "needs": "manual review before re-enable"}
+    def fail_url(self, url, rid, sid, reason):
+        """本轮这个 URL 失败（只影响这个 URL、只到本轮结束）。别的轮的 URL 记录顺手清掉。"""
+        key = url_sha256(url)
 
-        def add(h, src):
-            if host:
-                h[host] = rec
-            if sid:
-                src[sid] = dict(rec, host=host)
-        if not self.path:
-            add(self.data["hosts"], self.data["sources"])
-            return
-        self._locked_update(add)
+        def upd(d):
+            d["urls"] = {k: v for k, v in d["urls"].items() if v["round"] == rid}
+            d["urls"].setdefault(key, {"round": rid, "reason": reason, "sid": sid, "host": host_of(url)})
+        self._locked_update(upd)
 
-    def enable(self, host=None, sid=None):
-        """人工恢复（同一把锁）：删掉主机条目及因该主机停用的源；或按 sid 删源条目。返回删掉的条目数。"""
-        n = [0]
+    def record_round(self, rid, results):
+        """results: {sid: [可疑原因, ...]}（空列表 = 该源本轮跑过且无可疑）。同一轮重复记录按「任一次可疑即可疑」合并。
+        连续可疑达到 DISABLE_AFTER_ROUNDS 且状态为 ok → 改为 pending-disable。返回 {sid: 本轮新转入 pending-disable 与否}。"""
+        if not _ROUND_ID.fullmatch(rid or ""):
+            raise ConfigError(f"bad round id {rid!r}")
+        changed = {}
 
-        def rm(h, src):
-            if host and h.pop(host, None) is not None:
-                n[0] += 1
-            for k in [k for k, v in src.items() if (sid and k == sid) or (host and v.get("host") == host)]:
-                src.pop(k); n[0] += 1
-        if not self.path:
-            rm(self.data["hosts"], self.data["sources"])
-        else:
-            self._locked_update(rm)
-        return n[0]
+        def upd(d):
+            for sid, reasons in results.items():
+                rec = d["sources"].setdefault(sid, {"status": "ok", "rounds": {}})
+                rr = rec["rounds"].setdefault(rid, {"suspicious": False, "reasons": []})
+                rr["suspicious"] = rr["suspicious"] or bool(reasons)
+                rr["reasons"] = sorted(set(rr["reasons"]) | set(reasons))
+                for old in sorted(rec["rounds"])[:-KEEP_ROUNDS]:
+                    del rec["rounds"][old]
+                n = self.streak(rec)
+                changed[sid] = False
+                if rec["status"] == "ok" and n >= DISABLE_AFTER_ROUNDS:
+                    rec.update(status="pending-disable", status_at=now(),
+                               status_reason=f"{n} consecutive rounds with suspicious results; awaiting Grok Bot review")
+                    changed[sid] = True
+        self._locked_update(upd)
+        return changed
+
+    def set_status(self, sid, status, reason):
+        """人工操作：confirm-disable / disable（status=disabled，须写明确认依据）或 enable（status=ok，清空轮次计数）。"""
+        if status not in SOURCE_STATUSES:
+            raise ConfigError(f"bad status {status!r}")
+        if status != "ok" and not (reason or "").strip():
+            raise ConfigError("reason required")
+
+        def upd(d):
+            rec = d["sources"].setdefault(sid, {"status": "ok", "rounds": {}})
+            if status == "ok":
+                d["sources"][sid] = {"status": "ok", "rounds": {}, "status_at": now(),
+                                     "status_reason": reason or "manually re-enabled"}
+            else:
+                rec.update(status=status, status_at=now(), status_reason=reason.strip())
+        self._locked_update(upd)
+
+    def report(self, sids=None):
+        """报告条目：所有非 ok 的源，以及连续可疑轮数 > 0 的源（观察中）。pending-disable 标明交 Grok Bot 复核。"""
+        self._fresh()
+        out = []
+        for sid, rec in sorted(self.data["sources"].items()):
+            if sids is not None and sid not in sids:
+                continue
+            n = self.streak(rec)
+            if rec["status"] == "ok" and n == 0:
+                continue
+            recent = [{"round": r, "reasons": rec["rounds"][r]["reasons"]}
+                      for r in sorted(rec["rounds"], reverse=True)[:max(n, 1)]]
+            e = {"id": sid, "status": rec["status"] if rec["status"] != "ok" else "watch",
+                 "consecutive_suspicious_rounds": n, "threshold": DISABLE_AFTER_ROUNDS, "recent": recent}
+            if rec["status"] == "pending-disable":
+                e.update(flag="grok-bot-review", since=rec.get("status_at"),
+                         action="confirm-disable or enable (scripts/source_health.py)")
+            elif rec["status"] == "disabled":
+                e.update(since=rec.get("status_at"), reason=rec.get("status_reason"))
+            out.append(e)
+        return out
 
 
 # ---------------------------------------------------------------- 抓取层
@@ -831,8 +953,13 @@ def retry_after(headers):
 class Fetcher:
     def __init__(self, state=None, interval=HOST_INTERVAL, timeout=30, opener=None, sleep=time.sleep,
                  clock=time.monotonic, max_bytes=MAX_BYTES, log=None, addr_policy=None, resolver=None,
-                 fakeip_cidr=None, lock_dir=None):
-        self.state = state or HostState(None)
+                 fakeip_cidr=None, lock_dir=None, round_id=None):
+        # state = SourceHealth（逐源连续可疑计数 + 本轮失败 URL）；round_id = "YYYY-MM-DD/rN"，给了才跨进程记本轮失败的 URL
+        self.state = state if state is not None else SourceHealth(None)
+        self.round_id = round_id
+        self.round_failed = {}     # 本轮失败的完整 URL → 原因（本进程内）；跨进程的记录在 state.urls
+        self.suspicious = {}       # sid（无源时为 None）→ [{"reason", "host"}]：本轮该源的可疑结果，交 record_round
+        self._robots_bad = {}      # scheme://host → 本轮 robots.txt 的可疑原因（本轮按禁止处理，不持久停用）
         # 主机组（SEC）跨进程锁目录（私有目录）：同一时间只有一个实例在请求该组，间隔按锁文件里的时间戳控制
         self.lock_dir = Path(lock_dir) if lock_dir else None
         interval = float(interval)
@@ -858,6 +985,20 @@ class Fetcher:
     def address_check(self, url):
         """强制策略与外部策略的合取；返回拒绝原因或 None。"""
         return AllOf(self._forced_policy, self.addr_policy)(url)
+
+    # -- 逐 URL / 逐源可疑记录
+    def _event(self, sid, reason, url):
+        self.suspicious.setdefault(sid, []).append({"reason": reason, "host": host_of(url)})
+
+    def mark_failed(self, url, sid, reason):
+        """单次可疑响应：只让这个 URL 本轮失败（本轮内不再请求），并给 sid 记一次可疑。不停用主机或源。"""
+        self.round_failed.setdefault(url, reason)
+        self._event(sid, reason, url)
+        if self.state.path and self.round_id:
+            self.state.fail_url(url, self.round_id, sid, reason)
+
+    def failed_this_round(self, url):
+        return self.round_failed.get(url) or self.state.url_failed(url, self.round_id)
 
     # -- 每主机限速（所有请求都走这里）
     def _wait(self, host, skip_group=False):
@@ -948,7 +1089,7 @@ class Fetcher:
         return status, headers, buf, None, None
 
     def _with_retry(self, url, accept, html_is_challenge=False):
-        """html_is_challenge（robots 用）：401/429/5xx 返回 HTML 视为疑似验证页，不重试，直接交回调用方停用。"""
+        """html_is_challenge（robots 用）：401/429/5xx 返回 HTML 视为疑似验证页，不重试，直接交回调用方（本轮按禁止）。"""
         for attempt in range(MAX_RETRIES + 1):
             st, h, body, ec, det = self._raw(url, accept)
             ct = ((h or {}).get("Content-Type") or "")
@@ -967,21 +1108,29 @@ class Fetcher:
         return st, h, body, ec, det
 
     # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速）
+    def _disallow_all(self):
+        rp = urllib.robotparser.RobotFileParser()
+        rp.disallow_all = True
+        return rp
+
     def robots(self, url, sid=None):
-        """robots.txt 自身的每一跳也逐跳校验（审查 r2）：scheme、t.co 拒绝、停用状态；跨主机跳转一律按禁止处理
-        （不拿别处的 robots 当本站许可）。robots 返回 403 或验证页（含 HTTP 200 验证页）→ 持久停用主机/源，
-        禁止继续请求该站正文。"""
+        """robots.txt 自身的每一跳也逐跳校验（审查 r2）：scheme、t.co 拒绝、跨主机跳转一律按禁止处理
+        （不拿别处的 robots 当本站许可）。robots 返回 401/403 或验证页 → 只让 robots.txt 这个 URL 本轮失败，
+        本轮按禁止处理（不请求该站正文），给 sid 记一次可疑；不持久停用主机。"""
         p = urlsplit(url)
         host = (p.hostname or "").lower()
         base = f"{p.scheme}://{p.netloc}"
-        if self.state.disabled(host, sid):      # 先查停用（含状态文件损坏），再读缓存：直接返回禁止，不发请求
-            rp = urllib.robotparser.RobotFileParser()
-            rp.disallow_all = True
-            return rp
+        if self.state.blocked(sid):             # 状态文件损坏或源已 pending-disable/disabled：直接禁止，不发请求
+            return self._disallow_all()
         if base in self._robots:
             return self._robots[base]
         rp = urllib.robotparser.RobotFileParser()
         cur = base + "/robots.txt"
+        prev = self.failed_this_round(cur)       # 别的进程本轮已判可疑：本轮按禁止，不再请求
+        if prev:
+            self._robots_bad[base] = prev
+            self._robots[base] = self._disallow_all()
+            return self._robots[base]
         st, ec, body, h = 0, "too_many_redirects", b"", {}
         for hop in range(MAX_REDIRECTS + 1):
             if hop:
@@ -991,17 +1140,17 @@ class Fetcher:
                     st, ec = 0, "robots_bad_redirect"; break
                 if qh in REFUSED_HOSTS:
                     st, ec = 0, "robots_redirect_refused_host"; break
-                if self.state.disabled(qh, sid):
-                    st, ec = 0, "robots_redirect_disabled_host"; break
                 if qh != host:
                     st, ec = 0, "robots_cross_host_redirect"; break
+                if self.failed_this_round(cur):
+                    st, ec = 0, "robots_redirect_failed_url"; break
             why = self.address_check(cur)          # 每一跳 robots 请求前都过强制策略 + 外部策略
             if why:
                 st, ec, body, h = 0, "robots_blocked_address", b"", {}; break
             st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*", html_is_challenge=True)
             h = h or {}
             if st in (401, 403):
-                break                    # 先按状态码：403/401 → 持久停用（见下），不看正文
+                break                    # 先按状态码，不看正文
             kind = classify_page(h.get("Content-Type") or "", body, h, cur)
             if kind:
                 break                    # 再查验证页（含带验证内容的 3xx），不再跟随 Location
@@ -1014,14 +1163,22 @@ class Fetcher:
                 continue
             break
         kind = classify_page(h.get("Content-Type") or "", body, h, cur)
-        if st in (401, 403):            # 先按状态码：403/401 持久停用（不论正文）
-            self.state.disable(host, sid, f"robots.txt HTTP {st}")
+        bad = None
+        if st in (401, 403):            # 先按状态码（不论正文）
+            bad = f"robots_http_{st}"
+        elif kind == "vendor":
+            bad = "robots_challenge"
+        elif kind == "phrase":
+            bad = "robots_suspected_challenge"
+        if bad:                          # 只让 robots.txt 这个 URL 本轮失败；本轮按禁止；不持久停用
+            self.mark_failed(cur, sid, bad)
+            if cur != base + "/robots.txt":
+                self.round_failed.setdefault(base + "/robots.txt", bad)
+            self._robots_bad[base] = bad
+            self.robots_note[base] = f"{bad} (HTTP {st})"
             rp.disallow_all = True
-        elif kind == "vendor":          # 真正的验证组件 → 持久停用
-            self.state.disable(host, sid, f"robots.txt bot challenge page (HTTP {st})")
-            rp.disallow_all = True
-        elif kind or (body and looks_html(h, body) and st not in (404, 410)):
-            self.robots_note[base] = f"robots.txt suspect/HTML (HTTP {st})"   # 格式不对：本轮按禁止，不停用
+        elif body and looks_html(h, body) and st not in (404, 410):
+            self.robots_note[base] = f"robots.txt suspect/HTML (HTTP {st})"   # 格式不对：本轮按禁止，不算可疑
             rp.disallow_all = True
         elif st == 200 and not ec:
             rp.parse(body.decode("utf-8", "replace").splitlines())
@@ -1032,7 +1189,7 @@ class Fetcher:
                 self._host_interval[host] = stricter
         elif st in (404, 410) and not ec:
             rp.allow_all = True
-        else:                     # 401/5xx/网络错误/跳转被拒 → 按禁止处理
+        else:                     # 5xx/429/网络错误/跳转被拒 → 本轮按禁止处理
             rp.disallow_all = True
         self._robots[base] = rp
         return rp
@@ -1048,9 +1205,12 @@ class Fetcher:
             self._sink = prev
 
     def _get(self, url, sid, accept):
-        """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、停用状态、robots 与限速。
-        Result.hops 从一开始只持有 public_url（凭证参数不进任何日志）；final_url 为完整 URL，仅供内存内核对，
-        写记录前必须经 public_url。"""
+        """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、源状态、本轮失败 URL、robots 与限速。
+        可疑响应（401/403、厂商验证页、只命中短语的疑似验证页）只让该 URL（及最初请求的 URL）本轮失败，记一次可疑；
+        不重试、不跟随 Location、不持久停用。Result.hops 只持有 public_url；final_url 为完整 URL，仅供内存内核对。"""
+        why = self.state.blocked(sid)
+        if why:
+            return Result(False, final_url=url, error="source_blocked", detail=why)
         hops, cur = [], url
         for _ in range(MAX_REDIRECTS + 1):
             p = urlsplit(cur)
@@ -1059,10 +1219,11 @@ class Fetcher:
                 return Result(False, final_url=cur, hops=hops, error="bad_url")
             if host in REFUSED_HOSTS:
                 return Result(False, final_url=cur, hops=hops, error="refused_host")
-            why = self.state.disabled(host, sid)
-            if why:
-                return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
-            if in_group(host, SEC_SUFFIX) and not self.sec_ua:   # 未配置 SEC UA：不发请求，也不停用
+            prev = self.failed_this_round(cur)
+            if prev:                      # 本轮已判可疑的 URL：本轮绝不再请求
+                self._event(sid, "url_failed_this_round", cur)
+                return Result(False, final_url=cur, hops=hops, error="url_failed_this_round", detail=prev)
+            if in_group(host, SEC_SUFFIX) and not self.sec_ua:   # 未配置 SEC UA：不发请求，不算可疑
                 return Result(False, final_url=cur, hops=hops, error="not_configured",
                               detail=f"{SEC_UA_ENV} not set (must include contact info)")
             if in_group(host, SEC_SUFFIX) and not self.lock_dir:  # 没有跨进程限速锁：不发请求
@@ -1072,22 +1233,33 @@ class Fetcher:
             if why:
                 return Result(False, final_url=cur, hops=hops, error="blocked_address", detail=why)
             if not self.allowed(cur, sid):
-                why = self.state.disabled(host, sid)   # robots 403/验证页刚触发的停用
+                why = self.state.blocked(sid)
                 if why:
-                    return Result(False, final_url=cur, hops=hops, error="disabled", detail=why)
+                    return Result(False, final_url=cur, hops=hops, error="source_blocked", detail=why)
+                bad = self._robots_bad.get(f"{p.scheme}://{p.netloc}")
+                if bad:                   # robots.txt 本轮可疑：该站本轮按禁止，给本源记一次可疑
+                    if not any(e["reason"] == bad and e["host"] == host for e in self.suspicious.get(sid, [])):
+                        self._event(sid, bad, cur)
+                    return Result(False, final_url=cur, hops=hops, error=bad, detail=self.robots_note.get(
+                        f"{p.scheme}://{p.netloc}"))
                 return Result(False, final_url=cur, hops=hops, error="robots_disallow")
             st, h, body, ec, det = self._with_retry(cur, accept)
             ctype = (h.get("Content-Type") if h else "") or ""
-            # 原字节已在 _raw 里交给 raw_sink；每一跳先按状态码处理（403/401 持久停用），再判正文，最后处理 Location
+            # 原字节已在 _raw 里交给 raw_sink；每一跳先按状态码，再判正文，最后处理 Location
+            bad = None
             if st in (401, 403):
-                self.state.disable(host, sid, f"HTTP {st}")
-                return Result(False, st, ctype, b"", cur, hops, f"http_{st}")
-            kind = classify_page(ctype, body, h, cur)
-            if kind == "vendor":
-                self.state.disable(host, sid, f"bot challenge page: vendor marker (HTTP {st})")
-                return Result(False, st, ctype, b"", cur, hops, "challenge")
-            if kind == "phrase":       # 只命中泛用短语：本轮可疑失败，不跟随、不停用
-                return Result(False, st, ctype, b"", cur, hops, "suspected_challenge")
+                bad = f"http_{st}"
+            else:
+                kind = classify_page(ctype, body, h, cur)
+                if kind == "vendor":
+                    bad = "challenge"
+                elif kind == "phrase":
+                    bad = "suspected_challenge"
+            if bad:
+                self.mark_failed(cur, sid, bad)
+                if cur != url:
+                    self.round_failed.setdefault(url, bad)
+                return Result(False, st, ctype, b"", cur, hops, bad)
             if st in REDIRECT_CODES:
                 loc = h.get("Location") if h else None
                 if not loc:

@@ -21,7 +21,10 @@ sources.yaml 里按源声明 public_params: [name, ...]。URL 默认只写 schem
 地址策略强制生效（每一跳）：拒绝本机/内网/链路本地/保留地址；经透明代理时用 --proxy-fakeip-cidr 或
 $MARKJIN_PROXY_FAKEIP_CIDR 声明代理假 IP 网段（只接受 198.18.0.0/15 内）。
 需要免费密钥的 API：auth_env（环境变量名）+ auth_param（查询参数名），密钥只在请求时拼接，不进任何记录。
-403 / 验证页 → 持久停用（PRIVATE/state/collector-hosts.json），人工复核后删除条目才恢复。
+401/403 / 验证页 / 格式校验不通过（2026-10-18 新规则）→ 只让该 URL 本轮失败，给源记一次可疑（PRIVATE/state/source-health.json）。
+同一源连续 3 轮可疑 → pending-disable：写入 source-health-<run>.json 报告条目（flag: grok-bot-review）并在 stderr 打出
+PENDING-DISABLE，交 Grok Bot 复核；之后各轮不再请求该源，直到人工 confirm-disable 或 enable（scripts/source_health.py）。
+不按主机停用，不绕过付费墙、登录或验证。
 Exit code: 0 = all ok, 1 = 有失败或拒绝, 2 = 参数/配置错误.
 """
 import argparse, datetime as dt, gzip, json, os, re, sys
@@ -111,9 +114,10 @@ def main(argv=None):
     only = {x for x in a.only.split(",") if x}
     run = collect.stamp()
     sub = "round2/" if a.round == 2 else ""
-    fetcher = collect.Fetcher(collect.HostState(priv_root / "state" / "collector-hosts.json"),
-                              interval=a.interval, timeout=a.timeout, fakeip_cidr=a.proxy_fakeip_cidr or "",
-                              lock_dir=priv_root / "state" / "locks")   # SEC 等主机组的跨进程限速锁放在私有目录
+    rid = collect.round_id(a.date, a.round)
+    health = collect.SourceHealth(priv_root / "state" / "source-health.json")
+    fetcher = collect.Fetcher(health, interval=a.interval, timeout=a.timeout, fakeip_cidr=a.proxy_fakeip_cidr or "",
+                              lock_dir=priv_root / "state" / "locks", round_id=rid)   # SEC 等主机组的跨进程限速锁放在私有目录
     # 地址策略（addr_policy）由 Fetcher 强制安装：每一跳、scraper 的子 sitemap 都在请求前检查
     pub_ar = collect.Archive(day_dir(a.out_root, a.date))
     priv_ar = collect.Archive(day_dir(priv_root, a.date))
@@ -123,6 +127,7 @@ def main(argv=None):
     raw_logs = {"public": [], "internal": []}
     skipped = {"public": [], "internal": []}
     n_ok = n_bad = 0
+    ran, where_of = {}, {}       # ran: 本轮实际尝试过的源 → 可疑原因列表（交 record_round）
     for s in srcs:
         sid = s["id"]
         if only and sid not in only:
@@ -142,6 +147,7 @@ def main(argv=None):
             n_bad += 1; continue
         raw_ar = int_ar if internal else priv_ar
         where = "internal" if internal else "public"
+        where_of[sid] = where
         url = expand_url(s["url"], a.date)
         lic = s.get("license", "url+hash-only")
         pp = s.get("public_params") or ()
@@ -162,15 +168,23 @@ def main(argv=None):
             skipped[where].append({"id": sid, "url": purl, "reason": "not_configured", "detail": r.detail})
             print(f"SKIP {sid} not_configured: {r.detail}", file=sys.stderr)
             continue
+        if r.error == "source_blocked":   # pending-disable / disabled / 状态文件损坏：不发请求，列入跳过与报告
+            skipped[where].append({"id": sid, "url": purl, "reason": "source_blocked", "detail": r.detail})
+            print(f"SKIP {sid} source_blocked: {r.detail}", file=sys.stderr)
+            n_bad += 1
+            continue
+        if not cred_err:
+            ran.setdefault(sid, [])
         rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url), "round": a.round,
                "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
                "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
         kind = parse_ok(r.body) if r.ok else None
         suspect = collect.content_suspect(s["method"], {"Content-Type": r.ctype}, r.body,
                                           s.get("format"), s.get("xml_roots")) if r.ok else None
-        if suspect:      # 格式校验不通过：只记本轮失败（不停用；高置信验证页已在 Fetcher 层停用），不写成功索引
+        if suspect:      # 格式校验不通过：该 URL 本轮失败、给源记一次可疑，不写成功索引
             kind = None
             r.error = f"suspected_challenge:{suspect}"
+            fetcher.mark_failed(r.final_url or req_url, sid, r.error)
         if r.ok:   # 每个成功响应的原字节都先私有存档（不论能否解析）
             ext = collect.ext_for(r.ctype, r.body)
             rel, sha = raw_ar.put_raw(sub, sid, r.body, ext)
@@ -208,6 +222,24 @@ def main(argv=None):
         if raw_logs[where]:
             ar.put(f"{sub}fetch-log-{run}.jsonl",
                    "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in raw_logs[where]).encode())
+    # 逐源连续可疑计数：本轮跑过的源都记一笔（无可疑 = 清零）；连续 3 轮 → pending-disable 并写报告
+    for sid in ran:
+        ran[sid] = sorted({e["reason"] for e in fetcher.suspicious.get(sid, [])})
+    try:
+        newly = health.record_round(rid, ran) if ran else {}
+        report = health.report(sids=set(where_of))
+    except (collect.StateError, OSError) as e:
+        print(f"source health not updated: {type(e).__name__}: {e}", file=sys.stderr)
+        newly, report = {}, []
+        n_bad += 1
+    for where, ar in (("public", pub_ar), ("internal", int_ar)):
+        entries = [dict(e, newly_flagged=bool(newly.get(e["id"]))) for e in report if where_of.get(e["id"]) == where]
+        if ar is not None and entries:
+            ar.put_json(f"{sub}source-health-{run}.json", entries)
+    for e in report:
+        if e["status"] == "pending-disable":
+            print(f"PENDING-DISABLE {e['id']}: {e['consecutive_suspicious_rounds']} consecutive suspicious rounds "
+                  f"— flag for Grok Bot review (confirm-disable or enable)", file=sys.stderr)
     print(f"done: ok={n_ok} failed_or_refused={n_bad}", file=sys.stderr)
     return 1 if n_bad else 0
 

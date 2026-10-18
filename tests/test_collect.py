@@ -44,6 +44,24 @@ def PUBLIC_DNS(host):
     return {"93.184.216.34"}
 
 
+ROUND = "2026-10-12/r1"
+# 2026-10-18 新规则：401/403/厂商验证页只让该 URL 本轮失败（记在 SourceHealth.urls），不再按主机持久停用。
+# 旧测试里「主机被停用」的断言改为「该主机有 URL 因 401/403/厂商验证页本轮失败」（HARD），语义上保留分类结果。
+HARD = {"http_401", "http_403", "challenge", "robots_http_401", "robots_http_403", "robots_challenge"}
+ROBOTS_HARD = {"robots_http_401", "robots_http_403", "robots_challenge"}
+
+
+def view(p):
+    """{"hosts": {主机: 原因}, "sources": {sid: 原因}}：本轮因 401/403/厂商验证页失败的 URL 汇总（只看 HARD 原因）。"""
+    d = {"hosts": {}, "sources": {}}
+    for rec in collect.SourceHealth(p).data["urls"].values():
+        if rec["reason"] in HARD:
+            d["hosts"][rec["host"]] = rec["reason"]
+            if rec["sid"]:
+                d["sources"][rec["sid"]] = rec["reason"]
+    return d
+
+
 def mk(routes, state=None, **kw):
     sleeps = []
     t = [0.0]
@@ -51,8 +69,10 @@ def mk(routes, state=None, **kw):
     def sleep(s):
         sleeps.append(s); t[0] += s
     kw.setdefault("resolver", PUBLIC_DNS)
-    f = collect.Fetcher(state or collect.HostState(None), opener=FakeOpener(routes), sleep=sleep,
-                        clock=lambda: t[0], **kw)
+    state = state if state is not None else collect.SourceHealth(None)
+    if state.path:
+        kw.setdefault("round_id", ROUND)
+    f = collect.Fetcher(state, opener=FakeOpener(routes), sleep=sleep, clock=lambda: t[0], **kw)
     return f, sleeps
 
 
@@ -184,23 +204,28 @@ class FetchT(unittest.TestCase):
         self.assertEqual(f.get("https://t.co/abc").error, "refused_host")
         self.assertEqual(f.get("https://a.org/x").error, "refused_host")
 
-    def test_403_persistently_disables(self):
+    def test_403_fails_only_that_url_this_round(self):
+        # 2026-10-18 新规则：403 只让这个 URL 本轮失败（新进程本轮内也不再请求它）；同主机别的 URL 照常；下一轮可再请求
         p = Path(tempfile.mkdtemp()) / "state.json"
-        f, _ = mk({"https://a.org/x": Resp(403)}, state=collect.HostState(p))
+        f, _ = mk({"https://a.org/x": Resp(403)}, state=collect.SourceHealth(p))
         self.assertEqual(f.get("https://a.org/x", sid="s1").error, "http_403")
-        st = collect.HostState(p)                                   # 新进程也看得到
-        self.assertIn("a.org", st.data["hosts"])
-        f2, _ = mk({"https://a.org/y": Resp(200, b"ok")}, state=st)
-        r = f2.get("https://a.org/y")
-        self.assertEqual(r.error, "disabled")
-        self.assertEqual([u for u, _ in f2.opener.calls], [])
+        self.assertEqual(f.suspicious["s1"][0]["reason"], "http_403")
+        st = collect.SourceHealth(p)                                   # 新进程也看得到
+        self.assertEqual(view(p)["hosts"], {"a.org": "http_403"})
+        f2, _ = mk({"https://a.org/y": Resp(200, b"ok"), "https://a.org/x": Resp(200, b"ok")}, state=st)
+        self.assertTrue(f2.get("https://a.org/y", sid="s2").ok)        # 同主机别的 URL 照常
+        r = f2.get("https://a.org/x", sid="s1")
+        self.assertEqual(r.error, "url_failed_this_round")
+        self.assertEqual([u for u, _ in f2.opener.calls], ["https://a.org/robots.txt", "https://a.org/y"])
+        f3, _ = mk({"https://a.org/x": Resp(200, b"ok")}, state=collect.SourceHealth(p), round_id="2026-10-12/r2")
+        self.assertTrue(f3.get("https://a.org/x", sid="s1").ok)       # 下一轮重新请求
 
     def test_challenge_page_disables(self):
         p = Path(tempfile.mkdtemp()) / "state.json"
         f, _ = mk({"https://a.org/x": Resp(200, b'<html><div class="cf-turnstile"></div></html>')},
-                  state=collect.HostState(p))
+                  state=collect.SourceHealth(p))
         self.assertEqual(f.get("https://a.org/x", sid="s").error, "challenge")   # r8：只有厂商标记才停用
-        self.assertIn("s", collect.HostState(p).data["sources"])
+        self.assertIn("s", view(p)["sources"])
 
     def test_retry_backoff_and_retry_after(self):
         f, sleeps = mk({"https://a.org/x": [Resp(503), Resp(429, headers={"Retry-After": "7"}), Resp(200, b"ok")]})
@@ -343,10 +368,10 @@ class R2Fixes(unittest.TestCase):
         f, _ = mk({"https://a.org/robots.txt": Resp(302, headers={"Location": "ftp://a.org/robots.txt"}),
                    "https://a.org/x": Resp(200, b"body")})
         self.assertEqual(f.get("https://a.org/x").error, "robots_disallow")
-        st = collect.HostState(None)
-        st.disable("a.org", None, "manual")
+        st = collect.SourceHealth(None)
+        st.set_status("s", "disabled", "manual")
         f, _ = mk({"http://a.org/robots.txt": Resp(301, headers={"Location": "https://a.org/robots.txt"})}, state=st)
-        f.robots("http://a.org/x")                       # r12：已停用主机，robots() 入口直接禁止
+        f.robots("http://a.org/x", sid="s")              # 已停用的源：robots() 入口直接禁止
         self.assertEqual([u for u, _ in f.opener.calls], [])
 
     def test_robots_same_host_redirect_ok(self):
@@ -359,11 +384,11 @@ class R2Fixes(unittest.TestCase):
     def _robots_disables(self, resp):
         p = Path(tempfile.mkdtemp()) / "state.json"
         f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/x": Resp(200, b"body")},
-                  state=collect.HostState(p))
+                  state=collect.SourceHealth(p))
         r = f.get("https://a.org/x", sid="s1")
-        self.assertEqual(r.error, "disabled")
+        self.assertIn(r.error, ROBOTS_HARD)                         # robots.txt 本轮失败 → 该站本轮按禁止
         self.assertNotIn("https://a.org/x", [u for u, _ in f.opener.calls])
-        d = collect.HostState(p).data
+        d = view(p)
         self.assertIn("a.org", d["hosts"])
         self.assertIn("s1", d["sources"])
 
@@ -507,25 +532,25 @@ class R3Fixes(unittest.TestCase):
     def _robots_html(self, body, ctype="text/html"):
         p = Path(tempfile.mkdtemp()) / "state.json"
         f, _ = mk({"https://a.org/robots.txt": Resp(200, body, {"Content-Type": ctype}),
-                   "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+                   "https://a.org/p": Resp(200, b"ok")}, state=collect.SourceHealth(p))
         r = f.get("https://a.org/p", sid="s")
-        self.assertEqual(r.error, "disabled")
+        self.assertIn(r.error, ROBOTS_HARD)
         self.assertNotIn("https://a.org/p", [u for u, _ in f.opener.calls])
-        self.assertIn("a.org", collect.HostState(p).data["hosts"])
+        self.assertIn("a.org", view(p)["hosts"])
 
     def test_robots_generic_captcha_div_disables(self):
         self._robots_html(b'<html><div class="g-recaptcha">verify</div></html>')   # r9：id=captcha 不再算组件
 
     def test_robots_any_html_disallowed_not_disabled(self):
-        # r8：robots 返回 HTML 但没有厂商标记 = 格式不对 → 本轮按禁止，不持久停用
+        # r8：robots 返回 HTML 但没有厂商标记 = 格式不对 → 本轮按禁止，不算可疑
         for body, ct in ((b"<!DOCTYPE html><html><body>Welcome</body></html>", "text/html"),
                          (b"<html><body>no ctype</body></html>", "text/plain")):
             p = Path(tempfile.mkdtemp()) / "state.json"
             f, _ = mk({"https://a.org/robots.txt": Resp(200, body, {"Content-Type": ct}),
-                       "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+                       "https://a.org/p": Resp(200, b"ok")}, state=collect.SourceHealth(p))
             self.assertEqual(f.get("https://a.org/p", sid="s").error, "robots_disallow")
             self.assertNotIn("https://a.org/p", [u for u, _ in f.opener.calls])
-            self.assertEqual(collect.HostState(p).data["hosts"], {})
+            self.assertEqual(view(p)["hosts"], {})
 
     def test_robots_plain_text_still_parsed(self):
         f, _ = mk({"https://a.org/robots.txt": Resp(200, b"User-agent: *\nDisallow: /x\n", {"Content-Type": "text/plain"}),
@@ -597,23 +622,23 @@ class R4Fixes(unittest.TestCase):
         for b in (b'<div class="cf-turnstile"></div>',
                   b'<form id="challenge-form"></form>'):
             p = Path(tempfile.mkdtemp()) / "st.json"
-            f, _ = mk({"https://a.org/p": Resp(200, b)}, state=collect.HostState(p))   # robots 404
+            f, _ = mk({"https://a.org/p": Resp(200, b)}, state=collect.SourceHealth(p))   # robots 404
             r = f.get("https://a.org/p", sid="s")
             self.assertEqual(r.error, "challenge", b)
             self.assertFalse(r.ok)
-            self.assertIn("a.org", collect.HostState(p).data["hosts"])
+            self.assertIn("a.org", view(p)["hosts"])
 
     def _robots(self, resp):
         p = Path(tempfile.mkdtemp()) / "st.json"
-        f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+        f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/p": Resp(200, b"ok")}, state=collect.SourceHealth(p))
         r = f.get("https://a.org/p", sid="s")
-        return r, f, collect.HostState(p).data
+        return r, f, view(p)
 
     def test_robots_401_429_5xx_html_suspected_challenge_no_retry(self):
         for st in (401, 429, 500, 503):
             r, f, d = self._robots(Resp(st, b"<html><body>please wait</body></html>", {"Content-Type": "text/html"}))
-            if st == 401:                                           # r9：401 同 403，按状态码持久停用
-                self.assertEqual(r.error, "disabled", st)
+            if st == 401:                                           # 401 同 403，按状态码判可疑
+                self.assertEqual(r.error, "robots_http_401", st)
                 self.assertIn("a.org", d["hosts"])
             else:
                 self.assertEqual(r.error, "robots_disallow", st)    # 本轮禁止，不停用
@@ -691,14 +716,14 @@ class R5Fixes(unittest.TestCase):
 
     def _robots(self, resp):
         p = self.tmpdir() / "st.json"
-        f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/p": Resp(200, b"ok")}, state=collect.HostState(p))
+        f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/p": Resp(200, b"ok")}, state=collect.SourceHealth(p))
         r = f.get("https://a.org/p", sid="s")
-        return r, [u for u, _ in f.opener.calls], collect.HostState(p).data
+        return r, [u for u, _ in f.opener.calls], view(p)
 
     def test_robots_text_plain_html_fragment_200_and_429_disable(self):
         for st in (200, 429):
             r, calls, d = self._robots(Resp(st, b"<div>Check your browser</div>", {"Content-Type": "text/plain"}))
-            self.assertEqual(r.error, "robots_disallow", st)        # r9：text/plain 标签+短语 → 本轮可疑，不停用
+            self.assertEqual(r.error, "robots_suspected_challenge", st)   # text/plain 标签+短语 → 本轮可疑（不算 HARD）
             self.assertEqual(d["hosts"], {}, st)
             self.assertNotIn("https://a.org/p", calls)
             self.assertEqual(calls.count("https://a.org/robots.txt"), 1, st)          # 429 也不重试
@@ -706,7 +731,7 @@ class R5Fixes(unittest.TestCase):
     def test_robots_302_with_challenge_body_disables_before_location(self):
         r, calls, d = self._robots(Resp(302, b'<form id="challenge-form"></form>',
                                         {"Location": "https://a.org/robots2.txt"}))
-        self.assertEqual(r.error, "disabled")
+        self.assertEqual(r.error, "robots_challenge")
         self.assertIn("a.org", d["hosts"])
         self.assertNotIn("https://a.org/robots2.txt", calls)
         self.assertNotIn("https://a.org/p", calls)
@@ -714,11 +739,11 @@ class R5Fixes(unittest.TestCase):
     def test_content_302_with_challenge_body_disables_before_location(self):
         p = self.tmpdir() / "st.json"
         f, _ = mk({"https://a.org/x": Resp(302, b'<form id="challenge-form"></form>', {"Location": "https://a.org/y"}),
-                   "https://a.org/y": Resp(200, b"ok")}, state=collect.HostState(p))
+                   "https://a.org/y": Resp(200, b"ok")}, state=collect.SourceHealth(p))
         r = f.get("https://a.org/x", sid="s")
         self.assertEqual(r.error, "challenge")
         self.assertNotIn("https://a.org/y", [u for u, _ in f.opener.calls])
-        self.assertIn("a.org", collect.HostState(p).data["hosts"])
+        self.assertIn("a.org", view(p)["hosts"])
 
     def test_public_url_default_host_plus_hash(self):
         u = "https://docs.e.org/private/TOKENPATH/document?key=TOKENQUERY"
@@ -779,11 +804,11 @@ class R6Fixes(unittest.TestCase):
         for resp in (Resp(200, self.FRAG, {"Content-Type": "text/plain"}),
                      Resp(302, self.FRAG, {"Location": "https://a.org/y", "Content-Type": "text/plain"})):
             p = self.tmpdir() / "st.json"
-            f, _ = mk({"https://a.org/x": resp, "https://a.org/y": Resp(200, b"ok")}, state=collect.HostState(p))
+            f, _ = mk({"https://a.org/x": resp, "https://a.org/y": Resp(200, b"ok")}, state=collect.SourceHealth(p))
             r = f.get("https://a.org/x", sid="s")
             self.assertEqual(r.error, "suspected_challenge", resp.status)   # r9：本轮可疑，不停用
             self.assertNotIn("https://a.org/y", [u for u, _ in f.opener.calls])
-            self.assertEqual(collect.HostState(p).data["hosts"], {})
+            self.assertEqual(view(p)["hosts"], {})
 
     def _cs(self, src, resp):
         t = CaptureT("test_auth_key_never_logged"); t.setUp()
@@ -803,8 +828,9 @@ class R6Fixes(unittest.TestCase):
                 rc, idx, t = self._cs(src, resp)
             self.assertEqual(rc, 1, src)
             self.assertEqual(idx, [], src)
-            hsp = t.priv / "state/collector-hosts.json"
-            self.assertEqual(json.loads(hsp.read_text())["hosts"] if hsp.exists() else {}, {})   # r8：不停用
+            hs = collect.SourceHealth(t.priv / "state/source-health.json")   # 新规则：只记本轮一次可疑，不停用
+            self.assertEqual(hs.data["sources"]["feed"]["status"], "ok", src)
+            self.assertTrue(hs.data["sources"]["feed"]["rounds"][ROUND]["suspicious"], src)
             self.assertIn("ERR", err.getvalue())
             fl = next((t.out / "raw/2026-10-12").glob("failures-*.json")).read_text()
             self.assertTrue("suspected_challenge" in fl or "challenge" in fl, fl)
@@ -817,8 +843,9 @@ class R6Fixes(unittest.TestCase):
                               "https://f.org/rss2": Resp(200, b"<rss/>")})
         self.assertEqual(rc, 1)
         self.assertFalse(list((t.out / "raw/2026-10-12").rglob("index-*.json")))
-        hsp = t.priv / "state/collector-hosts.json"
-        self.assertEqual(json.loads(hsp.read_text())["hosts"] if hsp.exists() else {}, {})
+        hs = collect.SourceHealth(t.priv / "state/source-health.json")
+        self.assertEqual(hs.data["sources"]["feed"]["status"], "ok")
+        self.assertEqual(hs.data["sources"]["feed"]["rounds"][ROUND]["reasons"], ["suspected_challenge"])
 
 
 class R7Fixes(unittest.TestCase):
@@ -846,10 +873,10 @@ class R7Fixes(unittest.TestCase):
 
     def _get(self, routes, url="https://a.org/x"):
         p = self.tmpdir() / "st.json"
-        f, _ = mk(routes, state=collect.HostState(p))
+        f, _ = mk(routes, state=collect.SourceHealth(p))
         sink = []
         r = f.get(url, sid="s", raw_sink=lambda b, st, ct: sink.append((st, b)))
-        return r, [u for u, _ in f.opener.calls], collect.HostState(p).data, sink
+        return r, [u for u, _ in f.opener.calls], view(p), sink
 
     def test_302_long_challenge_not_followed_and_raw_sunk(self):
         r, calls, d, sink = self._get({"https://a.org/x": Resp(302, self.LONGV, {"Location": "https://a.org/y"}),
@@ -862,9 +889,9 @@ class R7Fixes(unittest.TestCase):
     def test_robots_302_long_challenge_disables(self):
         p = self.tmpdir() / "st.json"
         f, _ = mk({"https://a.org/robots.txt": Resp(302, self.LONGV, {"Location": "https://a.org/r2"}),
-                   "https://a.org/x": Resp(200, b"ok")}, state=collect.HostState(p))
-        self.assertEqual(f.get("https://a.org/x", sid="s").error, "disabled")
-        self.assertIn("a.org", collect.HostState(p).data["hosts"])
+                   "https://a.org/x": Resp(200, b"ok")}, state=collect.SourceHealth(p))
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "robots_challenge")
+        self.assertIn("a.org", view(p)["hosts"])
 
     def test_text_plain_tag_start_alone_not_disabled(self):
         r, calls, d, sink = self._get({"https://a.org/x": Resp(200, b"<div>hello</div>", {"Content-Type": "text/plain"})})
@@ -908,11 +935,11 @@ class R7Fixes(unittest.TestCase):
         try:
             p = self.tmpdir() / "st.json"
             f, _ = mk({"https://data.sec.gov/robots.txt": Resp(200, b""), "https://data.sec.gov/a.json": Resp(200, b"{}")},
-                      state=collect.HostState(p))
+                      state=collect.SourceHealth(p))
             r = f.get("https://data.sec.gov/a.json", sid="sec-edgar-aapl")
             self.assertEqual(r.error, "not_configured")
             self.assertEqual(f.opener.calls, [])
-            self.assertEqual(collect.HostState(p).data["hosts"], {})
+            self.assertEqual(view(p)["hosts"], {})
             os.environ[collect.SEC_UA_ENV] = "no contact here"
             self.assertIsNone(collect.sec_user_agent())
         finally:
@@ -995,10 +1022,10 @@ class R8Fixes(unittest.TestCase):
     def _fetch(self, resp, url="https://a.org/p", extra=None, src="s"):
         p = self.tmpdir() / "st.json"
         routes = {url: resp}; routes.update(extra or {})
-        f, _ = mk(routes, state=collect.HostState(p))
+        f, _ = mk(routes, state=collect.SourceHealth(p))
         sunk = []
         r = f.get(url, sid=src, raw_sink=lambda b, st, ct: sunk.append((st, b)))
-        return r, collect.HostState(p).data, sunk, f
+        return r, view(p), sunk, f
 
     def test_external_doctype_accepted_internal_subset_refused(self):
         cs = collect.content_suspect
@@ -1070,7 +1097,7 @@ class R8Fixes(unittest.TestCase):
         p = self.tmpdir() / "st.json"
         f, _ = mk({"https://a.org/robots.txt": Resp(200, b"User-agent: *\nAllow: /\n"),
                    "https://a.org/p": [Resp(503, b"busy-1"), Resp(503, b"busy-2"), Resp(200, b'{"ok": 1}')]},
-                  state=collect.HostState(p))
+                  state=collect.SourceHealth(p))
         sunk = []
         r = f.get("https://a.org/p", sid="s", raw_sink=lambda b, st, ct: sunk.append((st, b)))
         self.assertTrue(r.ok)
@@ -1132,10 +1159,10 @@ class R9Fixes(unittest.TestCase):
         for st in (401, 403):
             for b, ct in self.BODIES:
                 p = self.tmpdir() / "st.json"
-                f, _ = mk({"https://a.org/p": Resp(st, b, {"Content-Type": ct})}, state=collect.HostState(p))
+                f, _ = mk({"https://a.org/p": Resp(st, b, {"Content-Type": ct})}, state=collect.SourceHealth(p))
                 r = f.get("https://a.org/p", sid="s")
                 self.assertEqual(r.error, f"http_{st}", (st, b[:30]))
-                self.assertIn("a.org", collect.HostState(p).data["hosts"], (st, b[:30]))
+                self.assertIn("a.org", view(p)["hosts"], (st, b[:30]))
                 self.assertEqual([u for u, _ in f.opener.calls].count("https://a.org/p"), 1)   # 不重试
 
     def test_redirect_hop_403_401_disable(self):
@@ -1143,20 +1170,20 @@ class R9Fixes(unittest.TestCase):
             p = self.tmpdir() / "st.json"
             f, _ = mk({"https://a.org/p": Resp(302, b"", {"Location": "https://a.org/q"}),
                        "https://a.org/q": Resp(st, b"<html><title>Just a moment...</title></html>")},
-                      state=collect.HostState(p))
+                      state=collect.SourceHealth(p))
             r = f.get("https://a.org/p", sid="s")
             self.assertEqual(r.error, f"http_{st}")
-            self.assertIn("a.org", collect.HostState(p).data["hosts"])
+            self.assertIn("a.org", view(p)["hosts"])
 
     def test_robots_403_401_disable_first_regardless_of_body(self):
         for st in (401, 403):
             for b, ct in self.BODIES:
                 p = self.tmpdir() / "st.json"
                 f, _ = mk({"https://a.org/robots.txt": Resp(st, b, {"Content-Type": ct}), "https://a.org/p": Resp(200, b"ok")},
-                          state=collect.HostState(p))
+                          state=collect.SourceHealth(p))
                 r = f.get("https://a.org/p", sid="s")
-                self.assertEqual(r.error, "disabled", (st, b[:30]))
-                self.assertIn("a.org", collect.HostState(p).data["hosts"])
+                self.assertEqual(r.error, f"robots_http_{st}", (st, b[:30]))
+                self.assertIn("a.org", view(p)["hosts"])
                 self.assertNotIn("https://a.org/p", [u for u, _ in f.opener.calls])
 
     def test_vendor_markers_only_real_components(self):
@@ -1180,9 +1207,9 @@ class R9Fixes(unittest.TestCase):
                b"<p>Use g-recaptcha class.</p>" + b"<p>text</p>" * 100 + b"</article></body></html>")
         for b, ct in ((art, "text/html"), (b"<p>Access denied</p>", "text/plain")):
             p = self.tmpdir() / "st.json"
-            f, _ = mk({"https://a.org/p": Resp(200, b, {"Content-Type": ct})}, state=collect.HostState(p))
+            f, _ = mk({"https://a.org/p": Resp(200, b, {"Content-Type": ct})}, state=collect.SourceHealth(p))
             f.get("https://a.org/p", sid="s")
-            self.assertEqual(collect.HostState(p).data["hosts"], {}, b[:40])
+            self.assertEqual(view(p)["hosts"], {}, b[:40])
 
     def test_xml_expat_internal_subset_entity_utf16_quoted_gt(self):
         X = b"<?xml version='1.0'?>"
@@ -1233,10 +1260,10 @@ class R9Fixes(unittest.TestCase):
                 os.environ[collect.SEC_UA_ENV] = old
 
 
-def _hs_disable_proc(path, host):          # 子进程：独立 HostState 实例停用一台主机
-    hs = collect.HostState(path)
+def _hs_disable_proc(path, host):          # 子进程：独立 SourceHealth 实例各记一个本轮失败的 URL
+    hs = collect.SourceHealth(path)
     time.sleep(0.2)                         # 两个进程都先读到空状态，再各自写回
-    hs.disable(host, None, "http_403")
+    hs.fail_url(f"https://{host}/x", ROUND, None, "http_403")
 
 
 class R10Fixes(unittest.TestCase):
@@ -1276,11 +1303,11 @@ class R10Fixes(unittest.TestCase):
                     else:
                         routes["https://a.org/p"] = Resp(302, b"", {"Location": "https://a.org/q"})
                         routes["https://a.org/q"] = Resp(st, body)
-                    f, _ = mk(routes, state=collect.HostState(p))
+                    f, _ = mk(routes, state=collect.SourceHealth(p))
                     r = f.get("https://a.org/p", sid="s")
                     self.assertFalse(r.ok)
-                    self.assertEqual(r.error, "disabled" if where == "robots" else "challenge", (lab, st, where))
-                    self.assertIn("a.org", collect.HostState(p).data["hosts"], (lab, st, where))
+                    self.assertEqual(r.error, "robots_challenge" if where == "robots" else "challenge", (lab, st, where))
+                    self.assertIn("a.org", view(p)["hosts"], (lab, st, where))
                     calls = [u for u, _ in f.opener.calls]
                     self.assertEqual(len(calls), len(set(calls)), (lab, st, where))     # 不重试
 
@@ -1292,9 +1319,9 @@ class R10Fixes(unittest.TestCase):
             resp = Resp(200, b"<html><body>wait</body></html>", {"Content-Type": "text/html", "CF-Mitigated": "challenge"})
             routes = {"https://a.org/p": Resp(200, b"ok")}
             routes["https://a.org/robots.txt" if where == "robots" else "https://a.org/p"] = resp
-            f, _ = mk(routes, state=collect.HostState(p))
+            f, _ = mk(routes, state=collect.SourceHealth(p))
             f.get("https://a.org/p", sid="s")
-            self.assertIn("a.org", collect.HostState(p).data["hosts"], where)
+            self.assertIn("a.org", view(p)["hosts"], where)
         self.assertNotEqual(collect.classify_page("text/html", b"<p>x</p>", {"cf-mitigated": "none"}), "vendor")
 
     def test_parser_only_exact_attributes_and_skips_script_text(self):
@@ -1321,7 +1348,7 @@ class R10Fixes(unittest.TestCase):
         for b in real:
             self.assertEqual(collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>"), "vendor", b)
 
-    def test_two_processes_disable_different_hosts_both_kept(self):
+    def test_two_processes_fail_different_urls_both_kept(self):
         import multiprocessing as mp
         d = self.tmpdir() / "state"
         p = d / "collector-hosts.json"
@@ -1329,18 +1356,19 @@ class R10Fixes(unittest.TestCase):
         ps = [ctx.Process(target=_hs_disable_proc, args=(str(p), h)) for h in ("a.org", "b.org")]
         [x.start() for x in ps]; [x.join() for x in ps]
         self.assertEqual([x.exitcode for x in ps], [0, 0])
-        self.assertEqual(sorted(collect.HostState(p).data["hosts"]), ["a.org", "b.org"])
+        self.assertEqual(sorted(view(p)["hosts"]), ["a.org", "b.org"])
         self.assertTrue((d / "locks" / "collector-hosts.json.lock").exists())
         self.assertEqual([x.name for x in d.iterdir() if x.suffix == ".tmp"], [])          # 临时文件不残留
 
     def test_disabled_rereads_file_before_each_request(self):
         p = self.tmpdir() / "st.json"
-        hs = collect.HostState(p)
+        hs = collect.SourceHealth(p)
         f, _ = mk({"https://a.org/p": Resp(200, b"ok"), "https://a.org/q": Resp(200, b"ok")}, state=hs)
         self.assertTrue(f.get("https://a.org/p").ok)
-        collect.HostState(p).disable("a.org", None, "http_403")                              # 另一个“进程”停用
-        r = f.get("https://a.org/q")
-        self.assertEqual(r.error, "disabled")
+        collect.SourceHealth(p).set_status("s", "disabled", "confirmed by reviewer")            # 另一个“进程”人工停用该源
+        r = f.get("https://a.org/q", sid="s")
+        self.assertEqual(r.error, "source_blocked")
+        self.assertTrue(f.get("https://a.org/q", sid="other").ok)                              # 只影响该源
 
     def test_sec_without_lock_dir_not_configured_no_request(self):
         import os
@@ -1351,7 +1379,7 @@ class R10Fixes(unittest.TestCase):
             r = f.get("https://data.sec.gov/a")
             self.assertEqual(r.error, "not_configured")
             self.assertEqual(f.opener.calls, [])
-            self.assertEqual(f.state.data["hosts"], {})                                       # 不停用
+            self.assertEqual((f.round_failed, f.suspicious), ({}, {}))                          # 不算可疑
         finally:
             if old is None:
                 os.environ.pop(collect.SEC_UA_ENV, None)
@@ -1406,24 +1434,25 @@ class R11Fixes(unittest.TestCase):
                   b"<script>var a=document.createElement('script');a.src = \"/cdn-cgi/challenge-platform/h/g/orchestrate/x\";</script>"):
             self.assertEqual(self.cls(b + b"<p>a</p>" * 100), "vendor", b)
 
-    def test_stale_process_does_not_rewrite_manually_enabled_host(self):
-        p = self.tmpdir() / "state" / "collector-hosts.json"
-        old = collect.HostState(p)                      # 已在跑的旧进程
-        old.disable("a.org", "s1", "http_403")
-        self.assertEqual(collect.HostState(p).enable("a.org"), 2)   # 人工恢复（主机 + 因它停用的源），同一把锁
-        self.assertIsNone(old.disabled("a.org", "s1"))  # refresh 用磁盘快照替换缓存
-        old.disable("b.org", "s2", "http_403")          # 旧进程再停用别的主机：只合并这一条
-        d = collect.HostState(p).data
-        self.assertEqual(sorted(d["hosts"]), ["b.org"])
-        self.assertEqual(sorted(d["sources"]), ["s2"])
+    def test_stale_process_does_not_rewrite_manually_enabled_source(self):
+        p = self.tmpdir() / "state" / "source-health.json"
+        old = collect.SourceHealth(p)                      # 已在跑的旧进程
+        old.set_status("s1", "disabled", "confirmed")
+        collect.SourceHealth(p).set_status("s1", "ok", "manual enable")   # 人工恢复，同一把锁
+        self.assertIsNone(old.blocked("s1"))            # blocked() 每次以磁盘为准
+        old.record_round(ROUND, {"s2": ["http_403"]})   # 旧进程再写别的源：只合并这一条
+        d = collect.SourceHealth(p).data["sources"]
+        self.assertEqual(d["s1"]["status"], "ok")
+        self.assertEqual(d["s2"]["rounds"][ROUND], {"suspicious": True, "reasons": ["http_403"]})
 
     def test_stale_cache_without_refresh_still_not_written_back(self):
-        p = self.tmpdir() / "state" / "collector-hosts.json"
-        old = collect.HostState(p)
-        old.disable("a.org", None, "http_403")
-        collect.HostState(p).enable("a.org")
-        old.disable("b.org", None, "http_403")          # 未调用 disabled()/refresh() 也不写回 a.org
-        self.assertEqual(sorted(collect.HostState(p).data["hosts"]), ["b.org"])
+        p = self.tmpdir() / "state" / "source-health.json"
+        old = collect.SourceHealth(p)
+        old.set_status("s1", "disabled", "confirmed")
+        collect.SourceHealth(p).set_status("s1", "ok", "manual enable")
+        old.fail_url("https://b.org/x", ROUND, "s2", "http_403")   # 未调用 refresh() 也不写回 s1 的旧状态
+        self.assertEqual(collect.SourceHealth(p).data["sources"]["s1"]["status"], "ok")
+        self.assertEqual(sorted(view(p)["hosts"]), ["b.org"])
 
     def test_sec_gate_in_raw_covers_direct_robots(self):
         import os
@@ -1439,7 +1468,7 @@ class R11Fixes(unittest.TestCase):
                 rp = f.robots("https://www.sec.gov/x")
                 self.assertEqual(f.opener.calls, [], (ua, lock))           # 直接调用 robots() 也不发请求
                 self.assertFalse(rp.can_fetch(collect.UA_TOKEN, "https://www.sec.gov/x"))
-                self.assertEqual(f.state.data["hosts"], {})               # 不停用
+                self.assertEqual((f.round_failed, f.suspicious), ({}, {}))  # 不算可疑
                 self.assertEqual(f._raw("https://www.sec.gov/x", "*/*")[3], "not_configured")
         finally:
             if old is None:
@@ -1463,8 +1492,8 @@ class R12Fixes(unittest.TestCase):
 
     def run_get(self, st, body, url="https://a.org/p"):
         p = self.tmpdir() / "st.json"
-        f, _ = mk({url: Resp(st, body)}, state=collect.HostState(p))
-        return f.get(url, sid="s"), collect.HostState(p).data
+        f, _ = mk({url: Resp(st, body)}, state=collect.SourceHealth(p))
+        return f.get(url, sid="s"), view(p)
 
     def cls(self, b, url="https://a.org/p"):
         return collect.classify_page("text/html", b"<html><body>" + b + b"</body></html>", {}, url)
@@ -1500,7 +1529,7 @@ class R12Fixes(unittest.TestCase):
             r, d = self.run_get(st, self.PX_TEMPLATE)
             self.assertIn("a.org", d["hosts"], st)
         filler = b"<p>a</p>" * 300
-        self.assertEqual(self.cls(b"<script>window._pxAppId = 'PXabc';</script>" + filler), "vendor")
+        self.assertIsNone(self.cls(b"<script>window._pxAppId = 'PXabc';</script>" + filler))   # r13：正常页面 Sensor，不算
         self.assertEqual(self.cls(b"<script src='https://captcha.px-cdn.net/PXabc/captcha.js'></script>" + filler), "vendor")
         self.assertEqual(self.cls(b"<script>var s=document.createElement('script');s.src='//captcha.px-cloud.net/PXabc/captcha.js';"
                                   b"</script>" + filler), "vendor")
@@ -1528,54 +1557,317 @@ class R12Fixes(unittest.TestCase):
         self.assertTrue(r.ok); self.assertEqual(d["hosts"], {})                              # Cloudflare 注入正常页面的 JSD
         self.assertEqual(self.cls(b"<script src='/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1'></script>"), "vendor")
 
-    def test_unclosed_script_single_marker_suspect_two_markers_vendor(self):
+    def test_unclosed_script_never_vendor(self):
+        # r13：没闭合的 script 永不算高置信；混入 HTML 标签（<pre> 等）时不凭内部赋值判定
         one = b"<html><body><script>var x=1;\n<pre>\nwindow._cf_chl_opt = {}\n</pre>"
-        self.assertEqual(collect.classify_page("text/html", one, {}, "https://a.org/p"), "phrase")
+        self.assertIsNone(collect.classify_page("text/html", one, {}, "https://a.org/p"))
         r, d = self.run_get(200, one)
-        self.assertEqual(r.error, "suspected_challenge"); self.assertEqual(d["hosts"], {})
+        self.assertTrue(r.ok)
         two = (b"<html><body><script>window._cf_chl_opt={cType:'managed'};var a=document.createElement('script');"
                b"a.src='/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1';")
-        self.assertEqual(collect.classify_page("text/html", two, {}, "https://a.org/p"), "vendor")
+        self.assertEqual(collect.classify_page("text/html", two, {}, "https://a.org/p"), "phrase")
         r, d = self.run_get(200, two)
-        self.assertEqual(r.error, "challenge"); self.assertIn("a.org", d["hosts"])
+        self.assertEqual(r.error, "suspected_challenge"); self.assertEqual(d["hosts"], {})
         closed = b"<html><body><script>window._cf_chl_opt={cType:'managed'};</script></body></html>"
         self.assertEqual(collect.classify_page("text/html", closed, {}, "https://a.org/p"), "vendor")
 
     def test_state_file_strict_schema_refuses_requests(self):
-        bad = ["{bad", "", "[]", '{"hosts": [], "sources": {}}', '{"hosts": {}, "sources": []}',
-               '{"hosts": {"a.org": {}}, "sources": {}}', '{"hosts": {"a.org": "x"}, "sources": {}}',
-               '{"hosts": {}, "sources": {"s": {"reason": ""}}}']
+        ok_src = '{"status": "ok", "rounds": {}}'
+        bad = ["{bad", "", "[]", "{}", '{"version": 2, "sources": {}}', '{"version": 2, "urls": {}}',
+               '{"sources": {}, "urls": {}}', '{"version": 1, "sources": {}, "urls": {}}',
+               '{"version": 2, "sources": [], "urls": {}}', '{"version": 2, "sources": {}, "urls": []}',
+               '{"version": 2, "sources": {"s": {}}, "urls": {}}',
+               '{"version": 2, "sources": {"s": {"status": "off", "rounds": {}}}, "urls": {}}',
+               '{"version": 2, "sources": {"s": {"status": "disabled", "rounds": {}}}, "urls": {}}',
+               '{"version": 2, "sources": {"s": {"status": "ok", "rounds": {"bad": {"suspicious": true, "reasons": []}}}}, "urls": {}}',
+               '{"version": 2, "sources": {"s": {"status": "ok", "rounds": {"2026-10-12/r1": {"suspicious": 1, "reasons": []}}}},'
+               ' "urls": {}}',
+               '{"version": 2, "sources": {"s": ' + ok_src + '}, "urls": {"x": {"round": "2026-10-12/r1", "reason": "r", '
+               '"sid": null, "host": "a"}}}',
+               '{"hosts": {}, "sources": {}}']                                                   # 旧格式也不当空状态
         for txt in bad:
-            p = self.tmpdir() / "state" / "collector-hosts.json"; p.parent.mkdir()
+            p = self.tmpdir() / "state" / "source-health.json"; p.parent.mkdir()
             p.write_text(txt)
-            hs = collect.HostState(p)
-            self.assertTrue(hs.disabled("b.org", "t"), txt)                                 # 任何主机都拒绝
+            hs = collect.SourceHealth(p)
+            self.assertTrue(hs.error, txt)
+            self.assertTrue(hs.blocked("t"), txt)                                            # 任何源都拒绝
+            self.assertTrue(hs.blocked(None), txt)
             f, _ = mk({"https://b.org/robots.txt": Resp(200, b""), "https://b.org/x": Resp(200, b"ok")}, state=hs)
             r = f.get("https://b.org/x", sid="t")
-            self.assertEqual(r.error, "disabled", txt)
+            self.assertEqual(r.error, "source_blocked", txt)
             self.assertEqual(f.opener.calls, [], txt)                                         # 不发请求
             self.assertFalse(f.robots("https://b.org/x").can_fetch(collect.UA_TOKEN, "https://b.org/x"))
             with self.assertRaises(collect.StateError):
-                hs.disable("c.org", None, "x")                                                # 不改写损坏的文件
+                hs.record_round(ROUND, {"t": []})                                             # 不改写损坏的文件
+            with self.assertRaises(collect.StateError):
+                hs.fail_url("https://b.org/x", ROUND, "t", "http_403")
             self.assertEqual(p.read_text(), txt)
-        p = self.tmpdir() / "ok.json"
-        p.write_text('{"hosts": {"a.org": {"reason": "http_403"}}, "sources": {}}')
-        self.assertFalse(collect.HostState(p).disabled("b.org"))
-        self.assertTrue(collect.HostState(p).disabled("a.org"))
+        p = self.tmpdir() / "fresh" / "source-health.json"                                    # 文件不存在 = 首次运行
+        self.assertIsNone(collect.SourceHealth(p).blocked("s"))
+        collect.SourceHealth(p).record_round(ROUND, {"s": []})
+        self.assertEqual(sorted(json.loads(p.read_text())), ["sources", "urls", "version"])
 
-    def test_robots_checks_disabled_before_cache(self):
+    def test_robots_checks_source_status_before_cache(self):
         p = self.tmpdir() / "state" / "h.json"
-        hs = collect.HostState(p)
+        hs = collect.SourceHealth(p)
         f, _ = mk({"https://a.org/robots.txt": Resp(200, b"User-agent: *\nAllow: /\n")}, state=hs)
-        self.assertTrue(f.robots("https://a.org/x").can_fetch(collect.UA_TOKEN, "https://a.org/x"))    # 已缓存
-        collect.HostState(p).disable("a.org", None, "http_403")
+        self.assertTrue(f.robots("https://a.org/x", sid="s").can_fetch(collect.UA_TOKEN, "https://a.org/x"))    # 已缓存
+        collect.SourceHealth(p).set_status("s", "disabled", "confirmed")
         n = len(f.opener.calls)
-        self.assertFalse(f.robots("https://a.org/x").can_fetch(collect.UA_TOKEN, "https://a.org/x"))   # 缓存前先查停用
+        self.assertFalse(f.robots("https://a.org/x", sid="s").can_fetch(collect.UA_TOKEN, "https://a.org/x"))
         self.assertEqual(len(f.opener.calls), n)
-        hs2 = collect.HostState(None); hs2.disable("b.org", "s", "x")
-        f, _ = mk({"https://b.org/robots.txt": Resp(200, b"")}, state=hs2)
-        self.assertFalse(f.robots("https://b.org/x", sid="s").can_fetch(collect.UA_TOKEN, "https://b.org/x"))
-        self.assertEqual(f.opener.calls, [])
+        self.assertTrue(f.robots("https://a.org/x", sid="t").can_fetch(collect.UA_TOKEN, "https://a.org/x"))     # 别的源照常
+
+
+
+class BlockRule20261018(unittest.TestCase):
+    """2026-10-18 新规则（王总经 Grok Bot 决定）：单次可疑响应只让该 URL 本轮失败；源连续 3 轮可疑 → pending-disable
+    并写报告交 Grok Bot；人工确认后才 disabled；不按主机停用；不绕过验证。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(dir="/workspace"); self.addCleanup(d.cleanup); return Path(d.name)
+
+    CF = b"<html><head><script src='https://challenges.cloudflare.com/turnstile/v0/api.js'></script></head></html>"
+
+    # ---- Fetcher：逐 URL
+    def test_each_suspicious_kind_fails_only_that_url(self):
+        for resp, err in ((Resp(401), "http_401"), (Resp(403), "http_403"), (Resp(200, self.CF), "challenge"),
+                          (Resp(200, b"<html><title>Just a moment...</title></html>"), "suspected_challenge"),
+                          (Resp(503, b"<html>wait</html>", {"cf-mitigated": "challenge"}), "challenge")):
+            p = self.tmpdir() / "st.json"
+            f, _ = mk({"https://a.org/x": resp, "https://a.org/y": Resp(200, b"ok")}, state=collect.SourceHealth(p))
+            r = f.get("https://a.org/x", sid="s")
+            self.assertEqual(r.error, err)
+            self.assertTrue(collect.is_suspicious(r.error))
+            self.assertTrue(f.get("https://a.org/y", sid="s").ok, err)          # 同源同主机别的 URL 照常
+            self.assertEqual(f.get("https://a.org/x", sid="s").error, "url_failed_this_round", err)
+            calls = [u for u, _ in f.opener.calls]
+            self.assertEqual(calls.count("https://a.org/x"), 1, err)           # 本轮不再请求，也不重试
+            self.assertEqual(collect.SourceHealth(p).data["sources"], {}, err)  # Fetcher 不改源状态（轮末才记）
+            self.assertIsNone(collect.SourceHealth(p).blocked("s"), err)
+
+    def test_no_bypass_on_challenge(self):
+        f, _ = mk({"https://a.org/x": [Resp(403, self.CF), Resp(200, b"ok")]})
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "http_403")
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "url_failed_this_round")
+        reqs = [(u, ua) for u, ua in f.opener.calls if u.endswith("/x")]
+        self.assertEqual(len(reqs), 1)                                          # 不重试、不换 UA 再试
+        self.assertIn("markjin-collector", reqs[0][1])
+
+    def test_redirect_target_403_marks_target_and_origin(self):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk({"https://a.org/p": Resp(302, headers={"Location": "https://a.org/q"}), "https://a.org/q": Resp(403)},
+                  state=collect.SourceHealth(p))
+        self.assertEqual(f.get("https://a.org/p", sid="s").error, "http_403")
+        self.assertEqual(f.get("https://a.org/p", sid="s").error, "url_failed_this_round")
+        f2, _ = mk({"https://a.org/p": Resp(302, headers={"Location": "https://a.org/q"})}, state=collect.SourceHealth(p))
+        self.assertEqual(f2.get("https://a.org/p", sid="s").error, "url_failed_this_round")   # 新进程：跳到 q 前停下
+        self.assertNotIn("https://a.org/q", [u for u, _ in f2.opener.calls])
+
+    def test_robots_403_only_this_round(self):
+        p = self.tmpdir() / "st.json"
+        f, _ = mk({"https://a.org/robots.txt": Resp(403), "https://a.org/x": Resp(200, b"ok")}, state=collect.SourceHealth(p))
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "robots_http_403")
+        self.assertEqual(f.get("https://a.org/x", sid="t").error, "robots_http_403")    # 同站本轮按禁止，各源都记可疑
+        self.assertEqual(sorted(f.suspicious), ["s", "t"])
+        f2, _ = mk({"https://a.org/robots.txt": Resp(200, b""), "https://a.org/x": Resp(200, b"ok")},
+                   state=collect.SourceHealth(p))
+        self.assertEqual(f2.get("https://a.org/x", sid="s").error, "robots_http_403")   # 同一轮的新进程：不再请求 robots
+        self.assertEqual(f2.opener.calls, [])
+        f3, _ = mk({"https://a.org/robots.txt": Resp(200, b""), "https://a.org/x": Resp(200, b"ok")},
+                   state=collect.SourceHealth(p), round_id="2026-10-12/r2")
+        self.assertTrue(f3.get("https://a.org/x", sid="s").ok)                          # 下一轮重新请求，不持久停用
+
+    def test_url_records_pruned_to_current_round_and_hash_only(self):
+        p = self.tmpdir() / "st.json"
+        hs = collect.SourceHealth(p)
+        hs.fail_url("https://a.org/x?token=SEKRIT", "2026-10-12/r1", "s", "http_403")
+        hs.fail_url("https://a.org/y", "2026-10-12/r2", "s", "http_403")
+        d = collect.SourceHealth(p).data["urls"]
+        self.assertEqual([v["round"] for v in d.values()], ["2026-10-12/r2"])
+        self.assertNotIn("SEKRIT", p.read_text())
+        self.assertNotIn("/x", p.read_text())
+
+    def test_pxappid_sensor_on_normal_page_is_fetched(self):
+        page = (b"<html><head><script>(function(){window._pxAppId='PXabc123';var p=document.getElementsByTagName('script')[0],"
+                b"s=document.createElement('script');s.async=1;s.src='//client.perimeterx.net/PXabc123/main.min.js';"
+                b"p.parentNode.insertBefore(s,p);}());</script></head><body>" + b"<p>article</p>" * 20 + b"</body></html>")
+        self.assertIsNone(collect.classify_page("text/html", page, {}, "https://a.org/p"))
+        f, _ = mk({"https://a.org/p": Resp(200, page, {"Content-Type": "text/html"})})
+        self.assertTrue(f.get("https://a.org/p", sid="s").ok)
+        self.assertEqual(f.suspicious, {})
+
+    # ---- SourceHealth：逐源连续可疑
+    def test_three_consecutive_rounds_pending_disable_reported_then_blocked(self):
+        hs = collect.SourceHealth(self.tmpdir() / "state" / "source-health.json")
+        self.assertEqual(hs.record_round("2026-10-12/r1", {"s": ["http_403"], "ok": []}), {"s": False, "ok": False})
+        self.assertEqual(hs.record_round("2026-10-12/r2", {"s": ["challenge"]}), {"s": False})
+        rep = hs.report()
+        self.assertEqual([(e["id"], e["status"], e["consecutive_suspicious_rounds"]) for e in rep], [("s", "watch", 2)])
+        self.assertIsNone(hs.blocked("s"))                                    # 2 轮还不停
+        self.assertEqual(hs.record_round("2026-10-13/r1", {"s": ["suspected_challenge"]}), {"s": True})
+        e = hs.report()[0]
+        self.assertEqual((e["status"], e["flag"], e["consecutive_suspicious_rounds"]), ("pending-disable", "grok-bot-review", 3))
+        self.assertEqual([x["round"] for x in e["recent"]], ["2026-10-13/r1", "2026-10-12/r2", "2026-10-12/r1"])
+        self.assertIn("pending-disable", hs.blocked("s"))                    # 报告之后，下一轮起不再请求
+        self.assertIsNone(hs.blocked("ok"))
+        self.assertEqual(hs.record_round("2026-10-13/r2", {"s": ["http_403"]}), {"s": False})   # 不重复转入
+        hs.set_status("s", "disabled", "Grok Bot confirmed 2026-10-13")      # 人工确认
+        self.assertEqual(hs.report()[0]["status"], "disabled")
+        hs.set_status("s", "ok", "site fixed")                               # 人工恢复：清零
+        self.assertIsNone(hs.blocked("s"))
+        self.assertEqual(hs.report(), [])
+
+    def test_clean_round_resets_and_same_round_not_double_counted(self):
+        hs = collect.SourceHealth(self.tmpdir() / "h.json")
+        hs.record_round("2026-10-12/r1", {"s": ["http_403"]})
+        hs.record_round("2026-10-12/r2", {"s": ["http_403"]})
+        hs.record_round("2026-10-13/r1", {"s": []})                           # 中间一轮正常 → 清零
+        hs.record_round("2026-10-13/r2", {"s": ["http_403"]})
+        hs.record_round("2026-10-13/r2", {"s": ["http_403"]})                 # 同一轮重跑不重复计数
+        hs.record_round("2026-10-13/r2", {"s": []})                           # 同一轮另一次正常：仍按可疑（任一次可疑）
+        self.assertEqual(collect.SourceHealth.streak(hs.data["sources"]["s"]), 1)
+        self.assertIsNone(hs.blocked("s"))
+        for rid in ("2026-10-14/r1", "2026-10-14/r2"):
+            hs.record_round(rid, {"s": ["challenge"]})
+        self.assertEqual(hs.data["sources"]["s"]["status"], "pending-disable")
+        self.assertLessEqual(len(hs.data["sources"]["s"]["rounds"]), collect.KEEP_ROUNDS)
+
+    def test_round_id_validation(self):
+        self.assertEqual(collect.round_id("2026-10-12", 2), "2026-10-12/r2")
+        with self.assertRaises(collect.ConfigError):
+            collect.round_id("2026-10-12", 3)
+        with self.assertRaises(collect.ConfigError):
+            collect.SourceHealth(None).record_round("x", {"s": []})
+        for e in ("network", "http_404", "http_503", "robots_disallow", "not_configured", "source_blocked", None):
+            self.assertFalse(collect.is_suspicious(e), e)
+        for e in ("http_401", "http_403", "challenge", "suspected_challenge", "suspected_challenge:rss_root",
+                  "robots_http_403", "robots_challenge", "url_failed_this_round"):
+            self.assertTrue(collect.is_suspicious(e), e)
+
+    # ---- capture_sources 端到端
+    S = {"id": "feed", "theme": "ai", "method": "rss", "url": "https://f.org/rss", "enabled": True,
+         "approval_status": "approved", "approval_basis": "b", "license": "url+hash-only"}
+    S2 = dict(S, id="feed2", url="https://f.org/rss2")
+
+    def run_round(self, base, date, rnd, routes, sources=None):
+        import contextlib, io, yaml
+        src = base / "s.yaml"
+        src.write_text(yaml.safe_dump({"sources": sources or [self.S, self.S2]}), encoding="utf-8")
+        (base / "pub").mkdir(exist_ok=True)
+        orig = collect.Fetcher.__init__
+        opener = FakeOpener(routes)
+
+        def init(s, *a, **k):
+            k["opener"] = opener; k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS)
+            orig(s, *a, **k)
+        collect.Fetcher.__init__ = init
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                rc = CS.main(["--sources", str(src), "--date", date, "--round", str(rnd),
+                              "--out-root", str(base / "pub"), "--private-root", str(base / "priv")])
+        finally:
+            collect.Fetcher.__init__ = orig
+        return rc, err.getvalue(), [u for u, _ in opener.calls]
+
+    RSS = Resp(200, b"<rss><channel/></rss>", {"Content-Type": "application/rss+xml"})
+
+    def health_reports(self, base, date, rnd):
+        d = base / "pub" / "raw" / date / ("round2" if rnd == 2 else "")
+        return [json.loads(p.read_text()) for p in sorted(d.glob("source-health-*.json"))]
+
+    def test_capture_three_rounds_403_pending_disable_report_then_skip(self):
+        base = self.tmpdir()
+        routes = {"https://f.org/rss": Resp(403), "https://f.org/rss2": self.RSS}
+        rounds = [("2026-10-12", 1), ("2026-10-12", 2), ("2026-10-13", 1)]
+        for i, (date, rnd) in enumerate(rounds, 1):
+            rc, err, calls = self.run_round(base, date, rnd, routes)
+            self.assertEqual(rc, 1)
+            self.assertIn("https://f.org/rss2", calls)                         # 同主机另一源照常采集
+            self.assertEqual(calls.count("https://f.org/rss"), 1)
+            rep = self.health_reports(base, date, rnd)[-1]
+            self.assertEqual([(e["id"], e["consecutive_suspicious_rounds"]) for e in rep], [("feed", i)])
+            if i < 3:
+                self.assertEqual(rep[0]["status"], "watch")
+                self.assertNotIn("PENDING-DISABLE", err)
+        self.assertEqual((rep[0]["status"], rep[0]["flag"], rep[0]["newly_flagged"]), ("pending-disable", "grok-bot-review", True))
+        self.assertIn("PENDING-DISABLE feed", err)
+        pub = (base / "pub" / "raw" / "2026-10-13" / "MANIFEST.sha256").read_text()
+        self.assertIn("source-health-", pub)                                   # 报告文件已登记
+        rc, err, calls = self.run_round(base, "2026-10-13", 2, routes)         # 第 4 轮：不再请求，跳过并继续报告
+        self.assertNotIn("https://f.org/rss", calls)
+        self.assertIn("https://f.org/rss2", calls)
+        self.assertIn("source_blocked", err)
+        rep = self.health_reports(base, "2026-10-13", 2)[-1]
+        self.assertEqual((rep[0]["status"], rep[0]["newly_flagged"]), ("pending-disable", False))
+        skipped = json.loads(next((base / "pub/raw/2026-10-13/round2").glob("skipped-*.json")).read_text())
+        self.assertEqual([x["reason"] for x in skipped], ["source_blocked"])
+        for p in (base / "pub").rglob("*.json"):
+            self.assertNotIn(str(base), p.read_text())                         # 不写本机路径
+
+    def test_capture_clean_round_resets_streak(self):
+        base = self.tmpdir()
+        bad = {"https://f.org/rss": Resp(200, b"<html><div class='g-recaptcha'></div></html>"), "https://f.org/rss2": self.RSS}
+        good = {"https://f.org/rss": self.RSS, "https://f.org/rss2": self.RSS}
+        for (date, rnd), routes in ((("2026-10-12", 1), bad), (("2026-10-12", 2), bad), (("2026-10-13", 1), good),
+                                    (("2026-10-13", 2), bad), (("2026-10-14", 1), bad)):
+            self.run_round(base, date, rnd, routes)
+        hs = collect.SourceHealth(base / "priv" / "state" / "source-health.json")
+        self.assertEqual(hs.data["sources"]["feed"]["status"], "ok")
+        self.assertEqual(collect.SourceHealth.streak(hs.data["sources"]["feed"]), 2)
+        self.assertEqual(collect.SourceHealth.streak(hs.data["sources"]["feed2"]), 0)
+
+    def test_capture_format_suspect_counts_and_rerun_same_round_no_refetch(self):
+        base = self.tmpdir()
+        routes = {"https://f.org/rss": Resp(200, b"<html><body>hello</body></html>", {"Content-Type": "text/html"}),
+                  "https://f.org/rss2": self.RSS}
+        rc, err, calls = self.run_round(base, "2026-10-12", 1, routes)
+        self.assertIn("suspected_challenge:", err)
+        rc, err, calls = self.run_round(base, "2026-10-12", 1, routes)        # 同一轮重跑：该 URL 不再请求
+        self.assertNotIn("https://f.org/rss", calls)
+        self.assertIn("url_failed_this_round", err)
+        hs = collect.SourceHealth(base / "priv" / "state" / "source-health.json")
+        self.assertEqual(collect.SourceHealth.streak(hs.data["sources"]["feed"]), 1)   # 同一轮只算一次
+
+    def test_capture_internal_source_report_not_public(self):
+        base = self.tmpdir()
+        internal = dict(self.S, id="secretfeed", internal_only=True, url="https://g.org/rss")
+        os.environ["MARKJIN_INTERNAL_DIR"] = str(base / "internal")
+        try:
+            self.run_round(base, "2026-10-12", 1, {"https://g.org/rss": Resp(403)}, sources=[internal])
+        finally:
+            del os.environ["MARKJIN_INTERNAL_DIR"]
+        for p in (base / "pub").rglob("*"):
+            if p.is_file():
+                self.assertNotIn("secretfeed", p.read_text())
+        self.assertTrue(list((base / "internal").rglob("source-health-*.json")))
+
+    def test_source_health_cli_confirm_and_enable(self):
+        import contextlib, io
+        import source_health as SH
+        base = self.tmpdir()
+        st = base / "priv" / "state" / "source-health.json"
+        hs = collect.SourceHealth(st)
+        for rid in ("2026-10-12/r1", "2026-10-12/r2", "2026-10-13/r1"):
+            hs.record_round(rid, {"feed": ["http_403"]})
+        args = ["--private-root", str(base / "priv"), "--out-root", str(base / "pub")]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(SH.main(["report", *args]), 0)
+        self.assertEqual(json.loads(out.getvalue())[0]["status"], "pending-disable")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(SH.main(["confirm-disable", "--id", "feed", *args]), 2)        # 必须写明确认依据
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["confirm-disable", "--id", "feed", "--reason", "Grok Bot confirmed", *args]), 0)
+        self.assertEqual(collect.SourceHealth(st).data["sources"]["feed"]["status"], "disabled")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["enable", "--id", "feed", *args]), 0)
+        self.assertIsNone(collect.SourceHealth(st).blocked("feed"))
+        st.write_text("{}")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(SH.main(["report", *args]), 2)                                 # 损坏文件 → 2，不改写
+        self.assertEqual(st.read_text(), "{}")
 
 
 if __name__ == "__main__":
