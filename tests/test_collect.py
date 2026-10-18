@@ -2338,6 +2338,36 @@ class R15Fixes(unittest.TestCase):
         self.assertEqual(f2.get("https://doi.org/10.1/a", sid="s").error, "url_cooldown")
         self.assertTrue(f2.get("https://doi.org/10.1/b", sid="s").ok)
 
+    # ---- MEDIUM ⑥：限速锁文件损坏 → 拒绝请求并报错，不当空桶放行
+    def test_r15_6_corrupt_rate_lock_refuses(self):
+        for bad in ("{bad", "[]", '{"site": "x"}', '{"site": 1, "hosts": []}', '{"site": 1, "hosts": {"a.org": "x"}}',
+                    '{"site": 1, "hosts": {}, "extra": 1}', '{"site": true}'):
+            for robots_cached in (False, True):
+                d = self.tmpdir()
+                f = self.fetcher(d, {"https://a.org/x": Resp(200, b"ok"), "https://a.org/y": Resp(200, b"ok")})
+                if robots_cached:
+                    self.assertTrue(f.get("https://a.org/y", sid="s").ok)      # robots 已取过，再损坏正文那次
+                n = len(f.opener.calls)
+                (d / "locks" / "rate-site-a.org.lock").parent.mkdir(parents=True, exist_ok=True)
+                (d / "locks" / "rate-site-a.org.lock").write_text(bad)
+                r = f.get("https://a.org/x", sid="s")
+                self.assertEqual(r.error, "rate_lock_invalid", (bad, robots_cached))
+                self.assertFalse(collect.is_suspicious(r.error))
+                self.assertEqual(len(f.opener.calls), n, (bad, robots_cached))     # 一个请求都没发
+                self.assertEqual((d / "locks" / "rate-site-a.org.lock").read_text(), bad)   # 不改写
+        d = self.tmpdir()                                                       # 空文件 = 首次使用，照常
+        (d / "locks").mkdir(); (d / "locks" / "rate-site-a.org.lock").write_text("")
+        self.assertTrue(self.fetcher(d, {"https://a.org/x": Resp(200, b"ok")}).get("https://a.org/x", sid="s").ok)
+
+    def test_r15_6_capture_reports_corrupt_rate_lock(self):
+        base = self.tmpdir()
+        B = BlockRule1522()
+        lk = base / "priv" / "state" / "locks" / "rate-site-f.org.lock"
+        lk.parent.mkdir(parents=True); lk.write_text("{bad")
+        rc, err, calls = B.run_round(base, "2026-10-12", 1, {"https://f.org/rss": B.RSS}, sources=[B.S])
+        self.assertEqual((rc, calls), (1, []))
+        self.assertIn("rate_lock_invalid", err)
+
 
 if __name__ == "__main__":
     unittest.main()

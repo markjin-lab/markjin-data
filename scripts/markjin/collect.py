@@ -678,7 +678,7 @@ def ext_for(ctype, body):
 #     本轮停止的只是返回可疑响应的那一跳的主机；跳转起点只冷却该 URL，起点主机不停（r15 ⑤）。
 #  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
-#  4. 没有公布限速的站点，每站（site_of）每分钟最多 1 次（跨进程共享）；只有 sources.yaml site_rate_limits 写明
+#  4. 没有公布限速的站点，每站（site_of）每分钟最多 1 次（跨进程共享；限速锁文件损坏 → 拒绝请求并报 rate_lock_invalid）；只有 sources.yaml site_rate_limits 写明
 #     公布限额和依据的站点按其限额；SEC 维持 5 次/秒。robots Crawl-delay 更严时从严。
 #  5. 旧 collector-hosts.json 的主机全部保持停用：未迁移时拒绝运行，迁移（source_health.py migrate）后不再请求；
 #     因验证页或登录墙停的（unrecoverable）永不恢复，没有放行开关，只能改 sources.yaml 并重新审批。
@@ -1242,7 +1242,27 @@ def looks_html(headers, body, xml_ok=False):
 
 _NO_SID = object()      # _raw 未给源（直接调用）：不重查源状态
 # 没发请求的结果（不算本轮联系过该源，也不算可疑）
-NO_CONTACT = frozenset({"host_disabled", "not_configured", "source_blocked", "host_stopped_this_round", "url_cooldown"})
+NO_CONTACT = frozenset({"host_disabled", "not_configured", "source_blocked", "host_stopped_this_round", "url_cooldown",
+                        "rate_lock_invalid"})
+
+
+def _read_rate_lock(text):
+    """严格读取站点限速锁文件：空文件 = 首次使用；否则必须是 {"site": 数, "hosts": {主机: 数}}（site 可缺）。
+    损坏返回 None（r15 ⑥：调用方拒绝请求并报错，不当空桶放行）。"""
+    if not (text or "").strip():
+        return {"hosts": {}}
+    try:
+        rec = strictjson.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(rec, dict) or not set(rec) <= {"site", "hosts"} or not isinstance(rec.get("hosts", {}), dict):
+        return None
+    if "site" in rec and not _num(rec["site"]):
+        return None
+    hosts = dict(rec.get("hosts", {}))
+    if not all(isinstance(k, str) and _num(v) for k, v in hosts.items()):
+        return None
+    return {**({"site": rec["site"]} if "site" in rec else {}), "hosts": hosts}
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -1286,6 +1306,7 @@ class Fetcher:
         self.suspicious = {}       # sid（无源时为 None）→ [{"reason", "host"}]：本轮该源的可疑结果，交 record_round
         self.contacted = set()     # 本轮实际发出过请求的 sid（只有这些源记一轮；没发请求的不算正常也不算可疑）
         self._robots_bad = {}      # scheme://host → 本轮 robots.txt 的可疑原因
+        self._robots_err = {}      # scheme://host → robots.txt 没能请求的错误（如 rate_lock_invalid），交 _get 原样报出
         # 跨进程锁目录（私有 state/locks）：每站限速桶 rate-site-<站点>.lock、每个 URL 的请求锁 urls/<key>.lock
         self.lock_dir = Path(lock_dir) if lock_dir else None
         interval = float(interval)
@@ -1391,16 +1412,13 @@ class Fetcher:
         hgap = max(self.interval, self._host_interval.get(host, 0))   # 每主机下限与 robots Crawl-delay（更严者）
         with self._lock(f"rate-site-{site}.lock") as lk:
             # 锁文件记 {"site": 上次站内请求时间, "hosts": {主机: 上次请求时间}}（墙钟），持锁直到本次请求与判定结束
-            rec = {}
+            rec = {"hosts": {}}
             if lk is not None:
                 lk.seek(0)
-                try:
-                    rec = strictjson.loads(lk.read() or "{}")
-                    if not isinstance(rec, dict):
-                        rec = {}
-                except ValueError:
-                    rec = {}
-            hosts = rec.get("hosts") if isinstance(rec.get("hosts"), dict) else {}
+                rec = _read_rate_lock(lk.read())
+                if rec is None:                # r15 ⑥：锁文件损坏不当空桶放行，拒绝本次请求并报错
+                    return 0, {}, b"", "rate_lock_invalid", f"site rate lock for {site} unreadable; refusing request", None
+            hosts = rec["hosts"]
             ls = [x for x in (rec.get("site"), self._site_last.get(site)) if _num(x)]
             lh = [x for x in (hosts.get(host), self._last.get(host)) if _num(x)]
             t0 = self.wall()
@@ -1522,7 +1540,7 @@ class Fetcher:
                     if b:                           # robots.txt（及起点）冷却、主机本轮停止
                         self.mark_failed(_cur, sid, b, also=(start,))
                     return b
-                st, h, body, ec, _, bad = self._fetch_once(cur, "text/plain,*/*", sid=sid, judge=judge)
+                st, h, body, ec, rdet, bad = self._fetch_once(cur, "text/plain,*/*", sid=sid, judge=judge)
                 if ec not in NO_CONTACT:
                     self.contacted.add(sid)
                 if bad:
@@ -1551,6 +1569,9 @@ class Fetcher:
                 self._host_interval[host] = stricter
         elif st in (404, 410) and not ec:
             rp.allow_all = True
+        elif ec == "rate_lock_invalid":    # r15 ⑥：限速锁损坏 → 不请求、不缓存，交 _get 报错
+            self._robots_err[base] = (ec, rdet)
+            return self._disallow_all()
         else:                     # 5xx/网络错误/跳转被拒 → 本轮按禁止处理
             rp.disallow_all = True
         self._robots[base] = rp
@@ -1601,6 +1622,9 @@ class Fetcher:
             if why:
                 return Result(False, final_url=cur, hops=hops, error="blocked_address", detail=why)
             if not self.allowed(cur, esid):
+                err = self._robots_err.pop(f"{p.scheme}://{p.netloc}", None)
+                if err:                   # robots.txt 没能请求（限速锁损坏等）：原样报错
+                    return Result(False, final_url=cur, hops=hops, error=err[0], detail=err[1])
                 bad = self._robots_bad.get(f"{p.scheme}://{p.netloc}")
                 if bad:                   # robots.txt 可疑：该主机本轮已停
                     return Result(False, final_url=cur, hops=hops, error=bad, detail=self.robots_note.get(
