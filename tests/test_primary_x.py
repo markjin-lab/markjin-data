@@ -8,6 +8,20 @@ import fetch_primary as FP
 import x_capture as XC
 from test_collect import Resp, FakeOpener, mk, PUBLIC_DNS, view, ROUND
 
+# r18（#53 HIGH①）：批准须在 origin/main 上有真实记录；本模块共用一个临时批准记录库
+APPR = None
+_OLD_APPR_REPO = None
+
+
+def setUpModule():
+    global APPR, _OLD_APPR_REPO
+    APPR = helpers.ApprovalRepo()
+    _OLD_APPR_REPO = APPR.install()
+
+
+def tearDownModule():
+    collect.APPROVALS_REPO = _OLD_APPR_REPO
+
 
 def tmp():
     return Path(tempfile.mkdtemp())
@@ -31,7 +45,7 @@ class ScraperCapture(unittest.TestCase):
         op = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = collect._TestTransport(op); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS); orig(s, *a, **k)
+            k["opener"] = collect.test_transport(op); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS); orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -439,10 +453,11 @@ class R2Sources(unittest.TestCase):
         import yaml
         p = Path(__file__).resolve().parents[1] / "improve" / "sources.yaml"
         by = {s["id"]: s for s in yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]}
-        for sid in ("qwen-blog-rss",):
-            self.assertEqual(by[sid]["approval_status"], "pending", sid)
-            self.assertFalse(by[sid]["enabled"], sid)
-            self.assertFalse(collect.approval_gate(by[sid])[0], sid)
+        for sid in ("qwen-blog-rss",):        # r17：本 PR 不再改 sources.yaml；借用条目若存在也必须待批准、停用
+            if sid in by:
+                self.assertEqual(by[sid]["approval_status"], "pending", sid)
+                self.assertFalse(by[sid]["enabled"], sid)
+                self.assertFalse(collect.approval_gate(by[sid])[0], sid)
 
 
 class R3Primary(Primary):
@@ -513,7 +528,7 @@ class R3Scraper(unittest.TestCase):
         op = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = collect._TestTransport(op); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+            k["opener"] = collect.test_transport(op); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -576,12 +591,15 @@ class R3XCapture(R2XCapture):
 
 
 class R3Sources(unittest.TestCase):
-    def test_nbs_releases_restored(self):
+    def test_r17_five_sources_split_out_not_enabled(self):
+        """r17（#60 HIGH① 拆分，Grok Bot 2026-10-19 02:55 SGT 裁定）：anthropic-news、cern-news、nbs-releases、
+        sec-edgar-tsmc、sec-edgar-asml 的启用 / 新增已从本 PR 移除（sources.yaml 回到 base 状态），一个都不能通过门禁。"""
         import yaml
         p = Path(__file__).resolve().parents[1] / "improve" / "sources.yaml"
         by = {s["id"]: s for s in yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]}
-        self.assertTrue(collect.approval_gate(by["nbs-releases"])[0])
-        self.assertFalse(collect.approval_gate(by["qwen-blog-rss"])[0])
+        for sid in ("anthropic-news", "cern-news", "nbs-releases", "sec-edgar-tsmc", "sec-edgar-asml"):
+            self.assertFalse(sid in by and collect.approval_gate(by[sid])[0], sid)
+            self.assertFalse(sid in by and by[sid].get("method") in ("scraper", "rss", "api") and by[sid].get("enabled"), sid)
 
 
 class R4XCapture(R3XCapture):
@@ -693,7 +711,7 @@ class R4Scraper(unittest.TestCase):
         orig = collect.Fetcher.__init__
 
         def init(s, *a, **k):
-            k["opener"] = collect._TestTransport(FakeOpener(routes)); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+            k["opener"] = collect.test_transport(FakeOpener(routes)); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -758,7 +776,7 @@ class R5Scraper(unittest.TestCase):
         op = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = collect._TestTransport(op); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+            k["opener"] = collect.test_transport(op); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -1323,7 +1341,7 @@ class BlockRule1522Primary(unittest.TestCase):
         opener = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = collect._TestTransport(opener); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS)
+            k["opener"] = collect.test_transport(opener); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS)
             orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         err = io.StringIO()
@@ -1352,15 +1370,20 @@ class BlockRule1522Primary(unittest.TestCase):
     def health(self):
         return collect.SourceHealth(self.priv / "state" / "source-health.json")
 
-    def approve_pending(self, tag):
-        """冷却到期后的人工批准门禁（Grok Bot 2026-10-18 20:51 SGT）：把待批准重测的来源各用一个新引用批准一次。"""
+    def approve_pending(self, tag, now, url=None):
+        """冷却到期后的人工批准门禁（Grok Bot 2026-10-18 20:51 SGT）：把待批准重测的来源各用一个新引用批准一次。
+        r18：批准绑定一个到期 URL（url 给定时用它，否则取该来源第一个到期 URL），且须在 origin/main 上登记。"""
         import contextlib, io
+        from unittest import mock
         import source_health as SH
-        keys = [k for k, e in self.health().data["retest"].items() if e["status"] == "pending-approval"]
+        hs = collect.SourceHealth(self.priv / "state" / "source-health.json", clock=lambda: now)
+        keys = [k for k, e in hs.data["retest"].items() if e["status"] == "pending-approval"]
         self.assertTrue(keys)
         for k in keys:
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(SH.main(["approve-retest", "--source", k, "--approved-by", "grok-bot",
+            uk = collect.url_key(url) if url else hs.pending_urls(k)[0]
+            APPR.grant("retest", k, ref=f"grok-bot:test-{tag}-{k}", url=uk)
+            with contextlib.redirect_stdout(io.StringIO()), mock.patch("time.time", return_value=now):
+                self.assertEqual(SH.main(["approve-retest", "--source", k, "--url-key", uk, "--approved-by", "grok-bot",
                                           "--quote-ref", f"grok-bot:test-{tag}-{k}", "--private-root", str(self.priv),
                                           "--out-root", str(self.out)]), 0)
         return keys
@@ -1391,7 +1414,7 @@ class BlockRule1522Primary(unittest.TestCase):
         rc, err, calls = self.fp("2026-10-13", 1, routes, now=self.T0 + self.DAY)   # 24 小时后：到期只标待批准重测，不请求
         self.assertEqual(calls, [])
         self.assertEqual(self.health().data["retest"]["primary:openai.com"]["status"], "pending-approval")
-        self.assertEqual(self.approve_pending("a403"), ["primary:openai.com"])
+        self.assertEqual(self.approve_pending("a403", self.T0 + self.DAY), ["primary:openai.com"])
         rc, err, calls = self.fp("2026-10-13", 1, routes, now=self.T0 + self.DAY + 60)   # 书面批准后只重测一次
         self.assertEqual(calls.count(self.ART), 1)
 
@@ -1415,7 +1438,7 @@ class BlockRule1522Primary(unittest.TestCase):
             if i and plan[i - 1] is self.CF403:            # 上一轮被拒、冷却已到期：先只标待批准重测，批准后才重测
                 rc, err, calls = self.fp(date, rnd, {self.ART: resp}, now=now)
                 self.assertEqual(calls, [])
-                self.approve_pending(f"r{i}")
+                self.approve_pending(f"r{i}", now)
                 now += 60
             rc, err, calls = self.fp(date, rnd, {self.ART: resp}, now=now)
             self.assertEqual(calls.count(self.ART), 1)
@@ -1450,26 +1473,52 @@ class BlockRule1522Primary(unittest.TestCase):
                                                     "license": "url+hash-only"}]}), encoding="utf-8")
         args = lambda d, r: ["--sources", str(src), "--date", d, "--round", str(r), "--out-root", str(self.out),
                              "--private-root", str(self.priv)]
-        # 冷却到期后的人工批准门禁：被拒的下一轮先只标待批准重测、不发请求；批准后的重测只放行一次正文请求
-        # （robots.txt 不占），所以重测轮只取到索引，子 sitemap 本轮不再请求；重测不可疑 → 再下一轮照常。
-        s1 = "https://s.org/s1.xml"
-        for i, d in enumerate(("2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16")):
-            now = self.T0 + i * self.DAY
-            rc, err, calls = self._patched(routes, lambda: CS.main(args(d, 1)), now=now)
-            if i % 2:                                                        # 重测轮
-                self.assertEqual(calls, [])
-                self.assertEqual(self.approve_pending(f"s{i}"), ["s-news"])
-                rc, err, calls = self._patched(routes, lambda: CS.main(args(d, 1)), now=now + 60)
-                self.assertEqual(calls, ["https://s.org/robots.txt", "https://s.org/sitemap.xml"])
-                self.assertIn("ERR s-news", err)                              # 子 sitemap 被门禁拦下：本轮该源报错，不另发请求
-            else:
-                self.assertEqual(calls.count(s1), 1)
-            self.assertEqual(rc, 1)
-            self.assertEqual(self.health().data["sources"]["s-news"]["status"],
-                             "pending-disable" if i == 4 else "ok")          # 5 轮里第 0、2、4 轮可疑 → 第 5 轮转入
-        rc, err, calls = self._patched(routes, lambda: CS.main(args("2026-10-17", 1)), now=self.T0 + 5 * self.DAY)
-        self.assertEqual(calls, [])                                          # 下一轮起不再请求
-        self.assertIn("SKIP s-news source_blocked", err)
+        # r17 反例（审查 bot 2026-10-19，r17/r16 审查，#53 HIGH②/#60 HIGH②）：旧测试接受「批准后只请求根 sitemap，
+        # 根页 200 就清掉该来源全部到期记录，下一轮不经新批准再请求子 sitemap」。r18：批准绑定被拒的那个 URL（子 sitemap），
+        # 不放行根 sitemap；根页不是到期记录，不能拿来批；没请求过的子 sitemap 记录不清，下一轮仍待批准、不发请求。
+        s1, root = "https://s.org/s1.xml", "https://s.org/sitemap.xml"
+        rc, err, calls = self._patched(routes, lambda: CS.main(args("2026-10-12", 1)), now=self.T0)
+        self.assertEqual(calls.count(s1), 1)                                 # 子 sitemap 403：冷却
+        now = self.T0 + self.DAY
+        rc, err, calls = self._patched(routes, lambda: CS.main(args("2026-10-13", 1)), now=now)
+        self.assertEqual(calls, [])                                          # 到期：只标待批准
+        hs = collect.SourceHealth(self.priv / "state" / "source-health.json", clock=lambda: now)
+        self.assertEqual(hs.pending_urls("s-news"), [collect.url_key(s1)])
+        APPR.grant("retest", "s-news", ref="grok-bot:t-r17-root", url=collect.url_key(root))
+        with self.assertRaises(collect.ConfigError):                         # 根 sitemap 没有到期记录：不能批
+            hs.approve_retest("s-news", collect.make_approval("grok-bot", "grok-bot:t-r17-root"), collect.url_key(root))
+        self.assertEqual(self.approve_pending("s1", now, url=s1), ["s-news"])   # 批准绑定子 sitemap
+        rc, err, calls = self._patched(routes, lambda: CS.main(args("2026-10-13", 1)), now=now + 60)
+        self.assertEqual(calls, [])                                          # 批准不放行根 sitemap
+        self.assertIn("SKIP s-news source_blocked: source retest:awaiting-approval", err)
+        now = self.T0 + 2 * self.DAY
+        rc, err, calls = self._patched({"https://s.org/sitemap.xml": Resp(200, idx), s1: Resp(200, b"<urlset/>")},
+                                       lambda: CS.main(args("2026-10-14", 1)), now=now)
+        self.assertNotIn(s1, calls)                                          # 下一轮：子 sitemap 仍不请求
+        self.assertEqual(calls, [])
+        h = self.health().data
+        self.assertTrue(any(collect.url_key(s1) in m for m in h["urls"].values()))   # 子 sitemap 的到期记录还在
+        self.assertEqual(h["retest"]["s-news"]["status"], "approved")       # 批准没被根页用掉
+        self.assertEqual(h["retest_log"], [])                                # 没有任何重测请求
+
+    def test_r17_primary_pseudo_source_retest_bound_to_url(self):
+        """r17 反例（伪源 primary:<主机>）：同主机文章 A 被拒、到期获批（绑定 A）后，同一轮线索里同主机的文章 B 不能借这次
+        批准被请求，A 成功也只清 A 的记录。"""
+        a, b = self.ART, self.ART.rstrip("/") + "-b"
+        rc, err, calls = self.fp("2026-10-12", 1, {a: self.CF403})
+        self.assertEqual(calls.count(a), 1)
+        now = self.T0 + self.DAY
+        rc, err, calls = self.fp("2026-10-13", 1, {a: self.OK}, now=now)
+        self.assertEqual(calls, [])
+        self.approve_pending("pa", now, url=a)
+        lp = self.base / "leads2.json"
+        lp.write_text(json.dumps({"items": [{"id": "2", "expanded_url": b}, {"id": "1", "expanded_url": a}]}), encoding="utf-8")
+        rc, err, calls = self._patched({a: self.OK, b: self.OK}, lambda: FP.main(
+            ["--leads", str(lp), "--date", "2026-10-13", "--round", "1", "--out-root", str(self.out),
+             "--private-root", str(self.priv)]), now + 60)
+        self.assertNotIn(b, calls)                                           # B 没有借 A 的批准
+        self.assertEqual([u for u in calls if not u.endswith("/robots.txt")], [a])
+        self.assertLessEqual(len(calls), 2)                                  # robots 最多 1 次 + 正文 1 次
 
     def test_scraper_list_host_stopped_this_round_skips_whole_source(self):
         import yaml
