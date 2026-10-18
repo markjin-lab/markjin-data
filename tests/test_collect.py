@@ -3381,6 +3381,20 @@ class R18Review(unittest.TestCase):
             self.assertEqual(h.data["retest"]["s"]["status"], "pending-approval", name)   # 批准作废，须重新批准
             self.assertIn(collect.url_key(u), h.data["urls"][ROUND], name)
 
+    # ---- 采集 bot 自加：r18 之前的状态文件（缺 retest_log；旧批准未绑定 URL）→ 补空账本，旧批准退回待批准
+    def test_r18_pre_r18_state_migrated_and_unbound_approval_reset(self):
+        p = self.tmpdir() / "st.json"
+        d = collect.SourceHealth._empty()
+        d.pop("retest_log")
+        d["retest"] = {"s": {"status": "approved", "since": 1.0, "approval": {"by": "grok-bot", "quote_ref": "q:1", "at": 2.0}},
+                       "u": {"status": "used", "since": 1.0, "round": ROUND, "used_at": 3.0,
+                             "approval": {"by": "grok-bot", "quote_ref": "q:2", "at": 2.0}}}
+        p.write_text(json.dumps(d))
+        hs = collect.SourceHealth(p)
+        self.assertIsNone(hs.error)
+        self.assertEqual(hs.data["retest_log"], [])
+        self.assertEqual({k: e["status"] for k, e in hs.data["retest"].items()}, {"s": "pending-approval", "u": "pending-approval"})
+
     # ---- MEDIUM3：登录墙按主体 / 侧栏 / 页脚区分
     def test_r18_m3_login_regions(self):
         fp = (b'<html><head><title>Sign in to the debate: why payrolls rose</title></head><body><main><article><p>'
