@@ -604,6 +604,14 @@ class R3FormatTest(unittest.TestCase):
             b = "## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n"
             self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), bad)
 
+    def test_prefixed_entries_malformed_plain_text_ok(self):
+        for bad in ("- **2026-10-18**：第二次。", "> **2026-10-18**：引用。", "1. **2026-10-18**：编号。", "* **2026-1-18**：残缺。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n"
+            self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), bad)
+        for ok in ("* 1. 免责声明。", "2026年之后数据待核。", "本文不含投资建议。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n\n" + ok + "\n"
+            self.assertTrue(R.correction_heading_ok(b, "2026-10-17", en=False), ok)
+
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
         old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")

@@ -601,8 +601,9 @@ def correction_section(body, en=None):
 # 旧格式更正标题：「## 更正 YYYY-MM-DD…」/「## Correction YYYY-MM-DD…」，捕获日期。只有这种标题算旧格式更正标题，
 # 「## 数据截至 2026-10-17」之类带日期的普通标题不算（PR #52 r3 MEDIUM 3）。
 _OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?)[ \t]+(\d{4}-\d{2}-\d{2})(?!\d)")
-# 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：… 等残缺写法），都要过严格条目校验（PR #52 r3 MEDIUM 4）
-_ENTRY_LIKE_RE = re.compile(r"^[ \t]*(?:\*{1,2}[ \t]*\d|\d{4}[-/.年])")
+# 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：…，以及前面带列表、引用符号的写法），都要过严格
+# 条目校验；「2026年之后…」「* 1. 免责声明」这类普通文字不算（PR #52 r3 MEDIUM 4、r4 MEDIUM 1）
+_ENTRY_LIKE_RE = re.compile(r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+)*(?:\*{1,2}[ \t]*)?\d{4}[-/.年]\d")
 
 
 def old_correction_heading_dates(body):
