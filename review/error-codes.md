@@ -24,9 +24,9 @@
 | `E-BLOCK-INTERNAL` | 命中仅供内部研究的主题（细节只记本机内部目录） |
 | `E-INTERNAL-LIST-MISSING` | 本机内部主题清单缺失、不可读或结构不完整，无法完成内部主题检查 |
 | `E-FRED-NOT-ARCHIVED` | 正文引用的 FRED 代码在 raw/<日期>/MANIFEST.sha256（不晚于稿件日期）找不到逐字节一致的 fred/<代码>.json 存档 |
-| `E-BRANCH-METHOD-MISSING` | 产业分段分支缺计算口径（目标观测期、公式、基期、单位、季调口径、舍入位数）、端点算法或输入版本（数据版本日期与 raw/ 原件 sha256），不予登记 |
+| `E-BRANCH-METHOD-MISSING` | 产业分段分支缺计算口径（目标观测期、公式、基期、单位、季调口径、舍入位数）、端点算法或输入版本（数据版本日期与已登记的 raw/ 原件 sha256），不予登记 |
 | `E-BRANCH-AGGREGATE` | 产业分段分支的观测变量或数据来源是全国总量序列（路线图 v1.12 15.3），不作观测变量，不予登记 |
-| `E-CANDIDATE-DATA-CITED` | 正文引用了尚未转为常规的来源（新数据机构网址，或 arxiv/fred/x/fulltext 以外的 raw/ 存档）；候选数据只作线索 |
+| `E-CANDIDATE-DATA-CITED` | 正文引用了尚未转为常规的来源（新数据机构网址、arxiv/fred/x/fulltext 以外的 raw/ 存档，或以文字引用新数据机构或公司月度营收的数据）；候选数据只作线索 |
 | `E-INTERNAL-LABEL` | 出现内部分类标签的写法或“若……此归类不成立”句式 |
 | `E-INTERNAL-TERM` | 命中仓库外本机内部用语清单（公开侧只记错误码与计数，不记具体词与位置） |
 | `E-INTERNAL-TERM-LIST` | 指定的内部用语清单不合规（位于 git 仓库内、不是普通文件、不可读、不是 UTF-8 或为空），无法完成检查 |

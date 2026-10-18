@@ -1362,17 +1362,18 @@ def http_link_checker(url, timeout=10):
     return False
 
 
-def _fred_archived(ctx, code):
-    """v1.12：FRED 代码在 raw/<日期>/MANIFEST.sha256（日期为真实日期且不晚于稿件日期）里登记了 fred/<代码>.json
-    （或 round2/fred/<代码>.json），文件存在、不是符号链接、字节 sha256 与登记一致，且是该序列的存档
+def _fred_archive_shas_ctx(ctx, code):
+    """v1.12：返回 FRED 代码的有效存档 sha256 集合。有效指：在 raw/<日期>/MANIFEST.sha256（日期为真实日期且不晚于 ctx.date）
+    里登记了 fred/<代码>.json（或 round2/fred/<代码>.json），文件存在、不是符号链接、字节 sha256 与登记一致，且是该序列的存档
     （自报 series_id 时须唯一且等于代码；未自报时须是 observations 列表）。"""
+    out = set()
     raw = ctx.repo / "raw"
     if raw.is_symlink() or not raw.is_dir():
-        return False
+        return out
     try:
         days = sorted(d for d in raw.iterdir() if valid_date(d.name) and d.name <= ctx.date)
     except OSError:
-        return False
+        return out
     for d in days:
         if d.is_symlink() or not d.is_dir() or (d / "MANIFEST.sha256").is_symlink():
             continue
@@ -1394,8 +1395,23 @@ def _fred_archived(ctx, code):
                 continue
             ids = _fred_ids(fj)
             if ids == {code} or (not ids and isinstance(fj, dict) and isinstance(fj.get("observations"), list)):
-                return True
-    return False
+                out.add(entries[rel])
+    return out
+
+
+def _fred_archived(ctx, code):
+    return bool(_fred_archive_shas_ctx(ctx, code))
+
+
+def fred_archive_shas(repo, code, date=None):
+    """供 industry.check_branch 用：repo 中 FRED 代码的有效存档 sha256 集合（date 给出时只认不晚于该日的存档）。"""
+    try:
+        r = Path(repo)
+    except TypeError:
+        return set()
+    if not r.is_dir():
+        return set()
+    return _fred_archive_shas_ctx(_Ctx(r, date if valid_date(date) else "9999-12-31"), code)
 
 
 def _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms, verified_quotes):

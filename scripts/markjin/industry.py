@@ -39,11 +39,14 @@ CANDIDATE_HOSTS = ("eia.gov", "bea.gov", "sec.gov", "fda.gov", "clinicaltrials.g
 _CAND_NAMES = (r"EIA|美国能源信息署|BEA|美国经济分析局|EDGAR|openFDA|ClinicalTrials\.gov|国家统计局|统计局|"
                r"中国人民银行|人民银行|央行金融统计|海关总署|海关统计|财政部|World\s*Bank|世界银行|"
                r"月度营收|月营收|monthly\s+(?:revenue|sales)")
-_CAND_TEXT = re.compile(
-    r"(?:据|根据|来自|来源[:：]?|引用|数据来自|按照|according\s+to|data\s+from|figures\s+from|sources?:?|per)\s*"
-    r"[^。；;!?！？\n]{0,12}?(?<![A-Za-z])(?:" + _CAND_NAMES + r")(?![A-Za-z])"
-    r"|(?<![A-Za-z])(?:" + _CAND_NAMES + r")(?![A-Za-z])[^。；;!?！？\n]{0,10}?"
-    r"(?:数据|数字|统计|显示|公布的|发布的|报告显示|data|figures|statistics|shows?|showed|reported)", re.I)
+_CAND_NAME_RE = re.compile(r"(?<![A-Za-z])(?:" + _CAND_NAMES + r")(?![A-Za-z])", re.I)
+_REVENUE_RE = re.compile(r"(?:\d{1,2}\s*月(?:份)?|月度|月|单月|monthly)\s*(?:营收|营业收入|销售额|revenue|sales)", re.I)
+_CITE_PREFIX = re.compile(r"(?:据|根据|来自|数据来自|引用|according\s+to|data\s+from|figures\s+from|sources?\s*[:：])", re.I)
+_DATA_WORD = re.compile(r"数据|数字|统计|data|figures|statistics", re.I)
+# 日期写法（年、月、日、YYYY-MM-DD、英文月份年份）不算数值语境：“财政部宣布 2027 年起实施”不是引用数据
+_DATE_LIKE = re.compile(r"\d{4}\s*-\s*\d{1,2}(?:\s*-\s*\d{1,2})?|\d{2,4}\s*年(?:代|度|初|底|中)?|\d{1,2}\s*(?:月份?|日|号)|"
+                        r"\b(?:19|20)\d{2}\b|\bQ[1-4]\b", re.I)
+_CLAUSE_SPLIT = re.compile(r"[。；;!?！？\n]|(?<=[A-Za-z0-9\)])\.\s")
 
 # 15.3 所列全国总量序列：只作背景和对照，不作分支的观测变量
 AGGREGATE_SERIES = ("INDPRO", "TCU", "PPIACO", "Y033RC1Q027SBEA", "A053RC1Q027SBEA")
@@ -53,7 +56,8 @@ ENV_PRIVATE_TERMS = "MARKJIN_PRIVATE_TERMS"
 _URL_RE = re.compile(r"https?://[^\s)）`<>\]\"'」]+", re.I)
 _RAW_RE = re.compile(r"(?<![\w/.-])raw/(\d{4}-\d{2}-\d{2})/((?:round\d+/)?)([^/\s`'\")）]+)/")
 _FRED_URL_RE = re.compile(r"fred\.stlouisfed\.org/(?:series/|data/)([A-Za-z0-9_]{2,30})", re.I)
-_FRED_GRAPH_RE = re.compile(r"fred\.stlouisfed\.org/graph/[^\s?#]*\?([^\s#]*)", re.I)
+_FRED_GRAPH_RE = re.compile(r"fred\.stlouisfed\.org/graph/[^\s?#)）\]>]*\?([^\s#)）\]>」\"']*)", re.I)
+_CODE_HEAD = re.compile(r"^[A-Za-z0-9_]{2,30}")
 # “FRED <代码>”“FRED：<代码>”“(FRED <代码>，月度…)”。代码只认大写字母、数字、下划线，且至少含一个字母
 # （“FRED 2026 年度更新”里的年份不算）；常见非代码词与季度/半年写法排除。
 _FRED_TEXT_RE = re.compile(r"(?<![A-Za-z0-9])FRED[ \t]*[:：]?[ \t]*((?=[A-Z0-9_]*[A-Z])[A-Z0-9][A-Z0-9_]{1,29})(?![A-Za-z0-9_])")
@@ -74,7 +78,10 @@ def fred_codes(text):
     found = [m.group(1).upper() for m in _FRED_URL_RE.finditer(t)]
     for m in _FRED_GRAPH_RE.finditer(t):          # graph/?id=A,B&id=C：查询参数里的全部序列代码
         for v in parse_qs(m.group(1), keep_blank_values=True).get("id", []):
-            found += [x.strip().upper() for x in unquote(v).split(",") if _CODE_RE.match(x.strip())]
+            for x in unquote(v).split(","):
+                m2 = _CODE_HEAD.match(x.strip())   # 截掉代码后紧跟的标点（“。”“，”等）
+                if m2:
+                    found.append(m2.group(0).upper())
     found += [m.group(1) for m in _FRED_TEXT_RE.finditer(t)
               if m.group(1) not in _FRED_NOT_CODE and not _FRED_NOT_CODE_RE.match(m.group(1))]
     for c in found:
@@ -97,9 +104,23 @@ def candidate_cited(line):
     return candidate_link(line) or candidate_text(line)
 
 
+def _numeric(clause):
+    return bool(re.search(r"\d", _DATE_LIKE.sub(" ", clause)))
+
+
 def candidate_text(line):
-    """文字引用：新数据机构名称（或公司月度营收）与引用语境同现。"""
-    return bool(_CAND_TEXT.search(norm(line)))
+    """文字引用候选来源的数据（按分句判定）：
+    - 新数据机构名称 + 非日期数值（“国家统计局公布10月工业增加值为6.5%”），或 引用前缀 + 机构名 + 数据词（“据 EIA 数据”“according to BEA figures”）；
+    - 公司月度营收（“8月营收”“月度营收”“monthly revenue”）+ 非日期数值。
+    只出现机构名（“据财政部公告，新规明年生效”“财政部宣布 2027 年起实施”）不算。"""
+    for c in _CLAUSE_SPLIT.split(norm(line)):
+        if not c.strip():
+            continue
+        if _CAND_NAME_RE.search(c) and (_numeric(c) or (_CITE_PREFIX.search(c) and _DATA_WORD.search(c))):
+            return True
+        if _REVENUE_RE.search(c) and _numeric(_REVENUE_RE.sub(" ", c)):
+            return True
+    return False
 
 
 def candidate_link(line):
@@ -151,16 +172,16 @@ def load_private_terms(path=None, repo=None):
         return "skipped", []
     except OSError as e:
         raise PrivateTermsError("unreadable") from e
-    if stat.S_ISLNK(st.st_mode):
-        try:
-            rp = p.resolve(strict=True)
-        except (OSError, RuntimeError) as e:
-            raise PrivateTermsError("dangling link") from e
-    else:
-        rp = p.resolve()
-    if not rp.is_file():
+    ap = Path(os.path.normpath(os.path.abspath(p)))
+    try:
+        rp = ap.resolve(strict=True)
+    except (OSError, RuntimeError) as e:
+        raise PrivateTermsError("unreadable") from e
+    if stat.S_ISLNK(st.st_mode) or rp != ap:
+        raise PrivateTermsError("symlink in path")   # 清单路径本身或任一目录分量是符号链接 → fail-closed
+    if not stat.S_ISREG(st.st_mode):
         raise PrivateTermsError("not a regular file")
-    if _in_git_repo(rp.parent) or _in_git_repo(p.absolute().parent):
+    if _in_git_repo(rp.parent):
         raise PrivateTermsError("inside a git repository")
     if repo is not None:
         try:
@@ -229,8 +250,10 @@ _ROUND = re.compile(r"保留\s*[零一两二三四五六0-9]\s*位小数|小数�
                     r"\d+\s+decimal\s+places?|(?:one|two|three|four)\s+decimal\s+places?|rounded\s+to", re.I)
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _VERSION_WORD = re.compile(r"realtime_start|vintage|版本|发布|release", re.I)
-# 端点算法：写出端点的计算式（含等号与数字，如 “a = 近 12 期同比的 25% 分位数”），只写方法名或长度凑够不算
-_ENDPOINT = re.compile(r"[=＝]\s*[^=＝]*\d|\d[^=＝]*[=＝]")
+# 端点算法：每个端点写成 “<名> = <由输入数据算出的式子>”，右侧须既有数字又有说明取数与算法的文字
+# （如 “a = 近 12 期同比的 25% 分位数”）；“a=1” 这类裸数值、只写方法名都不算
+_ENDPOINT_RHS = re.compile(r"[=＝]([^=＝，,;；。]*)")
+_UNIT_PLACEHOLDER = frozenset({"na", "n/a", "none", "null", "无", "-", "—", "–", "空", "tbd", "待定"})
 _SRC_CODE = re.compile(r"^FRED\s+([A-Z0-9_]{2,30})$")
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 
@@ -244,12 +267,32 @@ def _aggregate(s):
     return any(re.search(r"(?<![A-Za-z0-9_])" + c + r"(?![A-Za-z0-9_])", s, re.I) for c in AGGREGATE_SERIES)
 
 
-def check_branch(row):
+def _endpoint_ok(text):
+    rhs = [m.group(1) for m in _ENDPOINT_RHS.finditer(text)]
+    return bool(rhs) and all(re.search(r"\d", r) and len(re.findall(r"[\u4e00-\u9fff]|[A-Za-z]{2,}", r)) >= 2 for r in rhs)
+
+
+def _real_date_in(text):
+    import datetime as _dt
+    for d in _DATE.findall(text):
+        try:
+            _dt.date.fromisoformat(d)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def check_branch(row, repo):
     """产业分段分支登记前核对。row 字段：observed_variable、unit、data_source（台账同名字段）；
     endpoint_method（端点算法，须写出含等号与数字的计算式）、input_version（输入数据版本：realtime_start/vintage/版本/发布 + YYYY-MM-DD）、raw_sha256（raw/ 原件 sha256，字符串或字符串列表）
-    ——后三项按第六节写在稿件正文与 digest 产业链接表，接入台账时按此传入。返回排序后的错误码列表（空 = 可登记）。"""
+    ——后三项按第六节写在稿件正文与 digest 产业链接表，接入台账时按此传入；可选 date（登记日，YYYY-MM-DD）限定只认不晚于该日的存档。
+    repo：仓库根目录（必填），raw_sha256 须能在 repo 的 raw/<日期>/MANIFEST.sha256 里对上该序列的存档。
+    返回排序后的错误码列表（空 = 可登记）。"""
     codes = set()
     ov, unit, src = _s(row, "observed_variable"), _s(row, "unit"), _s(row, "data_source")
+    if compact(unit) in _UNIT_PLACEHOLDER:
+        unit = ""
     method = ov + " " + unit
     if not (ov and unit and _PERIOD.search(ov) and _FORMULA.search(method) and _BASE.search(method)
             and _SA.search(method) and _ROUND.search(method)):
@@ -257,15 +300,23 @@ def check_branch(row):
     sm = _SRC_CODE.match(src)
     if not sm or not re.search(r"(?<![A-Za-z0-9_])" + re.escape(sm.group(1)) + r"(?![A-Za-z0-9_])", ov):
         codes.add("E-BRANCH-METHOD-MISSING")        # 数据来源须写成 “FRED <代码>”，且观测变量写明同一代码
-    if not _ENDPOINT.search(_s(row, "endpoint_method")):
+    if not _endpoint_ok(_s(row, "endpoint_method")):
         codes.add("E-BRANCH-METHOD-MISSING")
     iv = _s(row, "input_version")
-    if not (_DATE.search(iv) and _VERSION_WORD.search(iv)):
+    if not (_real_date_in(iv) and _VERSION_WORD.search(iv)):
         codes.add("E-BRANCH-METHOD-MISSING")
     shas = row.get("raw_sha256") if isinstance(row, dict) else None
     shas = [shas] if isinstance(shas, str) else shas
     if not (isinstance(shas, list) and shas and all(isinstance(x, str) and _SHA.match(x) for x in shas)):
         codes.add("E-BRANCH-METHOD-MISSING")
+    elif not sm:
+        codes.add("E-BRANCH-METHOD-MISSING")
+    else:
+        # 输入原件绑定：每个 raw_sha256 都须是 repo 中该序列已登记、逐字节一致的 FRED 存档（与 E-FRED-NOT-ARCHIVED 同一口径）
+        from .selfcheck import fred_archive_shas
+        valid = fred_archive_shas(repo, sm.group(1), date=_s(row, "date") or None)
+        if not valid or not set(shas) <= valid:
+            codes.add("E-BRANCH-METHOD-MISSING")
     if _aggregate(ov) or _aggregate(src):
         codes.add("E-BRANCH-AGGREGATE")
     return sorted(codes)

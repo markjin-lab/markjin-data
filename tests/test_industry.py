@@ -74,6 +74,9 @@ class FredArchive(unittest.TestCase):
                          ["UNRATE", "SAMPLEX1", "SAMPLEX2"])
         r = run(TITLE + quote_line() + "\n见 https://fred.stlouisfed.org/graph/?id=UNRATE,SAMPLEX1 。")
         self.assertIn("E-FRED-NOT-ARCHIVED", codes(r))
+        # 紧跟标点或 Markdown 链接括号
+        self.assertEqual(industry.fred_codes("见 https://fred.stlouisfed.org/graph/?id=SAMPLEX1。"), ["SAMPLEX1"])
+        self.assertEqual(industry.fred_codes("[图](https://fred.stlouisfed.org/graph/?id=UNRATE,SAMPLEX1)"), ["UNRATE", "SAMPLEX1"])
 
     def test_bad_sha_future_date_other_series(self):
         body = '{"series_id": "SAMPLEX1", "observations": []}'
@@ -108,10 +111,13 @@ class Candidate(unittest.TestCase):
             self.assertEqual(r["status"], "FAIL", ln)
 
     def test_text_citation(self):
-        for ln in ("据 EIA 数据，样例库存上升。", "国家统计局数据显示样例产量增加。", "According to BEA figures, the sample rose.",
-                   "样例公司月度营收公布的数字为 10。"):
+        for ln in ("据 EIA 数据，样例库存上升。", "国家统计局公布10月样例增加值为6.5%。", "According to BEA figures, the sample rose.",
+                   "样例公司月度营收为 10 亿元。", "样例公司8月营收同比增长20%。"):
             self.assertIn("E-CANDIDATE-DATA-CITED", codes(run(TITLE + quote_line() + "\n" + ln)), ln)
-        for ln in ("SEC 起诉了一家样例公司。", "财政部宣布一项样例政策。", "The BEAM model is fast."):
+            # 与正常来源配对的结构化断言同样拦
+            self.assertIn("E-CANDIDATE-DATA-CITED", codes(run(TITLE + arxiv_line(ln))), ln)
+        for ln in ("SEC 起诉了一家样例公司。", "财政部宣布一项样例政策。", "The BEAM model is fast.", "据财政部公告，样例新规明年生效。",
+                   "财政部宣布 2027 年起实施样例新规。", "样例公司将于下周公布 8 月营收。"):
             self.assertFalse(industry.candidate_cited(ln), ln)
 
     def test_verified_quote_exempt_from_text_checks(self):
@@ -198,6 +204,16 @@ class InternalTerm(unittest.TestCase):
             self.assertEqual(r["internal_term_check"], "error")
             self.assertEqual(r["status"], "FAIL")
 
+    def test_symlink_list_rejected(self):
+        real = term_file(NEUTRAL)
+        d = Path(tempfile.mkdtemp())
+        (d / "link.txt").symlink_to(real)
+        (d / "dirlink").symlink_to(real.parent, target_is_directory=True)
+        for p in (d / "link.txt", d / "dirlink" / "terms.txt"):
+            r = run(TITLE + quote_line(), private_terms=str(p))
+            self.assertIn("E-INTERNAL-TERM-LIST", codes(r), p)
+            self.assertEqual(r["internal_term_check"], "error")
+
     def test_empty_or_bad_list_rejected(self):
         for body in (b"\n  \n", b"\xff\xfe"):
             d = Path(tempfile.mkdtemp())
@@ -222,19 +238,28 @@ class InternalTerm(unittest.TestCase):
         self.assertIn("已跳过", out.stdout)
 
 
+ARCH_BODY = '{"series_id": "IPG2211S", "observations": [{"date": "2026-09-01", "value": "100.0"}]}'
+ARCH_SHA = hashlib.sha256(ARCH_BODY.encode()).hexdigest()
+BREPO = fred_repo({"fred/IPG2211S.json": ARCH_BODY})
+
+
 def branch(**kw):
     row = {"observed_variable": "IPG2211S 2026 年 10 月读数的同比（%，(本期/上年同期−1)×100，保留两位小数，季调序列）",
            "unit": "%", "data_source": "FRED IPG2211S",
-           "endpoint_method": "a = 近 12 期同比的 25% 分位数，b = 75% 分位数，保留两位小数",
-           "input_version": "realtime_start 2026-10-17", "raw_sha256": [SHA]}
+           "endpoint_method": "a = 近 12 期同比的 25% 分位数，b = 近 12 期同比的 75% 分位数",
+           "input_version": "realtime_start 2026-10-17", "raw_sha256": [ARCH_SHA]}
     row.update(kw)
     return row
 
 
+def cb(row, repo=None):
+    return industry.check_branch(row, BREPO if repo is None else repo)
+
+
 class Branch(unittest.TestCase):
     def test_complete_row(self):
-        self.assertEqual(industry.check_branch(branch()), [])
-        self.assertEqual(industry.check_branch(branch(raw_sha256=SHA)), [])
+        self.assertEqual(cb(branch()), [])
+        self.assertEqual(cb(branch(raw_sha256=ARCH_SHA)), [])
 
     def test_method_missing(self):
         bad = [dict(observed_variable="IPG2211S 读数的同比（%，(本期/上年同期−1)×100，保留两位小数，季调序列）"),   # 无目标观测期
@@ -243,20 +268,23 @@ class Branch(unittest.TestCase):
                dict(observed_variable="IPG2211S 2026 年 10 月读数的同比（%，(本期/上年同期−1)×100，保留两位小数）"),  # 无季调口径
                dict(observed_variable="IPG2211S 2026 年 10 月读数（公式，基期，季调，保留两位小数）"),          # 只有关键词
                dict(data_source="FRED SAMPLEX1"), dict(data_source="样例机构"),                                  # 来源与观测变量不符
-               dict(unit=""), dict(endpoint_method=""), dict(endpoint_method=None),
-               dict(endpoint_method="按样例分位数方法计算端点"),                                                 # 没写计算式
-               dict(input_version="最新"), dict(input_version="2026-10-17"),
-               dict(raw_sha256=[]), dict(raw_sha256=["xyz"]), dict(raw_sha256=None)]
+               dict(unit=""), dict(unit="NA"), dict(unit="无"), dict(endpoint_method=""), dict(endpoint_method=None),
+               dict(endpoint_method="按样例分位数方法计算端点"), dict(endpoint_method="a=1，b=2"),               # 没写计算式 / 裸数值
+               dict(input_version="最新"), dict(input_version="2026-10-17"), dict(input_version="发布 2026-99-99"),
+               dict(raw_sha256=[]), dict(raw_sha256=["xyz"]), dict(raw_sha256=None),
+               dict(raw_sha256=[SHA]), dict(raw_sha256=[ARCH_SHA, SHA])]                                        # 未登记的原件
         for kw in bad:
-            self.assertIn("E-BRANCH-METHOD-MISSING", industry.check_branch(branch(**kw)), kw)
-        self.assertIn("E-BRANCH-METHOD-MISSING", industry.check_branch(None))
+            self.assertIn("E-BRANCH-METHOD-MISSING", cb(branch(**kw)), kw)
+        self.assertIn("E-BRANCH-METHOD-MISSING", cb(None))
+        self.assertIn("E-BRANCH-METHOD-MISSING", cb(branch(), repo=make_repo()))          # 仓库里没有该序列存档
+        self.assertIn("E-BRANCH-METHOD-MISSING", cb(branch(date="2026-01-01")))           # 只有晚于登记日的存档
 
     def test_aggregate(self):
         for kw in (dict(data_source="FRED INDPRO"),
                    dict(observed_variable="TCU 2026 年 10 月读数的环比（%，(本期/上期−1)×100，保留两位小数，季调序列）")):
-            self.assertIn("E-BRANCH-AGGREGATE", industry.check_branch(branch(**kw)), kw)
-        self.assertNotIn("E-BRANCH-AGGREGATE", industry.check_branch(branch(data_source="FRED TCUX")))
-        self.assertNotIn("E-BRANCH-AGGREGATE", industry.check_branch(branch()))
+            self.assertIn("E-BRANCH-AGGREGATE", cb(branch(**kw)), kw)
+        self.assertNotIn("E-BRANCH-AGGREGATE", cb(branch(data_source="FRED TCUX")))
+        self.assertNotIn("E-BRANCH-AGGREGATE", cb(branch()))
 
 
 class Strained(unittest.TestCase):
@@ -273,6 +301,19 @@ class Strained(unittest.TestCase):
         p = industry.record_strained(repo, DATE, "VERDICT zh: APPROVED\nR-INDUSTRY-STRAINED: 3\n")
         self.assertEqual([json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()],
                          [{"count": 3, "date": DATE, "error_code": "R-INDUSTRY-STRAINED"}])
+
+    def test_cli(self):
+        repo = make_repo()
+        (repo / "review" / "ledger").mkdir(parents=True)
+        res = Path(tempfile.mkdtemp()) / "result.txt"
+        cmd = [sys.executable, str(SCRIPTS / "record-industry-strained.py"), str(res), "--repo", str(repo), "--date", DATE]
+        res.write_text("VERDICT zh: APPROVED\n", encoding="utf-8")
+        self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 1)
+        self.assertFalse((repo / "review" / "ledger" / f"{DATE}.jsonl").exists())
+        res.write_text("VERDICT zh: APPROVED\nR-INDUSTRY-STRAINED: 0\n", encoding="utf-8")
+        self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 0)
+        rows = [json.loads(l) for l in (repo / "review" / "ledger" / f"{DATE}.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(rows, [{"count": 0, "date": DATE, "error_code": "R-INDUSTRY-STRAINED"}])
 
 
 if __name__ == "__main__":
