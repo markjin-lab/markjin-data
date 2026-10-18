@@ -394,7 +394,7 @@ class R2Fixes(unittest.TestCase):
         f, _ = mk({"https://a.org/robots.txt": resp, "https://a.org/x": Resp(200, b"body")},
                   state=collect.SourceHealth(p))
         r = f.get("https://a.org/x", sid="s1")
-        self.assertIn(r.error, ROBOTS_HARD)                         # robots.txt 本轮失败 → 该站本轮按禁止
+        self.assertIn(r.error, ROBOTS_HARD)                         # robots.txt 可疑 → 该主机本轮停止
         self.assertNotIn("https://a.org/x", [u for u, _ in f.opener.calls])
         d = view(p)
         self.assertIn("a.org", d["hosts"])
@@ -1275,7 +1275,7 @@ class R9Fixes(unittest.TestCase):
                 os.environ[collect.SEC_UA_ENV] = old
 
 
-def _hs_disable_proc(path, host):          # 子进程：独立 SourceHealth 实例各记一个本轮失败的 URL
+def _hs_disable_proc(path, host):          # 子进程：独立 SourceHealth 实例各记一次可疑（URL 冷却 + 主机本轮停止）
     hs = collect.SourceHealth(path)
     time.sleep(0.2)                         # 两个进程都先读到空状态，再各自写回
     hs.stop([f"https://{host}/x"], ROUND, None, "http_403")
