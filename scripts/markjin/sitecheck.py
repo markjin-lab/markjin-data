@@ -35,6 +35,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+from collections import Counter
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
@@ -122,29 +123,27 @@ def changed_pages(repo, base, head):
     return mb, pairs
 
 
-def _required_hugo_version(repo, ref):
+def required_hugo_version(repo, ref):
+    """站点部署工作流（.github/workflows/hugo.yml）里的 HUGO_VERSION；缺失或读不出 → E-SITE-INPUT（PR #52 r2 LOW 6）。"""
     r = R._git(repo, "show", f"{ref}:{DEPLOY_WORKFLOW}")
-    if r.returncode != 0:
-        return None
-    m = _HUGO_VERSION_RE.search(r.stdout)
-    return m.group(1) if m else None
+    m = _HUGO_VERSION_RE.search(r.stdout) if r.returncode == 0 else None
+    if not m:
+        raise SiteInputError("E-SITE-INPUT: 无法从站点部署工作流确定 Hugo 版本")
+    return m.group(1)
 
 
-def _check_hugo(repo, ref):
+def check_hugo(want):
     exe = shutil.which(hugo_bin())
     if not exe:
         raise SiteInputError("E-SITE-INPUT: 找不到 hugo")
-    want = _required_hugo_version(repo, ref)
-    if want:
-        v = subprocess.run([exe, "version"], capture_output=True, text=True)
-        if v.returncode != 0 or not re.search(r"\bv" + re.escape(want) + r"\b", v.stdout):
-            raise SiteInputError(f"E-SITE-INPUT: 本机 hugo 版本与站点部署（{want}）不符")
+    v = subprocess.run([exe, "version"], capture_output=True, text=True)
+    if v.returncode != 0 or not re.search(r"\bv" + re.escape(want) + r"\b", v.stdout):
+        raise SiteInputError(f"E-SITE-INPUT: 本机 hugo 版本与站点部署（{want}）不符")
     return exe
 
 
-def rendered_pages(repo, ref, clock):
+def rendered_pages(repo, ref, clock, exe):
     """{源路径: permalink}：ref 这一版在 clock 时刻会实际生成 HTML 的 kind=page 页面（只含 content/posts、content/cards）。"""
-    exe = _check_hugo(repo, ref)
     data = _git_ok(repo, "archive", "--format=tar", ref, text=False)
     with tempfile.TemporaryDirectory(prefix="sitecheck-") as tmp:
         src, pub = Path(tmp) / "src", Path(tmp) / "public"
@@ -180,12 +179,16 @@ def rendered_pages(repo, ref, clock):
 
 
 def _corrections_dated(body, at, en):
-    """写有日期 at 的更正次数：旧格式取 max(带该日期的可见更正标题数, 该日期的更正说明行数)（10-12 这类首条更正说明没有标题），
-    加新格式更正区里日期为 at 的条目数。同日再次更正时，head 的次数必须多于 base（新增一条），格式迁移本身不改变次数。"""
+    """写有日期 at 的更正次数。新格式页只数更正区里日期为 at 的条目（其他带日期的标题不算，PR #52 r2 MEDIUM 3）；
+    旧格式页取 max(带该日期的可见标题数, 该日期的更正说明行数)（10-12 这类首条更正说明没有标题）。
+    同日再次更正时，head 的次数必须多于 base（新增一条）；格式迁移本身不改变次数。"""
+    heads, entries = R.correction_section(body, en)
+    if heads:
+        return sum(1 for d, _ in entries if d == at)
     vis = R.visible_text(body).splitlines()
-    heads = sum(1 for ln in vis if _HEADING_RE.match(ln) and at in R._heading_shown(ln))
+    dated_heads = sum(1 for ln in vis if _HEADING_RE.match(ln) and at in R._heading_shown(ln))
     notes = sum(1 for ln in vis if (m := _OLD_NOTE_RE[en].match(ln.strip())) and m.group(1) == at)
-    return max(heads, notes) + sum(1 for d, _ in R.correction_section(body, en)[1] if d == at)
+    return max(dated_heads, notes)
 
 
 # —— 旧格式 → 新格式的纯格式迁移（Grok Bot 要求的明确例外，Issue #71）
@@ -194,6 +197,7 @@ _OLD_NOTE_RE = {False: re.compile(r"^\*更正说明（(\d{4}-\d{2}-\d{2})）：(
 _OLD_HEAD_RE = {False: re.compile(r"^## 更正 (\d{4}-\d{2}-\d{2})(?:[：:].*)?$"),
                 True: re.compile(r"^## Correction (\d{4}-\d{2}-\d{2})(?:: .*)?$")}
 _NEW_HEAD = {False: "## 更正", True: "## Corrections"}
+_OLD_HEAD_GENERIC = {False: "本次修订的具体内容见下方更正说明。", True: "The note below lists the changes in this revision."}
 # 页首一行的白名单：只允许在下列写法之间互换，前面列出的更正日期必须一字不差
 _TOP_LINE_RE = {False: re.compile(r"^\*本文于 (.+?) 更正，说明见文末(?:「更正」)?。\*$"),
                 True: re.compile(r"^\*This article was corrected on (.+?); see (?:the notes? at the end|Corrections at the end)\.\*$")}
@@ -216,6 +220,16 @@ def format_migration_only(old, new, en):
     if any(ln.strip() and i not in keep for i, ln in enumerate(ol[o0:o1 + 1], o0)):
         return False
     notes = sorted((m.group(1), m.group(2)) for m in (_OLD_NOTE_RE[en].match(ln) for ln in ol[o0:o1 + 1]) if m)
+    # 旧标题的日期都须有同日期的更正说明行对应（不多于说明行数）；旧标题若有通用句以外的实质说明，须原样出现在更正说明里
+    # （PR #52 r2 MEDIUM 4）
+    old_heads = [m for m in (_OLD_HEAD_RE[en].match(ln) for ln in ol[o0:o1 + 1]) if m]
+    note_dates = Counter(d for d, _ in notes)
+    if any(n > note_dates[d] for d, n in Counter(m.group(1) for m in old_heads).items()):
+        return False
+    for m in old_heads:
+        expl = m.group(0).split(m.group(1), 1)[1].lstrip("：: ").strip()
+        if expl and expl != _OLD_HEAD_GENERIC[en] and (m.group(1), expl) not in notes:
+            return False
     hidx = [i for i, ln in enumerate(nl) if ln == _NEW_HEAD[en]]
     if len(hidx) != 1:
         return False
@@ -232,10 +246,14 @@ def format_migration_only(old, new, en):
     pre_o, pre_n, suf_o, suf_n = ol[:o0], nl[:n0], ol[o1 + 1:], nl[eidx[-1] + 1:]
     if suf_o != suf_n or len(pre_o) != len(pre_n):
         return False
-    for a, b in zip(pre_o, pre_n):
+    # 页首白名单只适用于第一个标题之前唯一的那一行页首提示（PR #52 r2 MEDIUM 5）
+    candidates = [i for i, ln in enumerate(pre_o) if _TOP_LINE_RE[en].match(ln)]
+    first_heading = next((i for i, ln in enumerate(pre_o) if _HEADING_RE.match(ln)), len(pre_o))
+    allowed = candidates[0] if len(candidates) == 1 and candidates[0] < first_heading else None
+    for i, (a, b) in enumerate(zip(pre_o, pre_n)):
         if a != b:
             ma, mb = _TOP_LINE_RE[en].match(a), _TOP_LINE_RE[en].match(b)
-            if not (ma and mb and ma.group(1) == mb.group(1)):
+            if i != allowed or not (ma and mb and ma.group(1) == mb.group(1)):
                 return False
     return True
 
@@ -308,8 +326,11 @@ def check_range(repo, base, head, today=None, clock=None):
     base_sha = _git_ok(repo, "rev-parse", "--verify", base + "^{commit}").strip()
     mb, pairs = changed_pages(repo, base_sha, head_sha)
     base_pages = head_pages = {}
-    if pairs:
-        base_pages = rendered_pages(repo, mb, clock)
+    # 任何文件有改动就构建两版并比较全部已发布页面：只改 _index.md 的 cascade、配置或模板也可能让已发布页面消失（PR #52 r2 HIGH 1）
+    changed_any = bool(_git_ok(repo, "diff", "--name-only", mb, head_sha, text=False).strip())
+    if changed_any:
+        exe = check_hugo(required_hugo_version(repo, mb))   # 两版都用 base（已部署）那一版的 Hugo 版本构建
+        base_pages = rendered_pages(repo, mb, clock, exe)
         # head 上改动页面的 front matter 先解析：有解析失败的，Hugo 也构建不了，直接按 E-ROUTE-FRONT-MATTER 报，
         # 不再构建 head（此时结果必为不通过，其余页面不做“是否仍生成”的比较）。
         broken = False
@@ -319,12 +340,18 @@ def check_range(repo, base, head, today=None, clock=None):
                     R.front_matter(_show_required(repo, head_sha, path))
                 except R.FrontMatterError:
                     broken = True
-        head_pages = None if broken else rendered_pages(repo, head_sha, clock)
+        head_pages = None if broken else rendered_pages(repo, head_sha, clock, exe)
     pages = []
     for st, path in pairs:
         codes = check_page(repo, mb, head_sha, path, st, today, base_pages, head_pages)
         pages.append({"path": path, "status": st, "draft_id": page_draft_id(path),
                       "published_at_base": path in base_pages, "codes": codes})
+    if head_pages is not None:
+        seen = {p["path"] for p in pages}
+        for path, url in sorted(base_pages.items()):
+            if path not in seen and head_pages.get(path) != url:
+                pages.append({"path": path, "status": "indirect", "draft_id": page_draft_id(path),
+                              "published_at_base": True, "codes": ["E-SITE-PAGE-DELETED"]})
     return {"base": base_sha, "head": head_sha, "merge_base": mb, "today_sgt": today.isoformat(), "clock": clock,
             "pages": pages, "ok": all(not p["codes"] for p in pages)}
 

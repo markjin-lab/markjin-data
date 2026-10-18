@@ -35,6 +35,10 @@ try:
     else:
         base, head = a.base or "origin/main", a.head
     out = S.check_range(a.site_repo, base, head)
+except OSError as e:
+    print(json.dumps({"ok": False, "codes": ["E-SITE-INPUT"], "detail": f"E-SITE-INPUT: 临时目录或构建 I/O 不可用：{e}"},
+                     ensure_ascii=False))
+    sys.exit(1)
 except (S.SiteInputError, DependencyError) as e:
     print(json.dumps({"ok": False, "codes": [str(e).split(":")[0]], "detail": str(e)}, ensure_ascii=False))
     sys.exit(1)

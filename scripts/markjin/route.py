@@ -598,15 +598,41 @@ def correction_section(body, en=None):
     return heads, entries
 
 
+_OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}##[ \t]+(?:更正|Correction)[ \t]+\d{4}-\d{2}-\d{2}(?!\d)")
+_ENTRY_LIKE_RE = re.compile(r"^\*\*\d{4}-\d{2}-\d{2}\*\*")
+
+
+def _section_malformed(body):
+    """新格式更正区里任何以「**YYYY-MM-DD**」开头、却不合本区语言条目格式或日期不是真实日期的行 → True（PR #52 r2 MEDIUM 2）。"""
+    lang = None
+    for ln in visible_text(body).splitlines():
+        if _HEADING_LINE_RE.match(ln):
+            m = _HEADING_PARTS_RE.match(_heading_shown(ln))
+            lang = next((lg for lg in (False, True)
+                         if m and len(m.group(1)) == 2 and m.group(2) == CORRECTION_HEADING[lg]), None)
+        elif lang is not None and _ENTRY_LIKE_RE.match(ln):
+            e = CORRECTION_ENTRY_RE[lang].match(ln)
+            if not e or not valid_date(e.group(1)):
+                return True
+    return False
+
+
 def correction_heading_ok(body, corrected_at, en=None):
     """E-ROUTE-CORRECTION-NOTE 的判断，route_pr（数据仓库稿件）与 sitecheck（站点 PR 的 content/ 页面）共用。
-    新格式（Issue #71）：恰好一个「## 更正」/「## Corrections」标题，其下条目按日期升序，且有日期等于 corrected_at 的条目。
-    出现了新格式标题就按新格式判（不能新旧混用来凑）。
+    新格式（Issue #71）：全页（不分语言）恰好一个「## 更正」/「## Corrections」标题，且是本稿语言的那个；不得同时有旧格式
+    带日期的更正标题；更正区里以「**YYYY-MM-DD**」开头的行都须是本语言的合法条目、日期真实；条目按日期升序，且有日期等于
+    corrected_at 的条目。出现了新格式标题就按新格式判（不能新旧混用来凑）。
     过渡期旧格式（整体验收 r2/r3/r6）：corrected_at 出现在某个标题行渲染后可见的文字里。"""
-    heads, entries = correction_section(body, en)
-    if heads:
+    any_heads, _ = correction_section(body, None)
+    if any_heads:
+        heads, entries = correction_section(body, en)
+        if any_heads != 1 or heads != 1 or _section_malformed(body):
+            return False
+        if any(_HEADING_LINE_RE.match(ln) and _OLD_DATED_HEADING_RE.match(_heading_shown(ln))
+               for ln in visible_text(body).splitlines()):
+            return False
         dates = [d for d, _ in entries]
-        return heads == 1 and dates == sorted(dates) and corrected_at in dates
+        return dates == sorted(dates) and corrected_at in dates
     return any(_HEADING_LINE_RE.match(ln) and corrected_at in _heading_shown(ln)
                for ln in visible_text(body).splitlines())
 
