@@ -84,20 +84,22 @@
 - **`search_posts_all` 不返回 `entities`**（即便 `post.fields` 含 entities）。链接必须用 `get_posts_by_ids`（≤100 id/次，`post.fields=entities,created_at,note_tweet`）补全，取 `entities.urls[].unwound_url`，无则 `expanded_url`。
 - t.co 的 robots.txt 对 `*` 全站 Disallow：**不自行解析 t.co**。
 
-每查询页数上限：A 批次（from: 账号）**4 页**；B 主题 **2 页**。到上限、无 `next_token`、本页无新 id、或日预算用尽即停。
-预算：**≤400 次/SGT 日，≤25 次/分钟**（工具硬限 30/分、1000/日）。
+每查询页数上限：A 批次（from: 账号）**4 页**；B 主题 **2 页**（两轮相同，由 `x_capture.py` 按状态执行）。到上限、无 `next_token`、本页无新 id、或日预算用尽即停。
+预算：**≤400 次 / UTC 日（X 额度 00:00Z = 08:00 SGT 重置，05:00 与 06:00 SGT 两轮落在同一额度日），≤25 次 / 滚动 60 秒**（工具硬限 30/分、1000/日）。**每一次实际调用（首页、翻页、补全）前都必须 `reserve`**，未预留的调用无法入账。
 | 轮次 | A（7×≤4） | B（17×≤2） | 补全 get_posts_by_ids | 上限 |
 |---|---|---|---|---|
 | round1 | ≤28 | ≤34 | ≤10 | ≤72 |
 | round2 | ≤28 | ≤34 | ≤10 | ≤72 |
 | 合计/日（含内部集 ≤24） | | | | **≤168** |
 
-辅助脚本 `x_capture.py`（不直接调 X，由 agent 调工具并以 write_to_file 落盘后交给脚本）：
+辅助脚本 `x_capture.py`（不直接调 X，由 agent 调工具并以 write_to_file 落盘后交给脚本）。状态文件和工具结果文件都含帖文，必须放在私有根目录 `$PRIVATE` 下（`--private-root` 或 `$MARKJIN_PRIVATE_DIR`；与公开仓库互不包含，且不能位于任何 git 工作树内），否则脚本拒绝运行：
 ```
-x_capture.py plan    --queries q.json [--start-time ISO]          # 首页调用参数
-x_capture.py ingest  --state S.json --slug A01 --kind account --page 1 --file RESULT.txt --prev-args ARGS.json
-                     # -> {"next": {...args with next_token..., "sleep_s": N}} 或 {"next": null, "reason": ...}
-x_capture.py hydrate --state S.json                               # get_posts_by_ids 批次（≤100）
-x_capture.py budget  --state S.json                               # 今日已用/剩余、需等待秒数
+x_capture.py plan    --queries q.json --state $PRIVATE/x/state.json --private-root $PRIVATE --date YYYY-MM-DD --round 1|2   # 自动算 start_time；完整参数写入状态
+x_capture.py reserve --state $PRIVATE/x/state.json --private-root $PRIVATE --tool search_posts_all --slug A01 --page 1      # 每次调用前；不允许 → 退出码 3 + wait_s
+x_capture.py ingest  --state $PRIVATE/x/state.json --private-root $PRIVATE --call-id ID --file $PRIVATE/x/results/RESULT.txt                    # -> {"next": {完整参数 + next_token, "wait_s"}} 或 {"next": null}
+x_capture.py hydrate --state $PRIVATE/x/state.json --private-root $PRIVATE                                                  # get_posts_by_ids 批次（≤100；每批先 reserve --tool get_posts_by_ids）
+x_capture.py ingest-hydrate --state $PRIVATE/x/state.json --private-root $PRIVATE --call-id ID --file $PRIVATE/x/results/RESULT.txt
+x_capture.py leads   --state $PRIVATE/x/state.json --private-root $PRIVATE                                                  # 线索 JSON（label: 线索, source_role: lead）
+x_capture.py budget  --state $PRIVATE/x/state.json --private-root $PRIVATE                                                  # 今日（UTC）已用/剩余、需等待秒数
 ```
-补全后的链接写入 leads.json 的 `expanded_url`/`unwound_url`，再交 `fetch_primary.py` 抓一手来源。
+`leads` 输出（含补全的 `urls[].expanded_url/unwound_url`）交 `fetch_primary.py` 抓一手来源；抓取结果只写 `fetch_status`，线索身份不变。
