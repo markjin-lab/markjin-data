@@ -625,7 +625,7 @@ _OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?
 # r9：宽松识别疑似日期条目：年份后跟 -/. 或「年」的任何非空白、非冒号、非 * 后缀都算形态（**2026-10-18-1-2**、**2026-10-18x**、
 # **2026-10-018**、**2026-10**、**2026年10月** 等），严格验收仍由 CORRECTION_ENTRY_RE 做；加粗日期后须紧跟冒号或行尾、
 # 不加粗日期后须紧跟冒号才算，「**2026-10-18**以来，…」这类叙述不算（PR #52 r5–r9）
-_DATE_SHAPE = r"\d{4}(?:[-/.]\d+|年\d+月?)[^*：:\s]*"
+_DATE_SHAPE = r"\d{4}(?:[-/.]\d+|年\d+月?)[^*：:\s]*[ \t]*"   # r10：日期后留空格（**2026-10-18 **：）也算形态
 _ENTRY_LIKE_RE = re.compile(
     r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)*"
     rf"(?:\*{{1,2}}[ \t]*{_DATE_SHAPE}"
@@ -680,13 +680,69 @@ def _section_malformed(body):
     return False
 
 
+# —— 更正区规范写法（失败关闭；王总 / Grok Bot 2026-10-18 定，PR #52 r10 第②条选 A）
+# 新格式页的更正区必须按规范写：标题行原文就是「## 更正」/「## Corrections」；标题前一行是空行（或是正文第一行），紧挨着的上一段
+# 不能有以 HTML 标签或注释开头的行；更正区（到下一个 # 标题为止）里不得有 HTML 标签或注释、缩进代码（4 空格或 Tab 开头的行）、
+# Setext 标题（文字行下接 === 或 ---）及单独的 === 行。不合规范就报 E-ROUTE-CORRECTION-NOTE，由作者按提示改写；
+# 不再尝试精确解析这些写法。
+_CANON_HTML_RE = re.compile(r"<(?:[A-Za-z/!?])")
+_CANON_ATX_RE = re.compile(r"^[ ]{0,3}#{1,6}(?:[ \t]|$)")
+_CANON_HTML_LINE_RE = re.compile(r"^[ ]{0,3}<")
+
+
+def correction_format_problems(body):
+    """新格式更正区不合规范写法的问题清单（中文，告诉作者怎么改写）；没有新格式标题或合规范 → []。"""
+    keep_nl = lambda m: "\n" * m.group(0).count("\n")
+    src = body.split("\n")
+    prepped = _FENCE_RE.sub(keep_nl, _COMMENT_RE.sub(keep_nl, body)).split("\n")
+    if len(prepped) != len(src):
+        return ["更正区无法定位：请把注释、代码块移出正文中更正区附近，按规范写法重写更正区。"]
+    names = set(CORRECTION_HEADING.values())
+    titles = {"## " + v for v in names}
+    heads = [i for i, ln in enumerate(prepped) if ln.rstrip() in titles
+             or (_CANON_ATX_RE.match(ln) and _HEADING_PARTS_RE.match(ln)
+                 and _heading_shown(_HEADING_PARTS_RE.match(ln).group(2)).strip() in names)]
+    if not heads:
+        return []
+    probs = []
+    for h in heads:
+        name = prepped[h].strip()
+        if prepped[h].rstrip() not in titles:
+            probs.append(f"第 {h + 1} 行：更正标题须单独一行、原文正好是「## 更正」或「## Corrections」（二级 #，不加其他符号或 HTML）。")
+        if h > 0 and src[h - 1].strip():
+            probs.append(f"第 {h + 1} 行：「{name}」前必须空一行。")
+        k = h - 1
+        while k >= 0 and not src[k].strip():
+            k -= 1
+        while k >= 0 and src[k].strip():
+            if _CANON_HTML_LINE_RE.match(src[k]):
+                probs.append(f"第 {k + 1} 行：「{name}」上一段是 HTML（以 < 开头的行）；请改成 Markdown，或在两者之间加一段普通文字。")
+                break
+            k -= 1
+        j = h + 1
+        while j < len(prepped) and not _CANON_ATX_RE.match(prepped[j]):
+            ln, raw = prepped[j], src[j]
+            if _CANON_HTML_RE.search(raw):
+                probs.append(f"第 {j + 1} 行：更正区内不得有 HTML 标签或注释；请改成纯文字。")
+            elif ln.strip() and ln.startswith(("    ", "\t")):
+                probs.append(f"第 {j + 1} 行：更正区内不得有缩进（4 空格或 Tab 开头会成为代码块）；请顶格书写。")
+            elif re.fullmatch(r"[ ]{0,3}=+[ \t]*", ln) or (
+                    re.fullmatch(r"[ ]{0,3}-+[ \t]*", ln) and j > h + 1 and src[j - 1].strip()):
+                probs.append(f"第 {j + 1} 行：更正区内不得有 Setext 标题（文字下接 === 或 ---）；分隔线前请空一行，或删去。")
+            j += 1
+    return probs
+
+
 def correction_heading_ok(body, corrected_at, en=None):
     """E-ROUTE-CORRECTION-NOTE 的判断，route_pr（数据仓库稿件）与 sitecheck（站点 PR 的 content/ 页面）共用。
     新格式（Issue #71）：全页（不分语言）恰好一个「## 更正」/「## Corrections」标题，且是本稿语言的那个；不得同时有旧格式
     带日期的更正标题；更正区（ATX 或 Setext 标题为界）里形如日期条目的行（_ENTRY_LIKE_RE）都须是本语言的合法条目、日期真实；条目按日期升序，且有日期等于
     corrected_at 的条目。出现了新格式标题就按新格式判（不能新旧混用来凑）。
+    规范写法（correction_format_problems）：新格式标题前须空行、上一段不能是 HTML，更正区内不得有 HTML、缩进代码、Setext 标题。
     过渡期旧格式（整体验收 r2/r3/r6）：有渲染后可见的旧格式更正标题「## 更正 YYYY-MM-DD…」/「## Correction YYYY-MM-DD…」，
     其日期等于 corrected_at；带日期的其他标题不算（PR #52 r3 MEDIUM 3）。"""
+    if correction_format_problems(body):
+        return False                                  # 新格式更正区不合规范写法（失败关闭）
     any_heads, _ = correction_section(body, None)
     if any_heads:
         heads, entries = correction_section(body, en)
@@ -867,15 +923,27 @@ def visible_text(text, *, body_only=False, correction_syntax=False):
     # 行数对不上（标签跨行等）时返回空串，失败关闭。
     keep_nl = lambda m: "\n" * m.group(0).count("\n")
     prepped = _FENCE_RE.sub(keep_nl, _COMMENT_RE.sub(keep_nl, body))
+    source = body.split("\n")
     raw = prepped.split("\n")
     shown = _hide_html(prepped, correction_syntax=True).split("\n")
-    if len(shown) != len(raw):
+    if len(source) != len(raw) or len(shown) != len(raw):
         return ""
+    # 注释所在行一并清空（注释结束行的剩余内容仍属同一 HTML 块，行首注释的那一行也不可能是 Markdown 标题；PR #52 r10 MEDIUM 1）
+    comment_rows = set()
+    for m in _COMMENT_RE.finditer(body):
+        first = body.count("\n", 0, m.start())
+        last = body.count("\n", 0, m.end())
+        col = m.start() - (body.rfind("\n", 0, m.start()) + 1)
+        if not source[first][:col].strip():
+            comment_rows.add(first)
+        comment_rows.update(range(first + 1, last + 1))
     in_block = False
     for i, ln in enumerate(raw):
-        if not ln.strip():
+        if not source[i].strip():            # 只由原文的空行结束 HTML 块（注释、围栏换成的空行不算）
             in_block = False
             continue
+        if i in comment_rows:
+            shown[i] = ""
         if in_block or _HTML_BLOCK_START_RE.match(ln):
             in_block = True
             shown[i] = ""

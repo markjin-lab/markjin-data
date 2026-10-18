@@ -61,7 +61,7 @@
 | `E-ROUTE-CORRECTION-INVALID` | 更正稿 front matter 的 corrects / corrected_at 缺一或为空 |
 | `E-ROUTE-CORRECTION-TARGET` | 更正稿的 corrects 与本稿 draft_id 不一致，或站点仓库 origin/main 上查不到原稿（未发布）、原稿 front matter 无日期、内容未变 |
 | `E-ROUTE-CORRECTION-DATE` | corrected_at 不是 YYYY-MM-DD，或早于原稿日期、晚于实际发布当天（SGT） |
-| `E-ROUTE-CORRECTION-NOTE` | 更正区不合格式：新格式（Issue #71）须恰好一个「## 更正」/「## Corrections」标题、其下条目按日期升序且有日期等于 corrected_at 的「**YYYY-MM-DD**：说明」条目；过渡期旧格式须有日期等于 corrected_at 的可见旧格式更正标题「## 更正 YYYY-MM-DD」/「## Correction YYYY-MM-DD」（链接目标、图片、HTML 属性及其他带日期的标题不算）；普通改动（同日或跨日）未新增本次日期的条目或标题（纯格式迁移例外） |
+| `E-ROUTE-CORRECTION-NOTE` | 更正区不合格式：新格式（Issue #71）须恰好一个「## 更正」/「## Corrections」标题、其下条目按日期升序且有日期等于 corrected_at 的「**YYYY-MM-DD**：说明」条目；过渡期旧格式须有日期等于 corrected_at 的可见旧格式更正标题「## 更正 YYYY-MM-DD」/「## Correction YYYY-MM-DD」（链接目标、图片、HTML 属性及其他带日期的标题不算）；普通改动（同日或跨日）未新增本次日期的条目或标题（纯格式迁移例外）；或新格式更正区不合规范写法（「## 更正」前须空行、上一段不能是 HTML，更正区内不得有 HTML、缩进代码、Setext 标题）。改写：正文末尾空一行写「## 更正」，再空一行，每次更正顶格一行「**YYYY-MM-DD**：说明」，按日期升序；站点检查结果的 hints 列出具体行 |
 | `E-ROUTE-CORRECTION` | 更正稿被拦住（如 codex_in_production 为真），不归档原稿 |
 | `E-SITE-CORRECTION-MISSING` | 站点 PR 改动了 base 上已发布（按 Hugo 实际构建判定）的 content/posts 或 content/cards 页面，但 front matter 没有 corrects / corrected_at（改已发布页面一律按更正处理） |
 | `E-SITE-PAGE-DELETED` | 站点 PR 删除、改名了 base 上已发布的 content/posts 或 content/cards 页面，或使其不再生成、permalink 改变（按 Hugo 实际构建判定） |

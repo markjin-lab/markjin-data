@@ -306,6 +306,18 @@ def format_migration_only(old, new, en):
     return True
 
 
+# 只改 front matter 顶层 lastmod 的维护改动不算更正（Grok Bot 2026-10-18 定，POLICY「字节改动」选 B）：正文逐字节相同，
+# front matter 原文去掉顶层「lastmod:」单行后逐字节相同。其他字段、正文里的 lastmod 字样、带缩进或续行的写法都不豁免。
+_LASTMOD_LINE_RE = re.compile(r"^lastmod[ \t]*:[^\n]*(?:\n|$)", re.M)
+
+
+def lastmod_only(old, new):
+    mo, mn = R._FM_RE.match(old), R._FM_RE.match(new)
+    if not mo or not mn or old[mo.end():] != new[mn.end():]:
+        return False
+    return _LASTMOD_LINE_RE.sub("", mo.group(0)) == _LASTMOD_LINE_RE.sub("", mn.group(0))
+
+
 def check_page(repo, mb, head, path, status, today, base_pages, head_pages):
     """单个页面：返回错误码列表（空 = 通过）。base_pages / head_pages 来自 rendered_pages。"""
     did = page_draft_id(path)
@@ -321,6 +333,8 @@ def check_page(repo, mb, head, path, status, today, base_pages, head_pages):
         fm, body = R.front_matter(new)
     except R.FrontMatterError:
         return sorted(set(codes + ["E-ROUTE-FRONT-MATTER"]))
+    if published and old is not None and old != new and lastmod_only(old, new):
+        return sorted(set(codes))                     # 只改 lastmod：不算更正（只豁免这一项）
     en = path.endswith(".en.md")
     # 纯格式迁移不算新更正（Issue #71 例外）：只豁免“同日须新增一条”，其余字段与新格式更正区校验照常（PR #52 r3 MEDIUM 2）
     migration = published and old is not None and format_migration_only(old, new, en)
@@ -360,6 +374,22 @@ def check_page(repo, mb, head, path, status, today, base_pages, head_pages):
     return sorted(set(codes))
 
 
+_NOTE_GENERIC_HINT = ("更正区写法：正文末尾空一行写「## 更正」（英文稿「## Corrections」），再空一行，每次更正顶格一行"
+                     "「**YYYY-MM-DD**：说明」（英文「**YYYY-MM-DD**: …」），按日期升序；corrected_at 须有同日期的条目，"
+                     "本次改动须新增一条（纯格式迁移除外）；更正区内不要用 HTML、缩进或 Setext 标题。")
+
+
+def correction_hints(repo, head, path, status):
+    """E-ROUTE-CORRECTION-NOTE 时给作者的改写提示：规范写法的具体问题 + 通用写法说明。"""
+    if status == "D":
+        return [_NOTE_GENERIC_HINT]
+    try:
+        _, body = R.front_matter(_show_required(repo, head, path) or "")
+    except (R.FrontMatterError, SiteInputError):
+        return [_NOTE_GENERIC_HINT]
+    return R.correction_format_problems(body) + [_NOTE_GENERIC_HINT]
+
+
 def now_sgt():
     return R._real_now().astimezone(R.SGT)
 
@@ -395,8 +425,11 @@ def check_range(repo, base, head, today=None, clock=None):
     pages = []
     for st, path in pairs:
         codes = check_page(repo, mb, head_sha, path, st, today, base_pages, head_pages)
-        pages.append({"path": path, "status": st, "draft_id": page_draft_id(path),
-                      "published_at_base": path in base_pages, "codes": codes})
+        entry = {"path": path, "status": st, "draft_id": page_draft_id(path),
+                 "published_at_base": path in base_pages, "codes": codes}
+        if "E-ROUTE-CORRECTION-NOTE" in codes:
+            entry["hints"] = correction_hints(repo, head_sha, path, st)
+        pages.append(entry)
     if head_pages is not None:
         seen = {p["path"] for p in pages}
         for path, url in sorted(base_pages.items()):

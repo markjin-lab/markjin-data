@@ -204,3 +204,5 @@
 ## check-site-corrections（站点 PR 页面更正检查，Grok Bot 2026-10-18）
 
 `python3 scripts/check-site-corrections.py --site-repo DIR (--pr N | --head REF [--base REF])`：检查站点 PR 改动的 `content/posts`、`content/cards` 页面是否符合更正规则（“已发布”按 Hugo 实际构建判定；改已发布页面须为更正、更正区符合 Issue #71 新格式或过渡期旧格式、不得删除或取消发布已发布页面；纯格式迁移例外）。需要本机 hugo（版本与站点部署一致）。`--head/--base` 只读取仓库；`--pr` 会 fetch 并更新本地 Git 对象和引用。规则与错误码见 docs/approvals.md「站点 PR 页面检查」。
+
+人工运行（不接 CI）：审查记录须写脚本 SHA、完整命令、站点 base/head SHA 和 JSON 结果，缺一项不批准。新格式更正区只接受规范写法（不合规范报 `E-ROUTE-CORRECTION-NOTE`，结果里的 `hints` 给出改写方法）；只改 front matter 顶层 `lastmod` 不算更正。详见 docs/approvals.md「站点 PR 页面检查」。

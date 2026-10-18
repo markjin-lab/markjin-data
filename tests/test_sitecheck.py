@@ -377,7 +377,7 @@ class CorrectionSectionTest(unittest.TestCase):
     def test_level_and_exact_heading_text(self):
         self.assertFalse(R.correction_heading_ok("### 更正\n\n**2026-10-17**：三级标题。\n", "2026-10-17", en=False))
         self.assertFalse(R.correction_heading_ok("## 更正说明\n\n**2026-10-17**：标题字不同。\n", "2026-10-17", en=False))
-        self.assertTrue(R.correction_heading_ok("## 更正 ##\n\n**2026-10-17**：闭合井号。\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## 更正 ##\n\n**2026-10-17**：闭合井号。\n", "2026-10-17", en=False))   # 规范写法：原文须正好是「## 更正」
 
     def test_old_format_still_accepted(self):
         self.assertTrue(R.correction_heading_ok("## 更正 2026-10-17：本次修订的具体内容见下方更正说明。\n", "2026-10-17", en=False))
@@ -678,13 +678,15 @@ class R3FormatTest(unittest.TestCase):
     def test_html_block_cannot_pose_as_section(self):
         self.assertFalse(R.correction_heading_ok("<div>\n## 更正\n**2026-10-18**：伪造。\n</div>\n", "2026-10-18", False))
         self.assertEqual(R.correction_section("<div>\n## 更正\n**2026-10-18**：伪造。\n</div>\n", False), (0, []))
-        self.assertTrue(R.correction_heading_ok("## 更正\n\n**2026-10-18**：真的。\n\n<div>本文不含投资建议。</div>\n", "2026-10-18", False))
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-18**：真的。\n\n<div>本文不含投资建议。</div>\n", "2026-10-18", False))  # 规范写法：更正区内不得有 HTML
+        self.assertTrue(R.correction_heading_ok("## 更正\n\n**2026-10-18**：真的。\n\n## 声明\n\n<div>本文不含投资建议。</div>\n", "2026-10-18", False))
         self.assertFalse(R.correction_heading_ok("<div>\n## 更正 2026-10-18：旧格式伪造。\n</div>\n", "2026-10-18", False))
 
     def test_thematic_break_after_nonparagraph_not_setext(self):
-        for pre in ("- 免责声明。", "> 引文。", "    缩进代码。"):
+        for pre in ("- 免责声明。", "> 引文。", "    缩进代码。"):      # 规范写法（2026-10-18 定）：更正区内文字后直接接 --- 不合规范
             b = "## 更正\n\n**2026-10-17**：甲。\n\n" + pre + "\n---\n**2026-10-18**：乙。\n"
-            self.assertTrue(R.correction_heading_ok(b, "2026-10-18", False), pre)
+            self.assertFalse(R.correction_heading_ok(b, "2026-10-18", False), pre)
+            self.assertTrue(R.correction_heading_ok(b.replace("\n---\n", "\n\n---\n\n").replace("    缩进代码。", "缩进代码。"), "2026-10-18", False), pre)
         self.assertFalse(R.correction_heading_ok("## 更正\n\n其他说明\n---\n**2026-10-18**：说明。\n", "2026-10-18", False))
 
     def test_wide_date_fragments_malformed(self):
@@ -697,8 +699,9 @@ class R3FormatTest(unittest.TestCase):
         f = lambda b: R.correction_heading_ok(b, "2026-10-17", en=False)
         self.assertFalse(f("<div>\n</div>\n## 更正\n\n**2026-10-17**：伪。\n"))
         self.assertFalse(f("<span>## 更正</span>\n\n**2026-10-17**：伪。\n"))
-        self.assertTrue(f("<div>x</div>\n\n## 更正\n\n**2026-10-17**：真。\n"))
-        self.assertTrue(f("## <span>更正</span>\n\n**2026-10-17**：真。\n"))
+        self.assertFalse(f("<div>x</div>\n\n## 更正\n\n**2026-10-17**：真。\n"))      # 规范写法：上一段不能是 HTML
+        self.assertTrue(f("<div>x</div>\n\n导语。\n\n## 更正\n\n**2026-10-17**：真。\n"))
+        self.assertFalse(f("## <span>更正</span>\n\n**2026-10-17**：真。\n"))           # 规范写法：标题原文须正好是「## 更正」
         self.assertFalse(f("<div hidden>\n\n## 更正\n\n**2026-10-17**：隐藏。\n\n</div>\n"))
 
     def test_r9_date_shapes_malformed(self):
@@ -709,8 +712,51 @@ class R3FormatTest(unittest.TestCase):
     def test_indented_code_dates_not_entries(self):
         for code in ("    **2026-10-17**：代码示例。", "\t**2026-10-17**：代码示例。", "    **2026-10-018**：代码。"):
             b = "## 更正\n\n**2026-10-17**：乙。\n\n" + code + "\n"
-            self.assertTrue(R.correction_heading_ok(b, "2026-10-17", en=False), code)
+            self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), code)   # 规范写法：更正区内不得缩进
+            ok = "## 更正\n\n**2026-10-17**：乙。\n\n## 附录\n\n" + code + "\n"
+            self.assertTrue(R.correction_heading_ok(ok, "2026-10-17", en=False), code)     # 更正区外的缩进代码不受限
         self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n\n- 列表\n\n    **2026-10-018**：畸形。\n", "2026-10-17", en=False))
+
+    def test_r10_comment_fake_blank(self):
+        f = lambda b: R.correction_heading_ok(b, "2026-10-17", en=False)
+        self.assertFalse(f("<div>\n</div>\n<!-- 注释 -->\n## 更正\n\n**2026-10-17**：伪。\n"))
+        self.assertFalse(f("<div>\n</div>\n```\nx\n```\n## 更正\n\n**2026-10-17**：伪。\n"))
+        self.assertFalse(f("<!-- -->## 更正\n\n**2026-10-17**：伪。\n"))
+        self.assertTrue(f("<div>\n</div>\n\n导语。\n\n## 更正\n\n**2026-10-17**：真。\n"))
+
+    def test_r10_comment_rows_visible_text(self):
+        """r10 第 1 条修法本身（不依赖规范检查）：注释、围栏造的假空行不结束 HTML 块，行首注释那一行清空。"""
+        vis = lambda b: R.visible_text(b, body_only=True, correction_syntax=True).split("\n")
+        self.assertEqual(vis("<div>\n</div>\n<!-- 注释 -->\n## 更正\n")[3], "")
+        self.assertEqual(vis("<div>\n</div>\n```\nx\n```\n## 更正\n")[5], "")
+        self.assertEqual(vis("<!-- -->## 更正\n")[0], "")
+        self.assertEqual(vis("<div>\n</div>\n\n## 更正\n")[3], "## 更正")
+
+    def test_r10_trailing_space_date(self):
+        self.assertTrue(R._ENTRY_LIKE_RE.match("**2026-10-18 **：畸形。"))
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n**2026-10-18 **：畸形。\n", "2026-10-17", en=False))
+
+    def test_canonical_form(self):
+        f = lambda b: R.correction_heading_ok(b, "2026-10-17", en=False)
+        good = "导语。\n\n## 更正\n\n**2026-10-17**：乙。\n\n本文不含投资建议。\n"
+        self.assertTrue(f(good)); self.assertEqual(R.correction_format_problems(good), [])
+        bad = {
+            "标题前无空行": "导语。\n## 更正\n\n**2026-10-17**：乙。\n",
+            "上一段是 HTML": "<span>导语。</span>\n\n## 更正\n\n**2026-10-17**：乙。\n",
+            "更正区内 HTML": "导语。\n\n## 更正\n\n**2026-10-17**：乙。\n\n<b>注</b>：说明。\n",
+            "更正区内注释": "导语。\n\n## 更正\n\n**2026-10-17**：乙。\n<!-- x -->\n",
+            "更正区内缩进": "导语。\n\n## 更正\n\n**2026-10-17**：乙。\n\n    说明。\n",
+            "更正区内 Setext": "导语。\n\n## 更正\n\n**2026-10-17**：乙。\n\n小标题\n---\n",
+            "更正区内 ===": "导语。\n\n## 更正\n\n**2026-10-17**：乙。\n\n小标题\n===\n",
+            "标题加标签": "导语。\n\n## <b>更正</b>\n\n**2026-10-17**：乙。\n",
+            "标题尾部井号": "导语。\n\n## 更正 ##\n\n**2026-10-17**：乙。\n",
+        }
+        for k, b in bad.items():
+            self.assertFalse(f(b), k)
+            self.assertTrue(R.correction_format_problems(b), k)
+        self.assertIn("前必须空一行", R.correction_format_problems(bad["标题前无空行"])[0])
+        self.assertTrue(R.correction_heading_ok("导语。\n\n## Corrections\n\n**2026-10-17**: b.\n", "2026-10-17", en=True))
+        self.assertFalse(R.correction_heading_ok("Lead.\n## Corrections\n\n**2026-10-17**: b.\n", "2026-10-17", en=True))
 
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
@@ -807,7 +853,7 @@ class R3CheckTest(unittest.TestCase):
     def test_list_then_break_via_check(self):
         self.s.write(P, NEW_SEC); base = self.s.commit("base")
         self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
-                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n\n- 免责声明。\n---\n**2026-10-18**：导语改标点。\n"))
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n\n- 免责声明。\n\n---\n\n**2026-10-18**：导语改标点。\n"))
         self.assertEqual(self.check(base)[P], [])
 
     def test_wide_date_entry_via_check(self):
@@ -829,6 +875,51 @@ class R3CheckTest(unittest.TestCase):
         self.s.write(P, good.replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n**2026-10-18x**：畸形。\n"))
         self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
         self.s.write(P, good.replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n\n    **2026-10-17**：代码示例。\n"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])               # 规范写法：更正区内不得缩进
+
+    def test_canonical_hints_in_output(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("1. 来源\n\n## 更正", "1. 来源\n## 更正")
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n"))
+        head = self.s.commit("head")
+        out = S.check_range(str(self.s.d), base, head, today=TODAY, clock=CLOCK)
+        pg = [p for p in out["pages"] if p["path"] == P][0]
+        self.assertEqual(pg["codes"], ["E-ROUTE-CORRECTION-NOTE"])
+        self.assertTrue(any("前必须空一行" in h for h in pg["hints"]))
+        self.assertTrue(any("## 更正" in h for h in pg["hints"]))
+
+    def test_lastmod_only_exempt(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17\n", "corrected_at: 2026-10-17\nlastmod: 2026-10-18\n"))
+        self.assertEqual(self.check(base)[P], [])
+        b2 = self.s.commit("lm")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17\n", "corrected_at: 2026-10-17\nlastmod: 2026-10-18T09:00:00+08:00\n"))
+        self.assertEqual(self.check(b2)[P], [])
+
+    def test_lastmod_plus_other_change_needs_entry(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        lm = NEW_SEC.replace("corrected_at: 2026-10-17\n", "corrected_at: 2026-10-17\nlastmod: 2026-10-18\n")
+        self.s.write(P, lm.replace("导语。", "导语！"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+        self.s.write(P, lm.replace("title: ", "description: x\ntitle: "))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+        self.s.write(P, lm.replace("导语。", "导语！").replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-17**：导语改标点。\n"))
+        self.assertEqual(self.check(base)[P], [])
+
+    def test_fake_lastmod_not_exempt(self):
+        self.s.write(P, ORIG); base = self.s.commit("base")
+        fakes = {
+            "lastmod2": ORIG.replace("date:", "lastmod2: 2026-10-18\ndate:"),
+            "lastmodified": ORIG.replace("date:", "lastmodified: 2026-10-18\ndate:"),
+            "嵌套 lastmod": ORIG.replace("date:", "params:\n  lastmod: 2026-10-18\ndate:"),
+            "正文 lastmod": ORIG + "\nlastmod: 2026-10-18\n",
+            "引号键": ORIG.replace("date:", "\"lastmod\": 2026-10-18\ndate:"),
+        }
+        for k, txt in fakes.items():
+            self.s.write(P, txt)
+            self.assertIn("E-SITE-CORRECTION-MISSING", self.check(base)[P], k)
+        self.s.write(P, ORIG.replace("date:", "lastmod: 2026-10-18\ndate:"))
         self.assertEqual(self.check(base)[P], [])
 
     def test_old_format_unrelated_dated_heading_same_day(self):

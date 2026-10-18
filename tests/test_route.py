@@ -1800,10 +1800,11 @@ class FinalR1(FromMain):
         （直接测 _correction：带日期的更正说明行在 selfcheck 里本来就算无来源断言，与格式无关，route_pr 端到端另有旧格式测试。）"""
         later = dt.datetime(2026, 1, 6, 10, 0, tzinfo=SGT)
         head = "---\ncorrects: daily-2026-01-05-d1\ncorrected_at: 2026-01-06\n---\n" + INFER
-        cases = (("\n## 更正\n\n**2026-01-05**：首次更正。\n**2026-01-06**：改了一处。\n", None),
-                 ("\n## 更正\n\n**2026-01-05**：只有旧条目。\n", "E-ROUTE-CORRECTION-NOTE"),
-                 ("\n## Corrections\n\n**2026-01-06**: wrong language.\n", "E-ROUTE-CORRECTION-NOTE"),
-                 ("\n## 更正\n\n**2026-01-06**：后写。\n**2026-01-05**：先写。\n", "E-ROUTE-CORRECTION-NOTE"),
+        cases = (("\n\n## 更正\n\n**2026-01-05**：首次更正。\n**2026-01-06**：改了一处。\n", None),   # 规范写法：标题前空一行
+                 ("\n## 更正\n\n**2026-01-05**：首次更正。\n**2026-01-06**：改了一处。\n", "E-ROUTE-CORRECTION-NOTE"),
+                 ("\n\n## 更正\n\n**2026-01-05**：只有旧条目。\n", "E-ROUTE-CORRECTION-NOTE"),
+                 ("\n\n## Corrections\n\n**2026-01-06**: wrong language.\n", "E-ROUTE-CORRECTION-NOTE"),
+                 ("\n\n## 更正\n\n**2026-01-06**：后写。\n**2026-01-05**：先写。\n", "E-ROUTE-CORRECTION-NOTE"),
                  ("\n## 更正 2026-01-06：旧格式仍接受。\n", None))
         o = R._site_remote_ok; R._site_remote_ok = lambda u: True
         try:
