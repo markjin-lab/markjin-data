@@ -573,12 +573,17 @@ CORRECTION_ENTRY_RE = {False: re.compile(r"^\*\*(\d{4}-\d{2}-\d{2})\*\*：[ \t]*
                        True: re.compile(r"^\*\*(\d{4}-\d{2}-\d{2})\*\*:[ \t]+(\S.*)$")}
 _HEADING_LINE_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]")
 _SETEXT_RE = re.compile(r"^[ ]{0,3}(?:=+|-+)[ \t]*$")
+# 列表项、引用、缩进代码、链接定义后的 ---/=== 不构成 Setext 标题（PR #52 r8 MEDIUM 2）
+_NONPARAGRAPH_RE = re.compile(
+    r"^(?:[ \t]{4,}|[ ]{0,3}(?:>[ \t]?|[-+*][ \t]+|\d{1,9}[.)][ \t]+|\[[^\]]+\]:[ \t]*\S))"
+)
 
 
 def _setext_title(lines, i):
     """lines[i] 是 Setext 标题的文字行（下一行是 ===/---）→ True。更正区遇到它就结束（PR #52 r7 MEDIUM 1）。"""
     return bool(i + 1 < len(lines) and lines[i].strip() and not _HEADING_LINE_RE.match(lines[i])
-                and not _SETEXT_RE.fullmatch(lines[i]) and _SETEXT_RE.fullmatch(lines[i + 1]))
+                and not _SETEXT_RE.fullmatch(lines[i]) and not _NONPARAGRAPH_RE.match(lines[i])
+                and _SETEXT_RE.fullmatch(lines[i + 1]))
 _HEADING_PARTS_RE = re.compile(r"^[ ]{0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
 
 
@@ -588,7 +593,7 @@ def correction_section(body, en=None):
     en=None 时中英两种写法都认；en=True/False 只认对应语言。"""
     langs = (False, True) if en is None else (bool(en),)
     heads, entries, inside = 0, [], None
-    lines = visible_text(body, body_only=True).splitlines()
+    lines = visible_text(body, body_only=True, correction_syntax=True).splitlines()
     for i, ln in enumerate(lines):
         if _setext_title(lines, i):
             inside = None
@@ -617,14 +622,15 @@ _OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?
 # 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：…，以及前面带列表、引用符号的写法），都要过严格
 # 条目校验；「2026年之后…」「* 1. 免责声明」这类普通文字不算（PR #52 r3 MEDIUM 4、r4 MEDIUM 1）
 # r5：任务列表前缀也算；不加粗的日期只有紧跟 ** 或冒号时才算（「2026-10-18 的数据仍待核。」这类叙述不算，PR #52 r5 MEDIUM 1）
+# r8：日期各段位数放宽（**2026-10-018**、**2026-10-18-1** 也算条目形态，交给严格条目正则判畸形）；
 # r7：加粗日期后紧跟冒号或行尾、或不加粗日期后紧跟冒号才算条目形态；缺日的年月（**2026-10**：、**2026年10月**：）也算；
 # 「**2026-10-18**以来，…」「**2026-10-18**，…」这类叙述不算（PR #52 r5–r7）
 _ENTRY_LIKE_RE = re.compile(
     r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)*"
     r"(?:\*{1,2}[ \t]*\d{4}"
-    r"(?:[-/.]\d{1,2}(?:[-/.]\d{1,2})?|年\d{1,2}月(?:\d{1,2}日?)?)"
+    r"(?:[-/.]\d+(?:[-/.]\d+){0,2}|年\d+月(?:\d+日?)?)"
     r"(?:\*{1,2}[ \t]*(?:[：:]|$)|[ \t]*[：:]|$)"
-    r"|\d{4}(?:[-/.]\d{1,2}(?:[-/.]\d{1,2})?|年\d{1,2}月(?:\d{1,2}日?)?)"
+    r"|\d{4}(?:[-/.]\d+(?:[-/.]\d+){0,2}|年\d+月(?:\d+日?)?)"
     r"(?:\*{1,2}[ \t]*[：:]|[ \t]*[：:]))"
 )
 
@@ -632,7 +638,7 @@ _ENTRY_LIKE_RE = re.compile(
 def old_correction_heading_dates(body):
     """渲染后可见的旧格式更正标题的日期列表（每个标题一项）。"""
     out = []
-    for ln in visible_text(body, body_only=True).splitlines():
+    for ln in visible_text(body, body_only=True, correction_syntax=True).splitlines():
         if _HEADING_LINE_RE.match(ln):
             m = _OLD_DATED_HEADING_RE.match(_heading_shown(ln))
             if m:
@@ -643,7 +649,7 @@ def old_correction_heading_dates(body):
 def _section_malformed(body):
     """新格式更正区里任何形如日期条目（_ENTRY_LIKE_RE）、却不合本区语言条目格式或日期不是真实日期的行 → True（PR #52 r2 MEDIUM 2）。"""
     lang = None
-    lines = visible_text(body, body_only=True).splitlines()
+    lines = visible_text(body, body_only=True, correction_syntax=True).splitlines()
     for i, ln in enumerate(lines):
         if _setext_title(lines, i):
             lang = None
@@ -830,7 +836,7 @@ def disclaimer_required(did, date, corr=None):
     return needs_disclaimer(did, date) or bool(corr)
 
 
-def visible_text(text, *, body_only=False):
+def visible_text(text, *, body_only=False, correction_syntax=False):
     """r13：去掉 HTML 注释（含未闭合注释到文末）与围栏代码块；r12（整体验收）：再用 HTML 解析器去掉整篇范围内的隐藏元素子树。免责声明、更正标题只在可见文本里认。
     body_only=True：text 已是剥掉 front matter 的正文，不再剥一次（正文以分隔线 --- 开头时不能被当成 front matter，PR #52 r6 MEDIUM 1）。"""
     if body_only:
@@ -841,13 +847,19 @@ def visible_text(text, *, body_only=False):
         except FrontMatterError:
             m = _FM_RE.match(text)                    # 解析失败的稿件在 _route_one 已判失败；这里只为诊断
             body = text[m.end():] if m else text
-    return _hide_html(_FENCE_RE.sub("", _COMMENT_RE.sub("", body)))
+    return _hide_html(_FENCE_RE.sub("", _COMMENT_RE.sub("", body)), correction_syntax=correction_syntax)
 
 
 _VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
 
-def _hide_html(text):
+# 更正区语法（标题、条目、旧更正说明）只认 Markdown 本身：块级 HTML 元素里的同形行不会成为 Markdown 标题和条目，
+# 读更正区时整个子树都不算（宁可不认，fail-closed；PR #52 r8 MEDIUM 1）
+_CORRECTION_BLOCK_TAGS = {"div", "section", "article", "aside", "blockquote", "details", "figure", "footer", "header",
+                          "main", "nav", "pre", "table", "ul", "ol", "p", "dl", "form", "fieldset", "center"}
+
+
+def _hide_html(text, correction_syntax=False):
     """整体验收 r12 BLOCKER（王总定）：用 HTML 解析器按整篇正文追踪隐藏范围（与站点 smoke 同一思路），不再逐行处理。
     hidden、aria-hidden="true"、style（可能 display:none / visibility:hidden）、class（外部 CSS 无法判断）属性的元素，
     以及 template/script/style/noscript 等不渲染元素，其整个子树（可跨任意多行）都不算可见；未闭合的隐藏元素一直隐藏到文末
@@ -868,7 +880,8 @@ def _hide_html(text):
                 return
             a = " " + " ".join(k + ("=" + (v or "") if v is not None else "") for k, v in attrs)
             hid = tag in _NONRENDER_TAGS or bool(_HIDE_ATTR_RE.search(a)) or any(
-                k == "aria-hidden" and (v or "").strip().lower() == "true" for k, v in attrs)
+                k == "aria-hidden" and (v or "").strip().lower() == "true" for k, v in attrs) \
+                or (correction_syntax and tag in _CORRECTION_BLOCK_TAGS)
             self.stack.append((tag, hid))
 
         def handle_startendtag(self, tag, attrs):

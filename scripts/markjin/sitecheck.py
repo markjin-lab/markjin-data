@@ -150,7 +150,7 @@ def _visible_candidate_indices(lines, indices):
     probe = list(lines)
     for i in indices:
         probe[i] += f"\ue000{token}:{i}\ue001"
-    shown = R.visible_text("\n".join(probe), body_only=True)
+    shown = R.visible_text("\n".join(probe), body_only=True, correction_syntax=True)
     return [i for i in indices if f"\ue000{token}:{i}\ue001" in shown]
 
 
@@ -207,7 +207,7 @@ def _corrections_dated(body, at, en):
     heads, entries = R.correction_section(body, en)
     if heads:
         return sum(1 for d, _ in entries if d == at)
-    vis = R.visible_text(body, body_only=True).splitlines()
+    vis = R.visible_text(body, body_only=True, correction_syntax=True).splitlines()
     dated_heads = R.old_correction_heading_dates(body).count(at)   # 只数旧格式更正标题（PR #52 r3 MEDIUM 3）
     notes = sum(1 for ln in vis if (m := _OLD_NOTE_RE[en].match(ln.strip())) and m.group(1) == at)
     return max(dated_heads, notes)
@@ -277,7 +277,7 @@ def format_migration_only(old, new, en):
     if [d for d, _ in entries] != sorted(d for d, _ in entries) or sorted(entries) != notes:
         return False
     # 新旧更正区都须渲染后可见：代码块、注释、隐藏元素里的同形行不能冒充迁移（PR #52 r5 MEDIUM 2）
-    old_vis = R.visible_text(old[mo.end():], body_only=True).splitlines()
+    old_vis = R.visible_text(old[mo.end():], body_only=True, correction_syntax=True).splitlines()
     visible_notes = Counter((m.group(1), m.group(2)) for ln in old_vis if (m := _OLD_NOTE_RE[en].match(ln.strip())))
     visible_old_heads = Counter(m.group(1) for ln in old_vis if (m := _OLD_HEAD_RE[en].match(ln)))
     visible_heads, visible_entries = R.correction_section(new[mn.end():], en)

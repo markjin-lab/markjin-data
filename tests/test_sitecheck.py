@@ -675,6 +675,24 @@ class R3FormatTest(unittest.TestCase):
             tail = "\n```\n" + sample + "\n```\n"
             self.assertTrue(S.format_migration_only(OLD_SEC + tail, NEW_SEC + tail, False), sample)
 
+    def test_html_block_cannot_pose_as_section(self):
+        self.assertFalse(R.correction_heading_ok("<div>\n## 更正\n**2026-10-18**：伪造。\n</div>\n", "2026-10-18", False))
+        self.assertEqual(R.correction_section("<div>\n## 更正\n**2026-10-18**：伪造。\n</div>\n", False), (0, []))
+        self.assertTrue(R.correction_heading_ok("## 更正\n\n**2026-10-18**：真的。\n\n<div>本文不含投资建议。</div>\n", "2026-10-18", False))
+        self.assertFalse(R.correction_heading_ok("<div>\n## 更正 2026-10-18：旧格式伪造。\n</div>\n", "2026-10-18", False))
+
+    def test_thematic_break_after_nonparagraph_not_setext(self):
+        for pre in ("- 免责声明。", "> 引文。", "    缩进代码。"):
+            b = "## 更正\n\n**2026-10-17**：甲。\n\n" + pre + "\n---\n**2026-10-18**：乙。\n"
+            self.assertTrue(R.correction_heading_ok(b, "2026-10-18", False), pre)
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n其他说明\n---\n**2026-10-18**：说明。\n", "2026-10-18", False))
+
+    def test_wide_date_fragments_malformed(self):
+        for bad in ("**2026-10-018**：说明。", "**2026-10-18-1**：说明。", "**2026-010-18**：说明。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n"
+            self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), bad)
+        self.assertTrue(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n\n**2026-10-18**以来，数据上升。\n", "2026-10-17", en=False))
+
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
         old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")
@@ -760,6 +778,24 @@ class R3CheckTest(unittest.TestCase):
         head = self.s.commit("bump")
         with self.assertRaises(S.SiteInputError):
             S.check_range(str(self.s.d), base, head, today=TODAY, clock=CLOCK)
+
+    def test_html_block_section_via_check(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("## 更正\n\n", "<div>\n## 更正\n**2026-10-18**：伪造。\n</div>\n\n## 更正\n\n"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_list_then_break_via_check(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n\n- 免责声明。\n---\n**2026-10-18**：导语改标点。\n"))
+        self.assertEqual(self.check(base)[P], [])
+
+    def test_wide_date_entry_via_check(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n**2026-10-018**：畸形。\n"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
 
     def test_old_format_unrelated_dated_heading_same_day(self):
         self.s.write(P, corr()); base = self.s.commit("base")
