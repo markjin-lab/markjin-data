@@ -1501,3 +1501,52 @@ class BlockRule1522Primary(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertIn("SKIP s-news host_disabled", err)
         self.assertEqual(self.health().data["sources"], {})
+
+
+class R15Primary(Primary):
+    """审查 r15（#60 评论）本 PR 新增项：全部离线，状态在临时目录。"""
+    LOGIN = (b"<!doctype html><html><head><title>Sign in \xe2\x80\x93 Example</title></head><body>"
+             b"<form action='/session' method='post'><input name='user'><input type='password' name='pw'>"
+             b"<button>Sign in</button></form></body></html>")
+    LOGIN_ZH = ("<html><head><title>用户登录</title></head><body><form method=post>"
+                "<input type=\"password\" name=p></form></body></html>").encode()
+    ARTICLE = (b"<html><head><title>Quarterly results</title></head><body><article>" + b"text " * 200 +
+               b"</article><aside><form><input type=password></form></aside></body></html>")
+    HTML = {"Content-Type": "text/html; charset=utf-8"}
+
+    # ---- HIGH：200、不跳转的登录页（登录标题 + 密码表单）与验证页 → 可疑、停主机
+    def test_r15_200_login_page_and_challenge_are_suspicious(self):
+        CF = b"<html><head><script src='https://challenges.cloudflare.com/turnstile/v0/api.js'></script></head></html>"
+        for body, err in ((self.LOGIN, "login_wall"), (self.LOGIN_ZH, "login_wall"), (CF, "challenge"),
+                          (b"<html><title>Just a moment...</title></html>", "suspected_challenge")):
+            st = collect.SourceHealth(tmp() / "st.json")
+            f, _ = mk({"https://a.org/x": Resp(200, body, self.HTML), "https://a.org/y": Resp(200, b"ok")}, state=st)
+            r = f.get("https://a.org/x", sid="s")
+            self.assertEqual(r.error, err, body[:40])
+            self.assertTrue(collect.is_suspicious(r.error))
+            self.assertEqual(f.get("https://a.org/y", sid="t").error, "host_stopped_this_round", err)
+            self.assertNotIn("https://a.org/y", [u for u, _ in f.opener.calls])
+        f, _ = mk({"https://a.org/robots.txt": Resp(200, self.LOGIN, self.HTML), "https://a.org/x": Resp(200, b"ok")})
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "robots_login_wall")
+
+    def test_r15_login_detection_is_tight(self):
+        for body in (self.ARTICLE,                                                  # 侧栏登录框：标题不是登录
+                     b"<html><head><title>Sign in</title></head><body>no form here</body></html>",   # 没有密码框
+                     b"<html><head><title>How to log in safely: a guide</title></head><body><p>x</p></body></html>",
+                     b"<rss><channel><title>Sign in</title></channel></rss>"):              # 非 HTML
+            self.assertFalse(collect.login_page("text/html" if body[:5] != b"<rss>" else "application/rss+xml", body),
+                             body[:50])
+            f, _ = mk({"https://a.org/x": Resp(200, body, self.HTML)})
+            self.assertTrue(f.get("https://a.org/x", sid="s").ok, body[:50])
+
+    def test_r15_fetch_primary_200_login_page_stops_host(self):
+        st = collect.SourceHealth(self.base / "st.json")
+        items, idx, f = self.run_fp([{"id": "1", "expanded_url": "https://pub.org/a"},
+                                     {"id": "2", "expanded_url": "https://pub.org/b"}],
+                                    {"https://pub.org/a": Resp(200, self.LOGIN, self.HTML),
+                                     "https://pub.org/b": Resp(200, b"<html><title>ok</title></html>", self.HTML)}, state=st)
+        self.assertEqual([x["fetch_status"] for x in items], ["login_wall", "host_stopped_this_round"])
+        self.assertNotIn("https://pub.org/b", [u for u, _ in f.opener.calls])
+        self.assertEqual(idx[0]["stored"], None)                                    # 登录页不当文章存成功
+        self.assertTrue(collect.SourceHealth(self.base / "st.json").data["sources"]["primary:pub.org"]["rounds"][
+            "2026-10-12/r1"]["suspicious"])

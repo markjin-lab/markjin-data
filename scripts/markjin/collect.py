@@ -319,6 +319,25 @@ def classify_page(ctype, body, headers=None, url=None):
     return "phrase" if (v == "suspect" or phrase_hit(body)) else None
 
 
+# r15（#60）HIGH：返回 200（或其他非跳转状态）、不跳转的登录页也是登录墙。证据须同时满足（收紧，防误判普通文章）：
+# HTML 形态；<title> 以登录字样为主（Sign in / Log in / Login / Sign on / 登录 / 登入）；页面里有 <form> 且有密码输入框。
+_LOGIN_TITLE = re.compile(r"(?:^|[\s|:\-\u2013\u2014\u00b7,(\[])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on)(?:$|[\s|:\-\u2013\u2014\u00b7!.,)\]])"
+                          r"|登录|登入|ログイン", re.I)
+_PASSWORD_INPUT = re.compile(rb"<input\b[^>]*\btype\s*=\s*[\"']?password\b", re.I)
+_FORM_TAG = re.compile(rb"<form\b", re.I)
+LOGIN_TITLE_MAX = 120
+
+
+def login_page(ctype, body):
+    """不跳转的登录页：HTML、标题是登录字样（标题不超过 LOGIN_TITLE_MAX 字符）、含 <form> 与密码输入框。"""
+    if not body or not htmlish(ctype, body):
+        return False
+    head = body[:200000] if isinstance(body, bytes) else body[:200000].encode("utf-8", "replace")
+    title, _ = visible_text(head)
+    return bool(title) and len(title) <= LOGIN_TITLE_MAX and bool(_LOGIN_TITLE.search(title)) and \
+        bool(_FORM_TAG.search(head)) and bool(_PASSWORD_INPUT.search(head))
+
+
 def is_challenge(body, ctype="", headers=None, url=None):
     """高置信验证页（厂商标记）——scrapers.check_body 等用；只命中短语不算。"""
     return classify_page(ctype, body, headers, url) == "vendor"
@@ -1534,7 +1553,8 @@ class Fetcher:
 
     @staticmethod
     def _classify(st, h, body, url, robots=False):
-        """可疑分类：401/403/429 先按状态码；再看验证页（vendor / phrase）；跳转到登录页 → login_wall。"""
+        """可疑分类：401/403/429 先按状态码；再看验证页（vendor / phrase，任何状态含 200）；跳转到登录页，或不跳转的
+        登录页（登录标题 + 密码表单，含 200）→ login_wall。"""
         pre = "robots_" if robots else ""
         if st in (401, 403, 429):
             return f"{pre}http_{st}"
@@ -1545,6 +1565,8 @@ class Fetcher:
             return f"{pre}suspected_challenge"
         if st in REDIRECT_CODES and (h or {}).get("Location") and is_login_url(urljoin(url, h["Location"])):
             return f"{pre}login_wall"
+        if st not in REDIRECT_CODES and login_page((h or {}).get("Content-Type") or "", body):
+            return f"{pre}login_wall"          # 200 不跳转的登录页（登录标题 + 密码表单）同样是登录墙
         return None
 
     # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速、同样受主机停止与 URL 冷却约束）
