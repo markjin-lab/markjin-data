@@ -75,7 +75,7 @@
 
 ### 内部主题检查
 
-词表只从本机内部目录的 `topics-private.md` 读取，仓库内不含任何内部主题词。内部目录由环境变量 `MARKJIN_INTERNAL_DIR` 指定（推荐显式设置）；未设置时用相对路径：仓库根目录的同级目录 `../markjin-internal`。代码和文档里都不写本机绝对路径。
+词表只从本机内部目录的 `topics-private.md` 读取，仓库内不含任何内部主题词。内部目录由环境变量 `MARKJIN_INTERNAL_DIR` 指定（推荐显式设置）；未设置时用相对路径：仓库根目录的同级目录 `../markjin-internal`。**仓库克隆不在内部目录的同级位置时（例如克隆到别的父目录、用 git worktree 放在别处，或 CI），必须设置 `MARKJIN_INTERNAL_DIR` 指向内部目录**，否则找不到清单，`check-internal` 按 `E-INTERNAL-LIST-MISSING` 拒绝（fail-closed）。代码和文档里都不写本机绝对路径。
 清单严格解析：恰好一张三列表格，表头必须是 `名称 | 识别条件 | 来源`，各行三列非空、名称不重复；三列内容都受保护。缺失、不可读或结构不完整 → `E-INTERNAL-LIST-MISSING`（FAIL）。
 
 ## route（#10 审查路由）
