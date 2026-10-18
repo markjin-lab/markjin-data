@@ -208,3 +208,19 @@
 `python3 scripts/check-site-corrections.py --site-repo DIR (--pr N | --head REF [--base REF])`：检查站点 PR 改动的 `content/posts`、`content/cards` 页面是否符合更正规则（“已发布”按 Hugo 实际构建判定；改已发布页面须为更正、更正区符合 Issue #71 新格式或过渡期旧格式、不得删除或取消发布已发布页面；纯格式迁移例外）。需要本机 hugo（版本与站点部署一致）。`--head/--base` 只读取仓库；`--pr` 会 fetch 并更新本地 Git 对象和引用。规则与错误码见 docs/approvals.md「站点 PR 页面检查」。
 
 人工运行（不接 CI）：审查记录须写脚本 SHA、完整命令、站点 base/head SHA 和 JSON 结果，缺一项不批准。新格式更正区只接受规范写法（不合规范报 `E-ROUTE-CORRECTION-NOTE`，结果里的 `hints` 给出改写方法）；只改 front matter 顶层 `lastmod` 不算更正。详见 docs/approvals.md「站点 PR 页面检查」。
+
+## 路线图 v1.12：产业与经济数据小节与 FRED 撤回后的自检
+
+依据站点仓库 PR #79（路线图 v1.12，第十五节 15.2、15.3、15.5）与本仓库 PR #87（FRED 撤回）。
+
+- **小节白名单**：标题“产业与经济数据 / Industry and economic data”与固定栏目名同等对待（不算自由文字）。只放行标题本身；小节里的来源照现有规则核对：URL 只认 arxiv / x / fred 与本组织仓库链接（其他网址 E-REPLAY-005），raw/ 引用须与同类型 URL 配对回放。新数据机构（美联储理事会、BEA、BLS、Census、EIA 等）转为常规之前没有可用的来源类型，引用其网址或存档即被拦下；只用文字引用其数据的情形由日报 Codex 审查把关。
+- **E-FRED-CITED（硬拦）**：不得新增 FRED 链接或数据。稿件日期不早于 2026-10-18，或是更正稿（front matter 有 `corrects` / `corrected_at`，不看 `corrected_at` 填的日期），或 front matter 解析不出时检查：`fred.stlouisfed.org`、`alfred.stlouisfed.org`、`api.stlouisfed.org`、`stlouisfed.org/fred…`、`raw/…/fred/<文件>`、各日 RETRACTIONS.md「FRED 撤回」节登记的撤回文件（见下条；本组织 GitHub 链接含 blob、raw 历史提交链接与相对路径引用都拦），以及文字提到 FRED（全大写 FRED、ALFRED、FRED-MD 等，或 Federal Reserve Economic Data、圣路易斯联储经济数据），原文直引行不豁免。逐行查，并对整篇拼接后的文字再查一遍（防跨行写法）；匹配前去掉默认不可见字符。截止日以前的非更正稿不查（这类稿件已过发布期，路由不会再放行）。原有的 FRED 存档回放代码保留（只对截止日以前的稿件仍有意义），不再新增 FRED 相关检查。
+- **撤回路径从 RETRACTIONS 读取（Issue #92）**：读 `--repo` 下各日 `raw/<日期>/RETRACTIONS.md`，命令行另读 `--base`（默认 main）提交上的同名文件；只读标题含「FRED 撤回」的节（如「2026-10-18 FRED 撤回（王总决定）」「2026-10-18 FRED 撤回补充：…」），节从标题下一行到下一个同级或更高级标题为止，标题只在去掉代码围栏与 HTML 注释后的文本里认；节内表格行第一格是路径（须为 `raw/<本目录日期>/…`）。其他节一律不读，不做通用撤回文件检查。代码另有内置底线清单（main 上 2026-10-10～2026-10-18 九个 RETRACTIONS.md 现有的 83 个 FRED 撤回路径），与读到的结果取并集，删掉 RETRACTIONS.md 也照拦。某日没有 RETRACTIONS.md 视为当天没有撤回；文件存在但读不了（读取失败、非 UTF-8、不是文件），或有「FRED 撤回」节却解析不出路径（节内没有路径行，或表格行格式不对）→ **E-RETRACTIONS-UNREADABLE**（结果写明文件与行号，读不了时行号为 0），自检失败。
+- **完整路径段匹配（#90 r4 MEDIUM 1）**：路径前只能是行首或明确的分隔符（空白、引号、括号、`/`、`=`、`:`、`,`、`;`、`|`、`*`、`#`、`?`、`!`、`&`、`~` 及全角标点）；路径后只能是结尾或这些分隔符（`/` 除外），`.` 之后也只能是结尾或分隔符。中文等文件名字符不算分隔符：`annual-reconciliation.csv.备份`、`备份raw/…/annual-reconciliation.csv`、`annual-reconciliation.md.bak` 与其他日期目录下的同名文件都不算；同理「见raw/…」（中文紧贴路径）也不算，写作时路径前须有空格或标点。
+- **只查新增或改动的行（#90 r4）**：命令行默认 `--base main`，从 `--repo` 的 git 读取该提交上同一路径的文件逐行比对，未改动的行不报 E-FRED-CITED（跨行写法只在命中落到新增或改动的行时报）；稿件不在 `--repo` 内、base 上没有这个文件、ref 不存在或 git 读取失败时全部行都查。`--base REF` 换基准，`--no-base` 不比对、全部行都查；直接调用 `check_text` 时传 `base_text`（不传即全部行都查，路由调用照旧）。只影响 E-FRED-CITED，其他检查仍看整篇。
+- **撤回说明行豁免（#90 r4）**：更正节里逐字等于下面固定写法的行不报 E-FRED-CITED（`<日期>` 只允许 YYYY-MM-DD 真实日期；不去空白、不做规范化）。多一个字、换了 PR 号、日期格式不对、加列表或引用符号、不在更正节，都照常报：
+
+  `*补充说明（2026-10-18）：原 FRED raw 文件已撤回（见 raw/<日期>/RETRACTIONS.md，data PR #87）；上文采集范围描述的是撤回前的历史，本期未选用 FRED 数据。*`
+
+  更正节（#90 r4 MEDIUM 2）：先剥离 front matter，再用 `route.visible_text(..., body_only=True, correction_syntax=True)` 生成等行数的可见文本，只在可见文本里认更正标题（代码围栏、HTML 注释、HTML 块里的伪标题不算），说明行全文仍按原始行逐字匹配，且须在可见文本里原样可见；行数对不齐时不豁免。标题识别沿用 route.py：新格式二级标题「## 更正」/「## Corrections」，或旧格式「## 更正 YYYY-MM-DD…」/「## Correction(s) YYYY-MM-DD…」；从标题下一行起，到下一个 ATX 或 Setext 标题为止。
+- **历史 digest 的口径（与 data PR #89 一致，#89 已合并 adc9973）**：digest 10-15～10-18 删去“FRED：本期未选用”说明行；文末补充说明用上面的固定写法；10-18 第 5 行（采集范围）括号改为“（仅 arXiv API、X 及 5 个宏观序列；宏观序列原件已撤回，见文末补充说明）”。

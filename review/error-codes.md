@@ -23,6 +23,8 @@
 | `E-X-ONLY` | 日报中的断言（原文直引、结构化断言、带来源的行）只有 X 来源支撑；X 只作线索，硬拦 |
 | `E-BLOCK-INTERNAL` | 命中仅供内部研究的主题（细节只记本机内部目录） |
 | `E-INTERNAL-LIST-MISSING` | 本机内部主题清单缺失、不可读或结构不完整，无法完成内部主题检查 |
+| `E-FRED-CITED` | 稿件新增 FRED 链接、raw/ 下 fred/ 目录的文件、各日 raw/<日期>/RETRACTIONS.md 标题含「FRED 撤回」的节登记的撤回文件（与内置底线清单取并集，其他节不读）或文字提到 FRED（路线图 v1.12：FRED 已撤回，不再经 FRED 取数；稿件日期不早于 2026-10-18、更正稿或 front matter 解析不出时检查，原文直引行不豁免；撤回路径按完整路径段匹配；只查和 base 相比新增或改动的行，取不到 base 时全部行都查；更正节（只在去掉 front matter、代码围栏与 HTML 注释后的可见文本里认标题）里逐字符合固定写法的撤回说明行不报） |
+| `E-RETRACTIONS-UNREADABLE` | E-FRED-CITED 检查时某日 raw/<日期>/RETRACTIONS.md 存在但读不了，或有标题含「FRED 撤回」的节却解析不出路径（节内没有路径行，或表格行格式不对）；写明文件与行号，fail-closed（没有 RETRACTIONS.md 的日期视为当天没有撤回） |
 | `E-SELFCHECK-INPUT` | 稿件为空 |
 | `E-DEP-PYYAML` | 缺少运行依赖 PyYAML（requirements.txt）：无法解析 front matter，结构化判失败 / HOLD，不直接崩溃（整体验收 r10） |
 | `E-TONGYI-MISMATCH` | front matter type 为 tongyi 与稿件路径（tongyi/<name>.md 或 content/posts/tongyi/<name>.md）不一致：fail-closed，不给长文豁免（整体验收 r15，审查 bot 定） |

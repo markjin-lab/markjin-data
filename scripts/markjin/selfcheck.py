@@ -57,6 +57,217 @@ URL_KINDS = {
     "x": re.compile(r"^https://(?:x|twitter)\.com/(?:i|[A-Za-z0-9_]{1,15})/status/(\d{5,25})$"),
     "fred": re.compile(r"^https://fred\.stlouisfed\.org/series/([A-Z0-9]{2,30})$"),
 }
+# —— 路线图 v1.12（FRED 撤回，王总 2026-10-18 18:13 SGT 决定；data PR #87）：不得新增 FRED 链接或数据（E-FRED-CITED）
+# 稿件日期不早于 FRED_CUTOFF，或是更正稿（front matter 有 corrects / corrected_at，不看 corrected_at 填的日期），
+# 或 front matter 解析不出，即检查：FRED 链接、raw/ 下 fred/ 目录里的文件、文字提到 FRED（全大写 FRED、ALFRED、FRED-MD 等，
+# 或 Federal Reserve Economic Data、圣路易斯联储经济数据）。逐行查，并对整篇拼接后的文字再查一遍（防跨行）；
+# 匹配前去掉默认不可见字符（变体选择符等）。原文直引行不豁免。
+FRED_CUTOFF = "2026-10-18"
+FRED_LINK_RE = re.compile(r"(?:(?:al)?fred|api)\.stlouisfed\.org|stlouisfed\.org/fred|raw/[^\s`]*/fred/[^\s`/]", re.I)
+# —— Issue #92（并入 #90 后续 PR）：E-FRED-CITED 的撤回路径从各日 raw/<日期>/RETRACTIONS.md 读取。
+# 读取范围（待定 A，王总定）：只读标题含「FRED 撤回」的节（如「2026-10-18 FRED 撤回（王总决定）」「2026-10-18 FRED 撤回补充：…」），
+# 节从标题下一行起，到下一个同级或更高级标题为止；其他节一律不读（不做通用撤回文件检查）。节内表格行第一格是撤回路径。
+# 读取失败（待定 B，王总定）：某日没有 RETRACTIONS.md = 当天没有撤回；文件存在但读不了，或有「FRED 撤回」节却解析不出路径
+# （节内没有路径行，或表格行格式不对）→ E-RETRACTIONS-UNREADABLE（写明文件与行号，fail-closed）。
+# 内置底线清单：main 上 9 个 RETRACTIONS.md（2026-10-10～2026-10-18）现有的全部 FRED 撤回路径（83 个），与读到的结果取并集，
+# 删掉 RETRACTIONS.md 也不留缺口。拦法与 fred/ 目录一致：本组织 GitHub 链接（含 blob、raw 的历史提交链接）与相对路径引用都含 raw/… 路径段。
+FRED_RETRACTED_BASELINE = (
+    "raw/2026-10-10/fred/CPIAUCSL.json",
+    "raw/2026-10-10/fred/DGS10.json",
+    "raw/2026-10-10/fred/FEDFUNDS.json",
+    "raw/2026-10-10/fred/T10Y2Y.json",
+    "raw/2026-10-10/fred/UNRATE.json",
+    "raw/2026-10-11/fred/CPIAUCSL.json",
+    "raw/2026-10-11/fred/DGS10.json",
+    "raw/2026-10-11/fred/FEDFUNDS.json",
+    "raw/2026-10-11/fred/T10Y2Y.json",
+    "raw/2026-10-11/fred/UNRATE.json",
+    "raw/2026-10-11/round2/fred/CPIAUCSL.json",
+    "raw/2026-10-11/round2/fred/DGS10.json",
+    "raw/2026-10-11/round2/fred/FEDFUNDS.json",
+    "raw/2026-10-11/round2/fred/T10Y2Y.json",
+    "raw/2026-10-11/round2/fred/UNRATE.json",
+    "raw/2026-10-11/nbs-gdp/fred-CHNGDPNQDSMEI.csv",
+    "raw/2026-10-11/nbs-gdp/annual-reconciliation.csv",
+    "raw/2026-10-11/nbs-gdp/annual-reconciliation.md",
+    "raw/2026-10-12/fred/CPIAUCSL.json",
+    "raw/2026-10-12/fred/DGS10.json",
+    "raw/2026-10-12/fred/FEDFUNDS.json",
+    "raw/2026-10-12/fred/T10Y2Y.json",
+    "raw/2026-10-12/fred/UNRATE.json",
+    "raw/2026-10-13/fred/CPIAUCSL.json",
+    "raw/2026-10-13/fred/DGS10.json",
+    "raw/2026-10-13/fred/FEDFUNDS.json",
+    "raw/2026-10-13/fred/T10Y2Y.json",
+    "raw/2026-10-13/fred/UNRATE.json",
+    "raw/2026-10-13/round2/fred/CPIAUCSL.json",
+    "raw/2026-10-13/round2/fred/DGS10.json",
+    "raw/2026-10-13/round2/fred/FEDFUNDS.json",
+    "raw/2026-10-13/round2/fred/T10Y2Y.json",
+    "raw/2026-10-13/round2/fred/UNRATE.json",
+    "raw/2026-10-14/fred/CPIAUCSL.json",
+    "raw/2026-10-14/fred/DGS10.json",
+    "raw/2026-10-14/fred/FEDFUNDS.json",
+    "raw/2026-10-14/fred/T10Y2Y.json",
+    "raw/2026-10-14/fred/UNRATE.json",
+    "raw/2026-10-14/round2/fred/CPIAUCSL.json",
+    "raw/2026-10-14/round2/fred/DGS10.json",
+    "raw/2026-10-14/round2/fred/FEDFUNDS.json",
+    "raw/2026-10-14/round2/fred/T10Y2Y.json",
+    "raw/2026-10-14/round2/fred/UNRATE.json",
+    "raw/2026-10-15/fred/CPIAUCSL.json",
+    "raw/2026-10-15/fred/DGS10.json",
+    "raw/2026-10-15/fred/FEDFUNDS.json",
+    "raw/2026-10-15/fred/T10Y2Y.json",
+    "raw/2026-10-15/fred/UNRATE.json",
+    "raw/2026-10-15/round2/fred/CPIAUCSL.json",
+    "raw/2026-10-15/round2/fred/DGS10.json",
+    "raw/2026-10-15/round2/fred/FEDFUNDS.json",
+    "raw/2026-10-15/round2/fred/T10Y2Y.json",
+    "raw/2026-10-15/round2/fred/UNRATE.json",
+    "raw/2026-10-16/fred/CPIAUCSL.json",
+    "raw/2026-10-16/fred/DGS10.json",
+    "raw/2026-10-16/fred/FEDFUNDS.json",
+    "raw/2026-10-16/fred/T10Y2Y.json",
+    "raw/2026-10-16/fred/UNRATE.json",
+    "raw/2026-10-16/round2/fred/CPIAUCSL.json",
+    "raw/2026-10-16/round2/fred/DGS10.json",
+    "raw/2026-10-16/round2/fred/FEDFUNDS.json",
+    "raw/2026-10-16/round2/fred/T10Y2Y.json",
+    "raw/2026-10-16/round2/fred/UNRATE.json",
+    "raw/2026-10-17/fred/CPIAUCSL.json",
+    "raw/2026-10-17/fred/DGS10.json",
+    "raw/2026-10-17/fred/FEDFUNDS.json",
+    "raw/2026-10-17/fred/T10Y2Y.json",
+    "raw/2026-10-17/fred/UNRATE.json",
+    "raw/2026-10-17/round2/fred/CPIAUCSL.json",
+    "raw/2026-10-17/round2/fred/DGS10.json",
+    "raw/2026-10-17/round2/fred/FEDFUNDS.json",
+    "raw/2026-10-17/round2/fred/T10Y2Y.json",
+    "raw/2026-10-17/round2/fred/UNRATE.json",
+    "raw/2026-10-18/fred/CPIAUCSL.json",
+    "raw/2026-10-18/fred/DGS10.json",
+    "raw/2026-10-18/fred/FEDFUNDS.json",
+    "raw/2026-10-18/fred/T10Y2Y.json",
+    "raw/2026-10-18/fred/UNRATE.json",
+    "raw/2026-10-18/round2/fred/CPIAUCSL.json",
+    "raw/2026-10-18/round2/fred/DGS10.json",
+    "raw/2026-10-18/round2/fred/FEDFUNDS.json",
+    "raw/2026-10-18/round2/fred/T10Y2Y.json",
+    "raw/2026-10-18/round2/fred/UNRATE.json",
+)
+RETRACTIONS_NAME = "RETRACTIONS.md"
+# 完整路径段匹配（#90 r4 MEDIUM 1）：首界只接受行首或明确的路径、文本分隔符；末界只接受结尾或明确的分隔符，
+# 路径后的 . 只在其后为结尾或明确的分隔符时算句末标点（.csv.备份、.md.bak 不算）。文件名字符（含中文等 Unicode 字母数字、_ . -）都不是分隔符。
+_PATH_SEP = (r"\s\"'`()\[\]{}<>,;:!?#&=|*~"
+             "，。；：！？、（）「」『』“”‘’【】《》〈〉…—–")
+_PATH_START = r"(?<![^" + _PATH_SEP + r"/])"            # 行首，或前一个字符是分隔符 / 路径分隔符 /
+_PATH_END = r"(?=$|[" + _PATH_SEP + r"]|\.+(?:$|[" + _PATH_SEP + r"]))"
+
+
+def retracted_path_re(paths):
+    """撤回路径集合 → 按完整路径段匹配的正则（不区分大小写）。"""
+    alts = "|".join(re.escape(x) for x in sorted(set(paths), key=lambda x: (-len(x), x)))
+    return re.compile(_PATH_START + "(?:" + alts + ")" + _PATH_END, re.I)
+
+
+FRED_RETRACTED_RE = retracted_path_re(FRED_RETRACTED_BASELINE)
+_FRED_SECTION_RE = re.compile(r"FRED\s*撤回", re.I)
+_RETRACTION_ROW_RE = re.compile(r"^[ ]{0,3}\|")
+_RETRACTION_SEP_CELL_RE = re.compile(r"^:?-+:?$")
+_RETRACTION_PATH_RE = re.compile(r"^raw/(\d{4}-\d{2}-\d{2})/(?:[^\s|/\\`]+/)*[^\s|/\\`]+$")
+
+
+def parse_fred_retractions(text, day):
+    """解析一份 RETRACTIONS.md 的「FRED 撤回」节。返回 (路径集合, 解析不出的行号列表)。
+    标题只在 route.visible_text（等行数、去掉注释与围栏）里认；行数对不齐 → 整份判解析不出（行 1）。
+    节内以 | 开头的行是表格行：表头（第一格 path）与分隔行跳过；其余行第一格须为 raw/<本目录日期>/… 路径，否则判格式不对。
+    节内没有一条路径 → 该节标题行判解析不出。"""
+    from .route import _HEADING_PARTS_RE, _SETEXT_RE, _setext_title   # route 导入本模块，此处延迟导入
+    from .route import visible_text
+    raw = text.split("\n")
+    vis = visible_text(text, body_only=True, correction_syntax=True).split("\n")
+    if len(vis) != len(raw):
+        return set(), [1]
+    paths, bad = set(), []
+    sec_level, sec_line, sec_paths = None, 0, 0
+
+    def close():
+        if sec_level is not None and not sec_paths:
+            bad.append(sec_line)
+    i = 0
+    while i < len(vis):
+        ln = vis[i].rstrip("\r")
+        m = _HEADING_PARTS_RE.match(ln)
+        level = title = None
+        if m:
+            level, title = len(m.group(1)), m.group(2)
+        elif _setext_title(vis, i):
+            level, title = (1 if vis[i + 1].strip().startswith("=") else 2), ln.strip()
+        if level is not None:
+            if sec_level is not None and level <= sec_level:
+                close(); sec_level = None
+            if sec_level is None and _FRED_SECTION_RE.search(_IGNORABLE_RE.sub("", title)):
+                sec_level, sec_line, sec_paths = level, i + 1, 0
+            i += 2 if m is None else 1           # Setext 标题的下划线行不是内容
+            continue
+        if sec_level is not None and _RETRACTION_ROW_RE.match(ln):
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            first = cells[0] if cells else ""
+            if first.lower() == "path" or all(_RETRACTION_SEP_CELL_RE.match(c) for c in cells if c) and any(cells):
+                i += 1
+                continue
+            pm = _RETRACTION_PATH_RE.match(first)
+            segs = first.split("/")
+            if pm and pm.group(1) == day and len(cells) >= 2 and not ({".", ".."} & set(segs)):
+                paths.add(first); sec_paths += 1
+            else:
+                bad.append(i + 1)
+        i += 1
+    close()
+    return paths, bad
+
+
+def load_fred_retractions(repo, extra=None):
+    """读 repo/raw/<日期>/RETRACTIONS.md（另可给 extra：[(相对路径, 文本或 None)]，如 base 上 main 的版本），与底线清单取并集。
+    返回 (路径集合, [(相对路径, 行号)])；后者非空即 E-RETRACTIONS-UNREADABLE。没有 RETRACTIONS.md 的日期 = 当天没有撤回。"""
+    import os
+    paths, problems, docs = set(FRED_RETRACTED_BASELINE), [], []
+    raw_dir = Path(repo) / "raw"
+    try:
+        days = sorted(d.name for d in raw_dir.iterdir() if valid_date(d.name) and d.is_dir()) if raw_dir.is_dir() else []
+    except OSError:
+        return paths, [("raw", 0)]
+    for day in days:
+        f = raw_dir / day / RETRACTIONS_NAME
+        rel = f"raw/{day}/{RETRACTIONS_NAME}"
+        if not os.path.lexists(f):
+            continue                             # 当天没有撤回
+        try:
+            docs.append((rel, f.read_bytes().decode("utf-8")))
+        except (OSError, UnicodeDecodeError):
+            docs.append((rel, None))
+    docs.extend(extra or [])
+    for rel, body in docs:
+        m = re.fullmatch(r"raw/(\d{4}-\d{2}-\d{2})/" + re.escape(RETRACTIONS_NAME), rel or "")
+        if body is None or not m:
+            problems.append((rel, 0))
+            continue
+        got, bad = parse_fred_retractions(body, m.group(1))
+        paths |= got
+        problems.extend((rel, n) for n in bad)
+    return paths, sorted(set(problems))
+
+
+# #90 r4：更正节里逐字等于这条固定写法的撤回说明行不报 E-FRED-CITED（<日期> 只允许 YYYY-MM-DD 真实日期；有任何不同照常报）
+FRED_RETRACTION_NOTE_RE = re.compile(
+    r"\*补充说明（2026-10-18）：原 FRED raw 文件已撤回（见 raw/(\d{4}-\d{2}-\d{2})/RETRACTIONS\.md，data PR #87）；"
+    r"上文采集范围描述的是撤回前的历史，本期未选用 FRED 数据。\*")
+FRED_WORD_CASE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:AL)?FRED(?![A-Za-z0-9_])")   # 英文简称只认全大写（Fred 等人名不算）
+FRED_NAME_RE = re.compile(r"federal\s*reserve\s*economic\s*data|圣\s*路\s*易\s*斯\s*联\s*(?:邦\s*)?储\s*(?:备\s*)?经\s*济\s*数\s*据", re.I)
+# 默认不可见字符（Unicode Default_Ignorable_Code_Point 中 norm() 未去掉的部分：组合用字形连接符、韩文填充符、蒙古文变体选择符、变体选择符等）
+_IGNORABLE_RE = re.compile("[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\U000e0100-\U000e01ef]")
+
 MANIFEST_LINE = re.compile(r"^([0-9a-f]{64})  (?:\./)?([^\s].*)$")
 
 # 宏观算术白名单要求的算式：形如 “算式：(334.131/323.291-1)×100=3.35%”
@@ -144,7 +355,8 @@ DISCLAIMERS = (DISCLAIMER, DISCLAIMER_EN)   # 整体验收 r2（王总定）：�
 
 def disclaimer_line(s):
     return s.strip() in DISCLAIMERS
-ALLOWED_HEADINGS = {"", "日报", "ai日报", "论文", "arxiv", "模型发布", "daily", "digest"}
+ALLOWED_HEADINGS = {"", "日报", "ai日报", "论文", "arxiv", "模型发布", "daily", "digest",
+                    "产业与经济数据", "industryandeconomicdata"}   # 路线图 v1.12 15.2/15.5：新小节“产业与经济数据 / Industry and economic data”
 
 # —— 词表：公开 JSON（lexicon.json，与生产 bot 共用）。读取或结构失败 → 抛 LexiconError（调用方 FAIL）
 LEXICON_PATH = Path(__file__).with_name("lexicon.json")
@@ -496,18 +708,21 @@ def _claim_of(s):
     return URL_RE.sub(" ", RAW_RE.sub(" ", s))
 
 
-def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
+def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None, base_text=None,
+               base_retractions=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
-    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。"""
+    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。
+    base_text：base（main）上同一文件的内容，只用于 E-FRED-CITED 只查新增或改动的行（#90 r4）；None = 全部行都查。
+    base_retractions：base（main）上各日 RETRACTIONS.md，[(相对路径, 文本或 None)]（Issue #92）；与 repo 里读到的、底线清单取并集。"""
     errors = []
     flags = {k: False for k in FLAG_KEYS}
     counts = {k: 0 for k in COUNT_KEYS}
     meta = {"card_type": card_type if card_type in CARD_TYPES else None,
             "date": date if valid_date(date) else None}
 
-    def err(code, line=0):
-        errors.append({"code": code, "line": line})
+    def err(code, line=0, file=None):
+        errors.append({"code": code, "line": line} if file is None else {"code": code, "line": line, "file": file})
 
     if card_type not in CARD_TYPES:
         err("E-SELFCHECK-CARDTYPE")
@@ -617,6 +832,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     tongyi_fm = isinstance(fm_parsed, dict) and isinstance(fm_parsed.get("type"), str) \
         and fm_parsed["type"].strip().lower() == TONGYI_TYPE
     tongyi_path = is_tongyi_path(rel)
+    _check_fred(lines, date, fm_end, fm_parsed, err, text, raw_lines, base_text, repo, base_retractions)
     long_form = False
     if tongyi_fm or tongyi_path:
         if tongyi_fm and tongyi_path:
@@ -953,6 +1169,114 @@ def _fm_value(s, fm_parsed=None, raw=None):
     if LEX and k in LEX["fm_date_keys"] and _FM_DATE_RE.match(v) and _real_datetime(v):
         return ""
     return v
+
+
+def _fred_res(retracted_re=None):
+    return (FRED_LINK_RE, retracted_re or FRED_RETRACTED_RE, FRED_WORD_CASE_RE, FRED_NAME_RE)
+
+
+def _fred_hit(s, retracted_re=None):
+    """一段文字里是否有 FRED 链接、raw/…/fred/ 文件、RETRACTIONS「FRED 撤回」节登记的撤回文件（含底线清单）或文字提到 FRED
+    （先去掉默认不可见字符）。"""
+    s = _IGNORABLE_RE.sub("", s)
+    return any(r.search(s) for r in _fred_res(retracted_re))
+
+
+def correction_section_lines(raw_lines, fm_end=0):
+    """更正节所在的行号集合（1 起，按整篇原始行计）。#90 r4 MEDIUM 2：先剥离 front matter（fm_end 为其结束行号），
+    再用 route.visible_text(..., body_only=True, correction_syntax=True) 生成等行数的可见文本，只在可见文本里认标题
+    （代码围栏、HTML 注释、HTML 块里的伪标题不算）；行数对不齐 → 空集合（不豁免）。
+    标题识别沿用 route.py：新格式二级标题「## 更正」/「## Corrections」，或旧格式「## 更正 YYYY-MM-DD…」/「## Correction(s) YYYY-MM-DD…」；
+    从标题下一行起，到下一个 ATX 或 Setext 标题为止。返回的行另须在可见文本里与原始行逐字相同（说明行本身可见）。"""
+    from .route import (CORRECTION_HEADING, _HEADING_LINE_RE, _HEADING_PARTS_RE, _OLD_DATED_HEADING_RE,
+                        _heading_shown, _setext_title, visible_text)   # route 导入本模块，此处延迟导入
+    body = list(raw_lines[fm_end:])
+    if not body:
+        return set()
+    vis = visible_text("\n".join(body), body_only=True, correction_syntax=True).split("\n")
+    if len(vis) != len(body):
+        return set()                            # 行数对不齐：不豁免
+    names = set(CORRECTION_HEADING.values())
+    out, inside = set(), False
+    for i, ln in enumerate(vis):
+        if _setext_title(vis, i) or (i and _setext_title(vis, i - 1)):
+            inside = False
+            continue
+        if _HEADING_LINE_RE.match(ln):
+            shown = _heading_shown(ln)
+            m = _HEADING_PARTS_RE.match(shown)
+            inside = bool((m and len(m.group(1)) == 2 and m.group(2) in names) or _OLD_DATED_HEADING_RE.match(shown))
+            continue
+        if inside and ln == body[i]:
+            out.add(fm_end + i + 1)
+    return out
+
+
+def fred_note_exempt(raw_line):
+    """逐字等于固定写法的撤回说明行（<日期> 为 YYYY-MM-DD 真实日期）→ True。不去空白、不规范化。"""
+    m = FRED_RETRACTION_NOTE_RE.fullmatch(raw_line)
+    return bool(m and valid_date(m.group(1)))
+
+
+def changed_lines(raw_lines, base_text):
+    """和 base 上同一文件逐行比对，返回新增或改动行的行号集合（1 起）。base_text 为 None（取不到 base）→ 全部行。"""
+    if not isinstance(base_text, str):
+        return set(range(1, len(raw_lines) + 1))
+    import difflib
+    sm = difflib.SequenceMatcher(None, base_text.splitlines(), raw_lines, autojunk=False)
+    out = set()
+    for tag, _i1, _i2, j1, j2 in sm.get_opcodes():
+        if tag in ("replace", "insert"):
+            out.update(range(j1 + 1, j2 + 1))
+    return out
+
+
+def _check_fred(lines, date, fm_end, fm_parsed, err, text="", raw_lines=None, base_text=None, repo=None,
+                base_retractions=None):
+    """路线图 v1.12（FRED 撤回）：不得新增 FRED 链接或数据 → E-FRED-CITED（硬拦）。lines 为规范化后的行（含 front matter）。
+    更正稿（front matter 有 corrects / corrected_at 键，或原文出现这两个键行）不论稿件日期与 corrected_at 填什么都检查；
+    front matter 存在但解析不出时从严检查。
+    #90 r4：只查和 base 相比新增或改动的行（base_text 为 None 时全部行都查）；更正节里逐字等于固定写法的撤回说明行不查。
+    跨行写法：整篇拼接后的命中只要落在（或跨入）要查的行就报。
+    Issue #92：撤回路径从 repo 的 raw/<日期>/RETRACTIONS.md「FRED 撤回」节读取（base_retractions 为 base 上 main 的版本），
+    与底线清单取并集；读不了或解析不出 → E-RETRACTIONS-UNREADABLE（写明文件与行号）。"""
+    correction = bool(re.search(r"(?m)^\s*(?:corrects|corrected_at)\s*:", text or ""))
+    if fm_end:
+        if isinstance(fm_parsed, dict):
+            correction = correction or "corrects" in fm_parsed or "corrected_at" in fm_parsed
+        else:
+            correction = True                   # 解析不出 front matter：从严
+    if not (date >= FRED_CUTOFF or correction):
+        return
+    if raw_lines is None or len(raw_lines) != len(lines):
+        raw_lines, base_text = lines, None      # 行对不上：从严，全部行都查
+    paths, problems = load_fred_retractions(repo, base_retractions) if repo is not None \
+        else (set(FRED_RETRACTED_BASELINE), [])
+    for rel, n in problems:
+        err("E-RETRACTIONS-UNREADABLE", n, file=rel)
+    rre = retracted_path_re(paths)
+    check = changed_lines(raw_lines, base_text)
+    corr = correction_section_lines(raw_lines, fm_end)
+    check -= {i for i in check if i in corr and fred_note_exempt(raw_lines[i - 1])}
+    hit = False
+    for i, s in enumerate(lines, 1):
+        if i in check and _fred_hit(s, rre):
+            err("E-FRED-CITED", i); hit = True
+    if hit or not check:
+        return
+    # 跨行写法（如 YAML 折叠值）：整篇拼接，命中区间与要查的行有重叠才报
+    parts = [_IGNORABLE_RE.sub("", s) for s in lines]
+    spans, pos = [], 0
+    for i, s in enumerate(parts, 1):
+        if i in check:
+            spans.append((pos, pos + len(s) + 1))
+        pos += len(s) + 1
+    joined = " ".join(parts)
+    for r in _fred_res(rre):
+        for m in r.finditer(joined):
+            if any(m.start() < b and a < m.end() for a, b in spans):
+                err("E-FRED-CITED", 0)
+                return
 
 
 def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
@@ -1352,8 +1676,65 @@ def http_link_checker(url, timeout=10):
     return False
 
 
-def check_file(path, repo, date, card_type, **kw):
-    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。"""
+def git_base_text(repo, base_ref, rel):
+    """base_ref 上 rel 文件的内容（UTF-8 文本）；不在仓库内、ref 不存在、base 上无此文件或读取失败 → None（调用方从严，全部行都查）。"""
+    import subprocess
+    if not rel or not isinstance(base_ref, str) or not base_ref or base_ref.startswith("-"):
+        return None
+    try:
+        sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", base_ref + "^{commit}"],
+                             capture_output=True, timeout=30)
+        if sha.returncode != 0:
+            return None
+        blob = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", sha.stdout.decode().strip() + ":" + rel],
+                              capture_output=True, timeout=30)
+        if blob.returncode != 0:
+            return None
+        return blob.stdout.decode("utf-8")
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+        return None
+
+
+def git_base_retractions(repo, base_ref):
+    """Issue #92：base_ref（默认 main）上各日 raw/<日期>/RETRACTIONS.md → [(相对路径, 文本或 None)]。
+    repo 不是 git 仓库、ref 不存在或列目录失败 → None（只用 repo 目录与底线清单）；列出的文件读不出或非 UTF-8 → 文本为 None
+    （调用方报 E-RETRACTIONS-UNREADABLE）。"""
+    import subprocess
+    if not isinstance(base_ref, str) or not base_ref or base_ref.startswith("-"):
+        return None
+    try:
+        sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", base_ref + "^{commit}"],
+                             capture_output=True, timeout=30)
+        if sha.returncode != 0:
+            return None
+        sha = sha.stdout.decode().strip()
+        ls = subprocess.run(["git", "-C", str(repo), "ls-tree", "-z", "--name-only", sha, "raw/"],
+                            capture_output=True, timeout=30)
+        if ls.returncode != 0:
+            return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = []
+    for name in ls.stdout.decode("utf-8", "replace").split("\0"):
+        day = name[4:] if name.startswith("raw/") else ""
+        if not valid_date(day):
+            continue
+        rel = f"{name}/{RETRACTIONS_NAME}"
+        try:
+            blob = subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{sha}:{rel}"], capture_output=True, timeout=30)
+            if blob.returncode != 0:
+                continue                         # 当天没有撤回
+            blob = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", f"{sha}:{rel}"], capture_output=True, timeout=30)
+            out.append((rel, blob.stdout.decode("utf-8") if blob.returncode == 0 else None))
+        except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+            out.append((rel, None))
+    return out
+
+
+def check_file(path, repo, date, card_type, base_ref=None, **kw):
+    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。
+    base_ref（#90 r4）：给出时从 repo 的 git 读取该提交上同一路径的文件作为 base_text（E-FRED-CITED 只查新增或改动的行）；
+    取不到按全部行都查。Issue #92：同一 base_ref 上各日 RETRACTIONS.md 一并读取（与 repo 目录、底线清单取并集）。"""
     try:
         text = Path(path).read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError, TypeError):
@@ -1367,4 +1748,8 @@ def check_file(path, repo, date, card_type, **kw):
             kw["rel"] = Path(path).resolve().relative_to(Path(repo).resolve()).as_posix()
         except (ValueError, OSError, TypeError):
             kw["rel"] = None                         # 不在仓库内 → 无法证明是 tongyi 路径
+    if base_ref is not None and "base_text" not in kw:
+        kw["base_text"] = git_base_text(repo, base_ref, kw["rel"])
+    if base_ref is not None and "base_retractions" not in kw:
+        kw["base_retractions"] = git_base_retractions(repo, base_ref)
     return check_text(text, repo, date, card_type, **kw)
