@@ -11,11 +11,12 @@ REPO = Path(__file__).resolve().parents[1]
 # 本机绝对路径的通用形状（不针对任何具体目录）：根目录为 LOCAL_ROOTS 之一的绝对路径，或指向它们的 file: URI。
 # 裸路径：前一个字符不能是字母、数字、点、冒号、斜杠等——网址里的同名路径段（见 test_pattern_shape）不算。
 # file: URI：判法同 scripts/check-public.py 的 FILE_URI_RE——scheme 不分大小写，可带 //主机（含 localhost），
-# 即 file:/、file:///、file://localhost/、FILE:/// 都算（r16 MEDIUM）。
+# 即 file:/、file:///、file://localhost/、FILE:/// 都算（r16 MEDIUM）；根名之后的边界也同 FILE_URI_RE，
+# 不要求尾随 /，根目录本身、根名后接 ? 或 # 都算，根名后再接字母等名称字符不算（r17 MEDIUM）。
 LOCAL_ROOTS = ("workspace", "home")
 LOCAL_ABS = re.compile(
     r"(?<![A-Za-z0-9_.:/\\-])/(?:%s)/"
-    r"|(?i:(?<![A-Za-z0-9+.\-])file:(?://[^/\s\"'<>]*)?/+(?:%s)/)" % (("|".join(LOCAL_ROOTS),) * 2))
+    r"|(?i:(?<![A-Za-z0-9+.\-])file:(?://[^/\s\"'<>]*)?/+(?:%s)(?![A-Za-z0-9_.\-]))" % (("|".join(LOCAL_ROOTS),) * 2))
 # 已定不改的历史文件（按 Grok Bot 10-18 决定：以前写进公开仓库的本机路径不改），逐个列出，不用通配：
 LOCAL_PATH_EXCEPTIONS = frozenset({
     # 已发布日报（台账待登记文件位置）
@@ -129,6 +130,18 @@ class InternalDir(unittest.TestCase):
                     self.assertRegex(f'{{"p": "{uri}"}}', LOCAL_ABS)
             self.assertNotRegex(f"file:///etc/{root}x", LOCAL_ABS)            # 其他根目录不算
             self.assertNotRegex(f"profile:///{root}/x", LOCAL_ABS)            # 别的 scheme 结尾含 file 不算
+
+    def test_file_uri_root_boundary(self):
+        """file: URI 根名之后的边界同 FILE_URI_RE：根目录本身、根名后接 ? 或 #、带 localhost 都算；根名后再接字母不算（r17 MEDIUM）。"""
+        for root in LOCAL_ROOTS:
+            for uri in (f"file:///{root}", f"file:/{root}", f"file:///{root}?x=1", f"file:///{root}#top",
+                        f"file://localhost/{root}", f"file://localhost/{root}?x=1", f"FILE://LocalHost/{root}#top"):
+                with self.subTest(uri=uri):
+                    self.assertRegex(f'"{uri}"', LOCAL_ABS)
+                    self.assertRegex(f"see {uri}", LOCAL_ABS)
+            for uri in (f"file:///{root}s", f"file:///{root}x/y", f"file://localhost/{root}abc", f"FILE:///{root.upper()}Z"):
+                with self.subTest(uri=uri):
+                    self.assertNotRegex(f'"{uri}"', LOCAL_ABS)                  # 相邻名称不算
 
     def test_line_exceptions_are_exact(self):
         """逐行例外只用于两个守卫文件，不与整份例外重叠，且每一条都恰好对应现有的一行（没有多余条目）。"""
