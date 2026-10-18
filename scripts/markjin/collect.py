@@ -1152,7 +1152,8 @@ def _approval_ids(a):
     return [hashlib.sha256(f"{k}:{a[k]}".encode("utf-8")).hexdigest() for k in ("quote_ref", "review_commit") if a.get(k)]
 
 
-_COLLECT_LINE = re.compile(r"COLLECT-APPROVAL((?:[ \t]+[a-z_]+=[^\s`|]+)+)")
+# 整行就是一条记录（可带列表符号「- 」与一对反引号）；句中引用、表格里的示例不算，避免把转述当成批准
+_COLLECT_LINE = re.compile(r"^[ \t]*(?:[-*][ \t]+)?(`?)COLLECT-APPROVAL((?:[ \t]+[a-z_]+=[^\s`|]+)+)\1[ \t]*$")
 _COLLECT_FIELDS = frozenset({"action", "target", "url", "by", "decision", "ref"})
 
 
@@ -1170,10 +1171,10 @@ def _collect_records(text):
     """文本里的 COLLECT-APPROVAL 行 → [{字段: 值}]；同一行字段重复或有未知字段的整行不算。"""
     out = []
     for ln in (text or "").splitlines():
-        m = _COLLECT_LINE.search(ln)
+        m = _COLLECT_LINE.match(ln)
         if not m:
             continue
-        pairs = [t.split("=", 1) for t in m.group(1).split()]
+        pairs = [t.split("=", 1) for t in m.group(2).split()]
         kv = dict(pairs)
         if len(kv) == len(pairs) and set(kv) <= _COLLECT_FIELDS:
             out.append(kv)
@@ -1695,7 +1696,8 @@ class SourceHealth:
         self._locked_update(upd)
 
     def retest_report(self):
-        """待批准 / 已批准 / 已用的重测（来源键、状态、规范时间、待批准的 URL sha256，固定代码，可写进公开报告）。"""
+        """待批准 / 已批准 / 已用的重测（来源键、状态、规范时间、待批准的 URL sha256）。公开报告只取来源键与状态
+        （capture_sources）；URL sha256 只给 source_health.py report 打到终端，供写批准记录用。"""
         self._strict()
         return [{"source": k, "status": e["status"], "since": norm_timestamp(
                     dt.datetime.fromtimestamp(e["since"], dt.timezone.utc).isoformat()),

@@ -3241,6 +3241,21 @@ class R18Review(unittest.TestCase):
         hs.approve_retest("s", collect.make_approval("review-bot", review_commit=ok), ux)
         self.assertEqual(self.hs(d, t).data["retest"]["s"]["status"], "approved")
 
+    def test_r18_h1_quoted_example_line_is_not_an_approval(self):
+        """采集 bot 自加：审查记录里句中转述 / 表格里的示例行不算批准（记录须独占一行）。"""
+        t = [6_050_000.0]
+        d = self.tmpdir()
+        ux = collect.url_key("https://a.org/x")
+        hs = self.expired(d, t, ["https://a.org/x"])
+        hs.blocked("s", "2026-10-13/r2", host="a.org", url="https://a.org/x")
+        line = f"COLLECT-APPROVAL action=retest target=s url={ux} by=grok-bot decision=APPROVED ref=grok-bot:t-r18-quoted"
+        APPR.commit(f"审查意见：描述里举例 `{line}` 不能当成批准。")
+        APPR.commit(f"| 例 | `{line}` |")
+        with self.assertRaises(collect.ConfigError):
+            hs.approve_retest("s", collect.make_approval("grok-bot", "grok-bot:t-r18-quoted"), ux)
+        APPR.commit(f"- `{line}`")
+        hs.approve_retest("s", collect.make_approval("grok-bot", "grok-bot:t-r18-quoted"), ux)
+
     def test_r18_h1_wang_record_and_missing_main_fail_closed(self):
         t = [6_100_000.0]
         d = self.tmpdir()
