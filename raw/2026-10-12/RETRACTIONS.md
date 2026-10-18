@@ -48,3 +48,5 @@ query-log.jsonl 第 19、22、24、43、46、48 行的 stored 字段、dedup-evi
 批准：王总 2026-10-18 18:13 SGT 决定（经 Grok Bot 转达）：不再经 FRED，改从原始机构取数；已有 FRED 文件按 RETRACTIONS 撤回。复核与合并状态见 markjin-data PR #83。
 MANIFEST.sha256 中的原登记行按只追加原则保留不改；scripts/verify-raw.sh 依据本表（路径 + sha256 均匹配）将其视为已撤回。
 同目录下的 PROVENANCE.md、query-log.jsonl 等说明/日志文件不属本次撤回范围，原样保留（见 PR 描述）。
+
+2026-10-18 勘误：上文「复核与合并状态见 markjin-data PR #83」应为 markjin-data PR #87（取代 #85、#83），合并提交 c0d788c；PR #83、#85 均已关闭、未合并。上文「见 PR 描述」中的「PR」同样指 PR #87。原句按只追加原则保留不改。

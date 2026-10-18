@@ -21,3 +21,5 @@ MANIFEST.sha256 中的原登记行按只追加原则保留不改；scripts/verif
 ## RETRACTIONS.md 自身的例外规则
 
 `RETRACTIONS.md` 为只追加（append-only）文件：每次追加内容后，须在同日 `MANIFEST.sha256` 末尾再追加一行，登记其新的 sha256。MANIFEST 对本文件只校验最后一条，历史版本靠前缀不变保证；此例外仅适用于 RETRACTIONS.md。
+
+2026-10-18 勘误：上文「复核与合并状态见 markjin-data PR #83」应为 markjin-data PR #87（取代 #85、#83），合并提交 c0d788c；PR #83、#85 均已关闭、未合并。上文「见 PR 描述」中的「PR」同样指 PR #87。原句按只追加原则保留不改。
