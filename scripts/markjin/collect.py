@@ -679,7 +679,8 @@ def ext_for(ctype, body):
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
 #  4. 没有公布限速的站点，每站（site_of）每分钟最多 1 次（跨进程共享）；只有 sources.yaml site_rate_limits 写明
 #     公布限额和依据的站点按其限额；SEC 维持 5 次/秒。robots Crawl-delay 更严时从严。
-#  5. 旧 collector-hosts.json 的主机全部保持停用：未迁移时拒绝运行，迁移（source_health.py migrate）后不再请求。
+#  5. 旧 collector-hosts.json 的主机全部保持停用：未迁移时拒绝运行，迁移（source_health.py migrate）后不再请求；
+#     因验证页或登录墙停的（unrecoverable）永不恢复，没有放行开关，只能改 sources.yaml 并重新审批。
 #  永不绕过付费墙、登录或验证：不重试、不换 UA、不跑 JS、不带 cookie。
 WINDOW_ROUNDS = 5
 PENDING_AFTER = 3
@@ -1063,9 +1064,10 @@ class SourceHealth:
         self._locked_update(upd)
         return changed
 
-    def set_status(self, sid, status, reason, allow_unrecoverable=False):
+    def set_status(self, sid, status, reason):
         """人工操作：confirm-disable（status=disabled，须写明确认依据，立即生效）或 enable（status=ok，清空轮次）。
-        旧表迁移且标 unrecoverable 的源：enable 默认拒绝（ConfigError），须 allow_unrecoverable 并写明依据。"""
+        r15 ②：旧表迁移且标 unrecoverable（验证页 / 登录墙）的源一律不恢复（ConfigError），没有任何放行开关；
+        只能改 sources.yaml（换源）并重新审批。"""
         if status not in ("ok", "disabled"):
             raise ConfigError(f"bad status {status!r}")
         if status != "ok" and not (reason or "").strip():
@@ -1073,8 +1075,9 @@ class SourceHealth:
 
         def upd(d):
             rec = d["sources"].setdefault(sid, {"status": "ok", "rounds": {}})
-            if status == "ok" and rec.get("unrecoverable") and not (allow_unrecoverable and (reason or "").strip()):
-                raise ConfigError(f"source {sid} is marked unrecoverable (bot check / login); refusing to enable")
+            if status == "ok" and rec.get("unrecoverable"):
+                raise ConfigError(f"source {sid} is marked unrecoverable (bot check / login); not re-enabled — "
+                                  f"change sources.yaml and get it re-approved instead")
             if status == "ok":
                 d["sources"][sid] = {"status": "ok", "rounds": {}, "status_at": now(),
                                      "status_reason": reason or "manually re-enabled"}
@@ -1127,16 +1130,19 @@ class SourceHealth:
         self._locked_update(upd)
         return res
 
-    def enable_host(self, host, reason, allow_unrecoverable=False):
-        """人工恢复旧表迁移来的停用主机。unrecoverable（bot_check / login）默认拒绝；须 allow_unrecoverable 且写明依据。"""
+    def enable_host(self, host, reason):
+        """人工恢复旧表迁移来的停用主机（须写明依据）。r15 ②：unrecoverable（bot_check / login）一律不恢复，没有放行开关。"""
         host = (host or "").lower()
 
         def upd(d):
             rec = d["hosts"].get(host)
             if rec is None:
                 raise ConfigError(f"host {host} not disabled")
-            if rec["unrecoverable"] and not (allow_unrecoverable and (reason or "").strip()):
-                raise ConfigError(f"host {host} is marked unrecoverable ({rec['category']}); refusing to enable")
+            if not (reason or "").strip():
+                raise ConfigError("reason required")
+            if rec["unrecoverable"]:
+                raise ConfigError(f"host {host} is marked unrecoverable ({rec['category']}); not re-enabled — "
+                                  f"change sources.yaml and get it re-approved instead")
             del d["hosts"][host]
         self._locked_update(upd)
 

@@ -10,11 +10,11 @@ Usage:
 
 旧 collector-hosts.json 存在且未迁移时，采集脚本和本工具的其他命令都拒绝运行（退出码 2）。migrate 把其中每个主机 / 源
 迁移为「已停用（等人工复核）」：不请求、不自动恢复、不参与可疑计数。因机器人验证（bot_check）或登录（login）停用的标
-unrecoverable：enable 默认拒绝，只有加 --allow-unrecoverable 并用 --reason 写明谁、依据什么复核过才放行。
+unrecoverable：永不恢复（enable 一律拒绝，没有放行开关），只能改 sources.yaml 并重新审批。
 
 只改私有状态文件 PRIVATE/state/source-health.json，不发任何网络请求。report 输出 JSON（源 id、状态、轮次与原因，
 以及旧表停用主机；不含 URL 或本机路径），只打到终端，不写进公开目录。
-Exit code: 0 = ok, 2 = 参数/配置错误、状态文件损坏、旧表未迁移，或拒绝恢复 unrecoverable 条目。
+Exit code: 0 = ok, 2 = 参数/配置错误、状态文件损坏、旧表未迁移，或拒绝恢复 unrecoverable 条目（永不恢复）。
 """
 import argparse, json, sys
 from pathlib import Path
@@ -31,8 +31,6 @@ def main(argv=None):
     ap.add_argument("--id")
     ap.add_argument("--host")
     ap.add_argument("--reason", default="")
-    ap.add_argument("--allow-unrecoverable", action="store_true",
-                    help="允许恢复标 unrecoverable（机器人验证 / 登录）的条目；须同时用 --reason 写明复核依据")
     a = ap.parse_args(argv)
     try:
         root = collect.resolve_private_root(a.private_root, a.out_root)
@@ -57,7 +55,7 @@ def main(argv=None):
                 print("give --id or --host, not both", file=sys.stderr); return 2
             if not a.reason.strip():
                 print("--reason required (who reviewed the host, and why)", file=sys.stderr); return 2
-            h.enable_host(a.host, a.reason, allow_unrecoverable=a.allow_unrecoverable)
+            h.enable_host(a.host, a.reason)
             print(json.dumps({"host": a.host.lower(), "status": "enabled"}, ensure_ascii=False))
             return 0
         if not a.id:
@@ -67,7 +65,7 @@ def main(argv=None):
                 print("--reason required (who confirmed, and why)", file=sys.stderr); return 2
             h.set_status(a.id, "disabled", a.reason)
         else:
-            h.set_status(a.id, "ok", a.reason or "manually re-enabled", allow_unrecoverable=a.allow_unrecoverable)
+            h.set_status(a.id, "ok", a.reason or "manually re-enabled")
         print(json.dumps(h.report(sids={a.id}), ensure_ascii=False))
     except (collect.StateError, collect.ConfigError, OSError) as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr); return 2

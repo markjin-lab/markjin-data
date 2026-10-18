@@ -2160,21 +2160,16 @@ class LegacyHosts(unittest.TestCase):
         with contextlib.redirect_stderr(q), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(SH.main(["enable", "--host", "b.org", "--reason", "x", *args]), 2)   # bot_check
             self.assertEqual(SH.main(["enable", "--host", "c.org", "--reason", "x", *args]), 2)   # login
-            self.assertEqual(SH.main(["enable", "--host", "c.org", "--allow-unrecoverable", *args]), 2)  # 无依据
             self.assertEqual(SH.main(["enable", "--id", "feedx", *args]), 2)                      # 旧表 login 源
             self.assertEqual(SH.main(["enable", "--host", "a.org", *args]), 2)                    # 403 也须写依据
         self.assertIn("unrecoverable", q.getvalue())
         self.assertEqual(len(collect.SourceHealth(st).data["hosts"]), 5)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(SH.main(["enable", "--host", "a.org", "--reason", "reviewed by Grok Bot", *args]), 0)
-            self.assertEqual(SH.main(["enable", "--host", "b.org", "--allow-unrecoverable",
-                                      "--reason", "vendor whitelisted us, confirmed by Grok Bot", *args]), 0)
-            self.assertEqual(SH.main(["enable", "--id", "feedx", "--allow-unrecoverable",
-                                      "--reason", "confirmed by Grok Bot", *args]), 0)
         hs = collect.open_source_health(base / "priv")                      # 旧文件还在，也不会再迁移回去
-        self.assertEqual(sorted(hs.data["hosts"]), ["c.org", "d.org", "f.org"])
+        self.assertEqual(sorted(hs.data["hosts"]), ["b.org", "c.org", "d.org", "f.org"])
         self.assertIsNone(hs.host_blocked("a.org"))
-        self.assertIsNone(hs.blocked("feedx"))
+        self.assertTrue(hs.blocked("feedx"))
 
     def test_legacy_category_from_original_reason(self):
         for reason, cat in (("HTTP 403", "http_403"), ("HTTP 401", "login"), ("robots.txt HTTP 401", "login"),
@@ -2244,6 +2239,34 @@ class R15Fixes(unittest.TestCase):
             f = self.fetcher(d, routes, state=hs)
             self.assertIn(f.get("https://a.org/x", sid="s").error, ("http_403", "robots_http_403"))
             self.assertEqual(held, [True], robots)          # 写停止时仍持有站点限速锁：与同站发请求互斥
+
+    # ---- HIGH ②：因验证页或登录墙停的主机 / 源不恢复，没有 --allow-unrecoverable
+    def test_r15_2_unrecoverable_never_reenabled_no_override(self):
+        import contextlib, inspect, io
+        import source_health as SH
+        L = LegacyHosts()
+        base = self.tmpdir()
+        st = base / "priv" / "state"; st.mkdir(parents=True)
+        (st / "collector-hosts.json").write_text(json.dumps(L.LEGACY))
+        args = ["--private-root", str(base / "priv"), "--out-root", str(base / "pub")]
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["migrate", *args]), 0)
+        for extra in (["--host", "b.org"], ["--host", "c.org"], ["--host", "d.org"], ["--id", "feedx"]):
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:          # 开关已删除：argparse 直接拒绝
+                    SH.main(["enable", *extra, "--allow-unrecoverable", "--reason", "reviewed by Grok Bot", *args])
+            self.assertEqual(cm.exception.code, 2, extra)
+        self.assertNotIn("allow_unrecoverable", inspect.signature(collect.SourceHealth.enable_host).parameters)
+        self.assertNotIn("allow_unrecoverable", inspect.signature(collect.SourceHealth.set_status).parameters)
+        hs = collect.open_source_health(base / "priv")
+        for h in ("b.org", "c.org", "d.org"):
+            with self.assertRaises(collect.ConfigError):
+                hs.enable_host(h, "reviewed by Grok Bot, vendor whitelisted us")
+        with self.assertRaises(collect.ConfigError):
+            hs.set_status("feedx", "ok", "reviewed by Grok Bot")
+        hs = collect.open_source_health(base / "priv")
+        self.assertEqual(sorted(hs.data["hosts"]), ["a.org", "b.org", "c.org", "d.org", "f.org"])
+        self.assertTrue(hs.blocked("feedx"))
 
 
 if __name__ == "__main__":
