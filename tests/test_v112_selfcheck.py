@@ -490,14 +490,14 @@ class FredRetractionsIndex(unittest.TestCase):
         self.assertIn("E-FRED-CITED", self.codes(repo, NEWP)["error_codes"])
 
     def test_section_ends_at_same_or_higher_heading(self):
-        doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", NEWP, extra="\n### 附表\n\n" + ROW.format(p=NEWP + "2") + "\n"),
+        doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", NEWP, extra="\n### 附表\n\n" + TABLE_HEAD + ROW.format(p=NEWP + "2") + "\n"),
                               "# 其他\n\n" + TABLE_HEAD + ROW.format(p=OTHERP) + "\n")
         repo = repo_with(doc)
         self.assertIn("E-FRED-CITED", self.codes(repo, NEWP + "2")["error_codes"])   # 下级标题仍属本节
         self.assertNotIn("E-FRED-CITED", self.codes(repo, OTHERP)["error_codes"])
 
     def test_fenced_or_commented_heading_ignored(self):
-        doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", NEWP, extra="\n```\n## 其他\n```\n" + ROW.format(p=NEWP + "2") + "\n"),
+        doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", NEWP, extra="\n```\n## 其他\n```\n\n" + TABLE_HEAD + ROW.format(p=NEWP + "2") + "\n"),
                               "<!--\n## FRED 撤回\n-->\n")
         repo = repo_with(doc)
         r = self.codes(repo, NEWP + "2")
@@ -525,20 +525,58 @@ class FredRetractionsIndex(unittest.TestCase):
         for body in ("本节暂无。\n", TABLE_HEAD, "raw/2026-10-19/bea-gdp/x.csv 已撤回（不在表格里）。\n"):
             doc = retractions_doc(f"## {NEW} FRED 撤回补充：空\n\n" + body, section("其他", OTHERP))
             r = run(f"# 日报 {NEW}\n" + arx(NEW), NEW, repo_with(doc))
-            line = doc.split("\n").index(f"## {NEW} FRED 撤回补充：空") + 1
-            self.assertEqual(self.unreadable(r), [(f"raw/{NEW}/RETRACTIONS.md", line)], body)
+            lines = doc.split("\n")
+            want = [lines.index(f"## {NEW} FRED 撤回补充：空") + 1]
+            if body.startswith("raw/"):
+                want.append(lines.index(body.rstrip("\n")) + 1)   # 表格以外的路径行另判格式不对
+            self.assertEqual(self.unreadable(r), [(f"raw/{NEW}/RETRACTIONS.md", n) for n in want], body)
             self.assertEqual(r["status"], "FAIL")
 
     def test_bad_rows_fail_closed(self):
-        for bad in (f"| `{NEWP}` | x |", f"| raw/2026-10-18/bea-gdp/x.csv | x |", "| fred/UNRATE.json | x |",
-                    f"| raw/{NEW}/../x.csv | x |", f"| raw/{NEW}/a b.csv | x |", f"| {NEWP} |", f"| raw/{NEW}/ | x |",
-                    "| | x |", f"|raw/{NEW}/dir/ | x |"):
+        for bad in [ROW.format(p=p) for p in (f"`{NEWP}`", "raw/2026-10-18/bea-gdp/x.csv", "fred/UNRATE.json",
+                                                f"raw/{NEW}/../x.csv", f"raw/{NEW}/./x.csv", f"raw/{NEW}/a b.csv",
+                                                f"raw/{NEW}/", "", f"raw/{NEW}/dir/")] + [f"| {NEWP} |", f"| {NEWP} | x |"]:
             doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", NEWP, extra=bad + "\n"))
             r = self.codes(repo_with(doc))
             line = doc.split("\n").index(bad) + 1
             self.assertEqual(self.unreadable(r), [(f"raw/{NEW}/RETRACTIONS.md", line)], bad)
             self.assertIn("E-FRED-CITED", r["error_codes"], bad)        # 已解析出的路径照拦
             self.assertEqual(r["status"], "FAIL")
+
+    def test_pipe_optional_rows_and_stray_lines(self):
+        # #93 r1 MEDIUM：省略首侧（或首尾）竖线的表体行同样是表格行，须解析或报错，不得静默跳过
+        a, b, c = (f"raw/{NEW}/bea/{x}.csv" for x in "abc")
+        for row_b in (f"{b} | x | h | t | r |", f"{b} | x | h | t | r", f"  {b}|x|h|t|r"):
+            doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", a, extra=row_b + "\n"))
+            repo = repo_with(doc)
+            for p in (a, b):
+                r = self.codes(repo, p)
+                self.assertIn("E-FRED-CITED", r["error_codes"], (row_b, p))
+                self.assertEqual(self.unreadable(r), [], row_b)
+        for bad in (f"{b} | x |", f"{b}", f"- {b}", f"`{b}`", f"> {b} | x | h | t | r |", f"{b} | x | h | t | r | 多 |"):
+            doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", a, extra=bad + "\n"))
+            r = self.codes(repo_with(doc), a)
+            line = doc.split("\n").index(bad) + 1
+            self.assertEqual(self.unreadable(r), [(f"raw/{NEW}/RETRACTIONS.md", line)], bad)
+            self.assertEqual(r["status"], "FAIL")
+        # 表格以外（空行之后）的竖线行、路径行也判格式不对
+        for stray in (f"{c} | x | h | t | r |", f"另见 {c}。", "| 补充 | 说明 |"):
+            doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", a, extra="\n" + stray + "\n"))
+            r = self.codes(repo_with(doc), a)
+            line = doc.split("\n").index(stray) + 1
+            self.assertEqual(self.unreadable(r), [(f"raw/{NEW}/RETRACTIONS.md", line)], stray)
+        # 表头第一格不是 path、分隔行列数不对
+        for head in ("| file | source_url | sha256 | removed_at | reason |\n|---|---|---|---|---|\n",
+                     "| path | source_url | sha256 | removed_at | reason |\n|---|---|\n"):
+            doc = retractions_doc(f"## {NEW} FRED 撤回（王总决定）\n\n" + head + ROW.format(p=a) + "\n")
+            r = self.codes(repo_with(doc), a)
+            line = doc.split("\n").index(head.split("\n")[0]) + 1
+            self.assertIn((f"raw/{NEW}/RETRACTIONS.md", line), self.unreadable(r), head)
+        # 表头、分隔行省略首尾竖线也认
+        doc = retractions_doc(f"## {NEW} FRED 撤回（王总决定）\n\npath | source_url\n--- | :---:\n{a} | x\n{b} | y\n")
+        r = self.codes(repo_with(doc), b)
+        self.assertIn("E-FRED-CITED", r["error_codes"])
+        self.assertEqual(self.unreadable(r), [])
 
     def test_bad_rows_outside_fred_section_ignored(self):
         doc = retractions_doc(section("其他撤回", OTHERP, extra="| `坏行` |\n"), section(f"{NEW} FRED 撤回（王总决定）", NEWP))

@@ -173,17 +173,33 @@ def retracted_path_re(paths):
 
 FRED_RETRACTED_RE = retracted_path_re(FRED_RETRACTED_BASELINE)
 _FRED_SECTION_RE = re.compile(r"FRED\s*撤回", re.I)
-_RETRACTION_ROW_RE = re.compile(r"^[ ]{0,3}\|")
 _RETRACTION_SEP_CELL_RE = re.compile(r"^:?-+:?$")
 _RETRACTION_PATH_RE = re.compile(r"^raw/(\d{4}-\d{2}-\d{2})/(?:[^\s|/\\`]+/)*[^\s|/\\`]+$")
+_RETRACTION_PATHLIKE_RE = re.compile(r"(?<![A-Za-z0-9_.\-/])raw/\d{4}-\d{2}-\d{2}/", re.I)
+
+
+def _table_cells(ln):
+    """GFM 表格行分列：首尾竖线可省略，\\| 不算分隔。返回去掉首尾空白的格子列表。"""
+    t = ln.strip()
+    if t.startswith("|"):
+        t = t[1:]
+    if t.endswith("|") and not t.endswith("\\|"):
+        t = t[:-1]
+    return [c.strip() for c in re.split(r"(?<!\\)\|", t)]
+
+
+def _is_delimiter_row(ln):
+    """GFM 表格分隔行（如 |---|:---:|）：含竖线，每格都是 -、可带首尾冒号。"""
+    return "|" in ln and all(_RETRACTION_SEP_CELL_RE.match(c) for c in _table_cells(ln))
 
 
 def parse_fred_retractions(text, day):
     """解析一份 RETRACTIONS.md 的「FRED 撤回」节。返回 (路径集合, 解析不出的行号列表)。
     标题只在 route.visible_text（等行数、去掉注释与围栏）里认；行数对不齐 → 整份判解析不出（行 1）。
-    节内以 | 开头的行是表格行：表头（第一格 path）与分隔行跳过；其余行第一格须为 raw/<本目录日期>/… 路径，否则判格式不对。
-    节内没有一条路径 → 该节标题行判解析不出。"""
-    from .route import _HEADING_PARTS_RE, _SETEXT_RE, _setext_title   # route 导入本模块，此处延迟导入
+    节内表格按 GFM 认（首尾竖线可省略）：表头行（第一格须为 path）+ 分隔行开始，到空行或标题为止，其间每一个非空行都是表体行，
+    须与表头列数相同、第一格为 raw/<本目录日期>/… 路径，否则判格式不对（不静默跳过；#93 r1 MEDIUM）。
+    表格以外的行含竖线，或含 raw/<日期>/ 路径，也判格式不对（路径只能登记在表格里）。节内没有一条路径 → 该节标题行判解析不出。"""
+    from .route import _HEADING_PARTS_RE, _setext_title   # route 导入本模块，此处延迟导入
     from .route import visible_text
     raw = text.split("\n")
     vis = visible_text(text, body_only=True, correction_syntax=True).split("\n")
@@ -191,6 +207,7 @@ def parse_fred_retractions(text, day):
         return set(), [1]
     paths, bad = set(), []
     sec_level, sec_line, sec_paths = None, 0, 0
+    ncols = None                                 # 当前表格的列数；None = 不在表格里
 
     def close():
         if sec_level is not None and not sec_paths:
@@ -205,24 +222,40 @@ def parse_fred_retractions(text, day):
         elif _setext_title(vis, i):
             level, title = (1 if vis[i + 1].strip().startswith("=") else 2), ln.strip()
         if level is not None:
+            ncols = None
             if sec_level is not None and level <= sec_level:
                 close(); sec_level = None
             if sec_level is None and _FRED_SECTION_RE.search(_IGNORABLE_RE.sub("", title)):
                 sec_level, sec_line, sec_paths = level, i + 1, 0
             i += 2 if m is None else 1           # Setext 标题的下划线行不是内容
             continue
-        if sec_level is not None and _RETRACTION_ROW_RE.match(ln):
-            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
-            first = cells[0] if cells else ""
-            if first.lower() == "path" or all(_RETRACTION_SEP_CELL_RE.match(c) for c in cells if c) and any(cells):
-                i += 1
+        if sec_level is None:
+            i += 1
+            continue
+        if not ln.strip():
+            ncols = None                         # 空行结束表格
+            i += 1
+            continue
+        if ncols is None:
+            nxt = vis[i + 1].rstrip("\r") if i + 1 < len(vis) else ""
+            if "|" in ln and _is_delimiter_row(nxt):
+                head = _table_cells(ln)
+                if head[0].lower() != "path" or len(_table_cells(nxt)) != len(head):
+                    bad.append(i + 1)
+                ncols = len(head)
+                i += 2                           # 表头与分隔行
                 continue
-            pm = _RETRACTION_PATH_RE.match(first)
-            segs = first.split("/")
-            if pm and pm.group(1) == day and len(cells) >= 2 and not ({".", ".."} & set(segs)):
-                paths.add(first); sec_paths += 1
-            else:
-                bad.append(i + 1)
+            if "|" in ln or _RETRACTION_PATHLIKE_RE.search(_IGNORABLE_RE.sub("", ln)):
+                bad.append(i + 1)                # 表格以外的竖线行或路径行：格式不对
+            i += 1
+            continue
+        cells = _table_cells(ln)
+        first = cells[0]
+        pm = _RETRACTION_PATH_RE.match(first)
+        if pm and pm.group(1) == day and len(cells) == ncols and ncols >= 2 and not ({".", ".."} & set(first.split("/"))):
+            paths.add(first); sec_paths += 1
+        else:
+            bad.append(i + 1)
         i += 1
     close()
     return paths, bad
