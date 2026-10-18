@@ -32,6 +32,7 @@ import urllib.error
 import urllib.request
 import urllib.robotparser
 from pathlib import Path
+from types import MappingProxyType
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from . import strictjson
@@ -319,7 +320,7 @@ def classify_page(ctype, body, headers=None, url=None):
     return "phrase" if (v == "suspect" or phrase_hit(body)) else None
 
 
-# 不跳转的登录墙（任何非 3xx 状态，含 200）：只看结构特征，不对全文做单词匹配（FRED 等正常页面有 id="signin-wrap"
+# 不跳转的登录墙（任何非 3xx 状态，含 200）：只看结构特征，不对全文做单词匹配（正常数据页面常有 id="signin-wrap"
 # 之类的属性或页眉「Sign in」链接，不能误伤）。特征：
 #   T  <title> 含 sign in / log in / login / password（或 登录 / 登入）
 #   P  <form> 里有密码输入框 <input type=password>
@@ -331,7 +332,7 @@ def classify_page(ctype, body, headers=None, url=None):
 # 判定：(P 或 E) 且 T；或 T 且 A；或 (P 或 E) 且 F 且 S；
 #       无表单的登录提示 / 中间页：L 且 Q 且 S，或 T 且 L 且 S。
 # 侧栏 / 页眉里带登录框或「Sign in」链接的普通文章（标题不是登录、正文很长）不算；扫描整个正文（不截断）。
-# 词边界：两侧不能是字母数字，所以「FRED Blog Index」「signing」「loginx」都不算。
+# 词边界：两侧不能是字母数字，所以「Data Blog Index」「signing」「loginx」都不算。
 _LOGIN_WORDS = re.compile(r"(?<![a-z0-9])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on|password)(?![a-z0-9])|登录|登入|ログイン", re.I)
 _LOGIN_PROMPT = re.compile(r"(?<![a-z0-9])(?:(?:please\s+)?(?:sign|log)[\s-]?in\s+(?:to|for)\s+(?:continue|view|access|read|see|download|proceed)"
                            r"|please\s+(?:sign|log)[\s-]?in|you\s+(?:must|need\s+to)\s+(?:be\s+)?(?:sign(?:ed)?|log(?:ged)?)[\s-]?in"
@@ -786,8 +787,8 @@ def ext_for(ctype, body):
 # 15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。现行细则：
 #  1. 单次可疑（401/403、429、验证页、登录墙；robots.txt 同样）→ 该主机本轮全部停止（跨进程、跨源生效），429 不重试。
 #  2. 被拒的 URL（含跳转起点）至少冷却 COOLDOWN_SECONDS（24 小时）；失败记录按轮次分别保存，补跑旧轮不清新轮的记录。
-#     来源级扩展（15:22 规则之外的扩展，待 Grok Bot 决定，不是 15:22 规则本身）：来源只要还有未到期的 URL 冷却，
-#     从下一轮起整个来源都不请求（source cooldown）。
+#     来源级冷却（Grok Bot 2026-10-18 18:12 SGT 采纳）：来源只要还有未到期的 URL 冷却，从下一轮起整个来源都不请求
+#     （source cooldown）；来源 → 主机见 SOURCE_HOSTS；24 小时从判定时刻起算；跨运行持久；URL 去掉 key / token 后比对。
 #     本轮停止的只是返回可疑响应的那一跳的主机；跳转起点只冷却该 URL，起点主机不停（r15 ⑤）。
 #  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
@@ -800,6 +801,22 @@ WINDOW_ROUNDS = 5
 PENDING_AFTER = 3
 KEEP_ROUNDS = 10
 COOLDOWN_SECONDS = 24 * 3600
+# 来源 → 主机对照表（来源级冷却用；全仓只有这一份）。表里一个来源的任一主机被拒 → 下一轮起该来源的所有主机都不请求，
+# sources.yaml 里落在这些主机上的各个 id 一起停。不在表里的主机：来源就是请求带的 sid。只收 sources.yaml 已批准的主机，
+# 不借此新增来源。规则出处：来源级冷却由 Grok Bot 2026-10-18 18:12 SGT 采纳。
+SOURCE_HOSTS = MappingProxyType({
+    "arxiv": frozenset({"rss.arxiv.org"}),                       # arxiv-cs-ai / cs-lg / gr-qc / hep-th / quant-ph
+    "federalreserve": frozenset({"www.federalreserve.gov"}),     # fed-press-monetary / fed-prates
+    "clinicaltrials": frozenset({"clinicaltrials.gov"}),         # ctgov-recent / ctgov-bci
+    "fda": frozenset({"www.fda.gov", "api.fda.gov"}),            # fda-biologics / openfda-510k
+})
+_HOST_SOURCE = MappingProxyType({h: name for name, hs in SOURCE_HOSTS.items() for h in hs})
+
+
+def cooldown_source(host, sid):
+    """来源级冷却的来源键：主机在 SOURCE_HOSTS 里 → "table:<来源>"；否则就是 sid（可能为 None）。"""
+    g = _HOST_SOURCE.get((host or "").lower())
+    return f"table:{g}" if g else sid
 SITE_INTERVAL = 60.0          # 未公布限速的站点：每站每分钟最多 1 次
 SOURCE_STATUSES = ("ok", "pending-disable", "disabled")
 STATE_VERSION = 2
@@ -1089,7 +1106,7 @@ class SourceHealth:
         return self.error
 
     # -- 查询
-    def blocked(self, sid=None, rid=None):
+    def blocked(self, sid=None, rid=None, host=None):
         """拒绝原因或 None：状态文件损坏 → 一律拒绝；disabled → 立即拒绝；pending-disable → 从触发轮的下一轮起拒绝
         （rid 为空时保守拒绝）。"""
         bad = self._fresh()
@@ -1098,24 +1115,32 @@ class SourceHealth:
         rec = self.data["sources"].get(sid) if sid else None
         if rec and rec["status"] != "ok" and not (rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]):
             return f"source {status_code(rec)}"          # r15 ⑦：只写固定代码，不写 status_reason 原文
-        return self.source_cooling(sid, rid)             # 触发 pending 的那一轮照常跑完（但仍受来源冷却约束）
+        return self.source_cooling(sid, rid, host=host)  # 触发 pending 的那一轮照常跑完（但仍受来源冷却约束）
 
-    def source_cooling(self, sid, rid, now=None):
-        """来源级冷却（Grok Bot 15:22 规则「被拒 URL 冷却 ≥24h」之外的扩展，待 Grok Bot 决定）：该来源在别的轮次被拒、
-        且仍有未到期的 URL 冷却记录 → 下一轮起整个来源都不请求（不只那个 URL），直到最晚的那条记录到期。
-        记录属于哪个来源：记录里的 sid（请求时已核对与主机不冲突）；没有 sid 的记录按 host_sources 由主机推出。24 小时从收到可疑响应、写下记录时起算。
-        触发的那一轮不受此限（同主机已按规则 1 停止）；没有轮次上下文时保守拒绝。只看持久状态（跨运行生效）。"""
-        if not sid:
+    def source_cooling(self, sid, rid, now=None, host=None):
+        """来源级冷却（Grok Bot 2026-10-18 18:12 SGT 采纳）：来源在别的轮次被拒、且仍有未到期的 URL 冷却记录 →
+        下一轮起整个来源都不请求（不只那个 URL），直到最晚的那条记录到期。
+        - 来源：请求带的 sid，加上请求主机在 SOURCE_HOSTS 里所属的来源；记录的来源同样是记录里的 sid 加记录主机所属来源
+          （没有 sid 的记录再按 host_sources 由主机推出）。两边有交集即同一来源。
+        - 24 小时从判定为被拒 / 可疑、写下记录的时刻起算（stop 在判定之后取时钟，不是发送之前）。
+        - 只看持久状态（私有 state/source-health.json，跨运行生效）；URL 比对用 cooldown_identity（去掉 key / token）。
+        触发的那一轮不受此限（同主机已按规则 1 停止）；没有轮次上下文时保守拒绝。返回固定代码或 None。"""
+        want = {x for x in (sid, cooldown_source(host, None)) if x}
+        if not want:
             return None
         t = self.clock() if now is None else now
+        hs_map = getattr(self, "host_sources", {})
         for r in sorted(self.data["urls"], reverse=True):
             if r == rid:
                 continue
             for u in self.data["urls"][r].values():
-                # 记录的来源：记录里的 sid（请求时已按主机核对过，见 Fetcher.source_mismatch）；没有 sid 的记录按主机推出
-                mine = u["sid"] == sid if u.get("sid") else \
-                    sid in getattr(self, "host_sources", {}).get((u.get("host") or "").lower(), ())
-                if mine and u["until"] > t:
+                if u["until"] <= t:
+                    continue
+                uh = (u.get("host") or "").lower()
+                have = {x for x in (u.get("sid"), cooldown_source(uh, None)) if x}
+                if not u.get("sid"):
+                    have |= set(hs_map.get(uh, ()))
+                if have & want:
                     return f"source cooldown:{public_code(u['reason'])}"
         return None
 
@@ -1195,7 +1220,7 @@ class SourceHealth:
         只动本轮的条目；别的轮只清理冷却已过期的 URL 记录。"""
         if not _ROUND_ID.fullmatch(rid or ""):
             raise ConfigError(f"bad round id {rid!r}")
-        t = float(self.clock())
+        t = float(self.clock())          # 24 小时从判定时刻起算：stop 只在收到响应、判定为被拒 / 可疑之后调用
 
         def upd(d):
             for r in list(d["urls"]):
@@ -1459,6 +1484,8 @@ def check_gates():
     if not (isinstance(NET_RETRIES, int) and 0 <= NET_RETRIES <= 2): bad.append("NET_RETRIES")
     if not (isinstance(MAX_BYTES, int) and 0 < MAX_BYTES <= 25 * 1024 * 1024): bad.append("MAX_BYTES")
     if not (isinstance(REFUSED_HOSTS, frozenset) and "t.co" in REFUSED_HOSTS): bad.append("REFUSED_HOSTS")
+    if not (isinstance(SOURCE_HOSTS, MappingProxyType) and isinstance(_HOST_SOURCE, MappingProxyType)
+            and all(_HOST_SOURCE.get(h) == n for n, hs in SOURCE_HOSTS.items() for h in hs)): bad.append("SOURCE_HOSTS")
     if not (isinstance(REDIRECT_CODES, frozenset) and {301, 302, 303, 307, 308} <= REDIRECT_CODES): bad.append("REDIRECT_CODES")
     if not (isinstance(SUSPICIOUS_ERRORS, frozenset) and SUSPICIOUS_ERRORS >= {
             "http_401", "http_403", "http_429", "challenge", "suspected_challenge", "login_wall", "robots_http_401",
@@ -1666,7 +1693,7 @@ class Fetcher:
                 why = self.source_mismatch(host, sid)
                 if why:
                     return 0, {}, b"", "source_mismatch", why, None
-                why = self.state.blocked(sid, self.round_id)      # 含来源级冷却：锁内、发送前从磁盘重读
+                why = self.state.blocked(sid, self.round_id, host=host)   # 含来源级冷却：锁内、发送前从磁盘重读
                 if why:
                     return 0, {}, b"", "source_blocked", why, None
             pre = self.precheck(url)
@@ -1753,7 +1780,7 @@ class Fetcher:
         p = urlsplit(url)
         host = (p.hostname or "").lower()
         base = f"{p.scheme}://{p.netloc}"
-        if self.source_mismatch(host, sid) or self.state.blocked(sid, self.round_id) or self.precheck(base + "/robots.txt"):
+        if self.source_mismatch(host, sid) or self.state.blocked(sid, self.round_id, host=host) or self.precheck(base + "/robots.txt"):
             return self._disallow_all()               # 状态损坏 / 源停用 / 旧表停用 / 本轮主机已停 / 冷却中：不发请求
         if base in self._robots:
             return self._robots[base]
@@ -1852,7 +1879,7 @@ class Fetcher:
             why = self.source_mismatch(host, esid)
             if why:                       # 来源由主机推出；与请求带的来源冲突 → 不发请求
                 return Result(False, final_url=cur, hops=hops, error="source_mismatch", detail=why)
-            why = self.state.blocked(esid, self.round_id)
+            why = self.state.blocked(esid, self.round_id, host=host)
             if why:
                 return Result(False, final_url=cur, hops=hops, error="source_blocked", detail=why)
             pre = self.precheck(cur)
@@ -1875,7 +1902,7 @@ class Fetcher:
                 if bad:                   # robots.txt 可疑：该主机本轮已停
                     return Result(False, final_url=cur, hops=hops, error=bad, detail=self.robots_note.get(
                         f"{p.scheme}://{p.netloc}"))
-                pre = self.precheck(cur) or (("source_blocked", why) if (why := self.state.blocked(esid, self.round_id))
+                pre = self.precheck(cur) or (("source_blocked", why) if (why := self.state.blocked(esid, self.round_id, host=host))
                                              else None)
                 if pre:
                     return Result(False, final_url=cur, hops=hops, error=pre[0], detail=pre[1])

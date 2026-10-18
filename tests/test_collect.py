@@ -1,6 +1,7 @@
 """PR #3/#6 审查修复：采集公共层与 capture_sources 的针对性测试（全部离线，假 opener）。"""
 import json, os, tempfile, time, unittest
 from pathlib import Path
+from unittest import mock
 import helpers  # noqa: F401
 from markjin import collect, strictjson
 import capture_sources as CS
@@ -2476,10 +2477,10 @@ class R15Fixes(unittest.TestCase):
                       b'<input type="submit" value="Log in"></form></body></html>')
     SSO_STEP1 = (b'<html><head><title>Login | Portal</title></head><body><form action="https://accounts.example.com/sso">'
                  b'<input name="email"><button>Next</button></form></body></html>')
-    FRED_LIKE = (b'<html><head><title>Federal Funds Effective Rate (FEDFUNDS) | FRED</title></head><body>'
+    DATA_PORTAL = (b'<html><head><title>Effective Rate Series | Data Portal</title></head><body>'
                  b'<div id="signin-wrap" class="signin"><a href="/login">Sign In</a> <a href="/register">Register</a></div>'
                  b'<form action="/searchresults"><input name="st" placeholder="Search"></form>'
-                 b'<h1>Federal Funds Effective Rate</h1><p>' + b"Observation data and notes. " * 80 + b'</p></body></html>')
+                 b'<h1>Effective Rate Series</h1><p>' + b"Observation data and notes. " * 80 + b'</p></body></html>')
     ARTICLE_SIDEBAR = (b'<html><head><title>Quarterly report on payrolls</title></head><body><article><p>'
                        + b"Employment rose in most sectors this quarter. " * 60 + b'</p></article><aside>'
                        b'<form action="/login"><label>Log in</label><input name="u"><input type="password" name="p">'
@@ -2491,20 +2492,20 @@ class R15Fixes(unittest.TestCase):
         H = "text/html"
         for name in ("LOGIN", "LOGIN_NO_TITLE", "SSO_STEP1"):
             self.assertTrue(collect.login_page(H, getattr(self, name), "https://a.org/p"), name)
-        for name in ("FRED_LIKE", "ARTICLE_SIDEBAR", "PASSWORD_ARTICLE"):
+        for name in ("DATA_PORTAL", "ARTICLE_SIDEBAR", "PASSWORD_ARTICLE"):
             self.assertFalse(collect.login_page(H, getattr(self, name), "https://a.org/p"), name)
         self.assertFalse(collect.login_page("application/json", b'{"title":"Sign in","password":1}'))
         self.assertFalse(collect.login_page(H, b"<title>Sign in</title><p>no form here</p>"))      # 没有 form 不算
         for st in (200, 404, 500):
             self.assertEqual(collect.Fetcher._classify(st, {"Content-Type": H}, self.LOGIN, "https://a.org/p"), "login_wall", st)
-        self.assertIsNone(collect.Fetcher._classify(200, {"Content-Type": H}, self.FRED_LIKE, "https://a.org/p"))
+        self.assertIsNone(collect.Fetcher._classify(200, {"Content-Type": H}, self.DATA_PORTAL, "https://a.org/p"))
 
     def test_r15_200_login_wall_stops_host_and_cools_url(self):
         d = self.tmpdir()
         st = collect.SourceHealth(d / "st.json")
         f = self.fetcher(d, {"https://a.org/data": Resp(200, self.LOGIN, {"Content-Type": "text/html"}),
                              "https://a.org/other": Resp(200, b"ok"),
-                             "https://b.org/fred": Resp(200, self.FRED_LIKE, {"Content-Type": "text/html"})}, state=st)
+                             "https://b.org/series": Resp(200, self.DATA_PORTAL, {"Content-Type": "text/html"})}, state=st)
         r = f.get("https://a.org/data", sid="s")
         self.assertEqual(r.error, "login_wall")
         self.assertFalse(r.body)                                             # 登录页正文不交给调用方
@@ -2512,9 +2513,9 @@ class R15Fixes(unittest.TestCase):
         self.assertEqual({h: v["reason"] for h, v in stops.items()}, {"a.org": "login_wall"})   # 主机本轮停止（持久）
         self.assertEqual(f.get("https://a.org/other", sid="t").error, "host_stopped_this_round")
         self.assertTrue(collect.SourceHealth(d / "st.json").url_cooling("https://a.org/data", time.time() + 23 * 3600))
-        self.assertTrue(f.get("https://b.org/fred", sid="t").ok)             # FRED 式页面（id="signin-wrap"）不误伤
+        self.assertTrue(f.get("https://b.org/series", sid="t").ok)             # 数据门户式页面（id="signin-wrap"）不误伤
 
-    # ---- r3（FRED 审查）补充：冷却键去掉 API key / token；换 key 不能绕过冷却，状态里也不留 key
+    # ---- r3 审查补充：冷却键去掉 API key / token；换 key 不能绕过冷却，状态里也不留 key
     def test_r15_cooldown_identity_strips_credentials(self):
         k = collect.url_key
         base = "https://api.example.org/series/obs?series_id=GDP"
@@ -2581,14 +2582,14 @@ class R15Fixes(unittest.TestCase):
         for name, body in (("PROMPT", PROMPT), ("LINK_TITLE", LINK_TITLE), ("MAGIC", MAGIC), ("MAGIC_T", MAGIC_T), ("LATE", LATE)):
             self.assertTrue(collect.login_page(H, body, "https://a.org/p"), name)
             self.assertEqual(collect.Fetcher._classify(200, {"Content-Type": H}, body, "https://a.org/p"), "login_wall", name)
-        BLOG = (b'<html><head><title>FRED Blog Index</title></head><body><a href="/login">Sign In</a>'
+        BLOG = (b'<html><head><title>Data Blog Index</title></head><body><a href="/login">Sign In</a>'
                 b'<form action="/searchresults"><input name="st"></form><p>' + b"Posts about data. " * 60 + b'</p></body></html>')
         NEWSLETTER = (b'<html><head><title>Weekly notes</title></head><body><p>' + b"Analysis text. " * 60 + b'</p>'
                       b'<form action="/subscribe"><input type="email" name="e"><button>Subscribe</button></form></body></html>')
         SHORT_LINK = b'<html><head><title>Data</title></head><body><a href="/login">Sign in</a><p>Table below.</p></body></html>'
         for name, body in (("BLOG", BLOG), ("NEWSLETTER", NEWSLETTER), ("SHORT_LINK", SHORT_LINK)):
             self.assertFalse(collect.login_page(H, body, "https://a.org/p"), name)
-        for t in ("FRED Blog Index", "Bloginfo tips", "loginx and xlogin", "Signing up", "Passwords101"):
+        for t in ("Data Blog Index", "Bloginfo tips", "loginx and xlogin", "Signing up", "Passwords101"):
             self.assertIsNone(collect._LOGIN_WORDS.search(t), t)                # 词边界
         for t in ("Sign in", "Log-in | Example", "LOGIN", "用户登录"):
             self.assertTrue(collect._LOGIN_WORDS.search(t), t)
@@ -2660,6 +2661,86 @@ class R15Fixes(unittest.TestCase):
             src = py.read_text(encoding="utf-8")
             self.assertNotRegex(src, r"opener\s*=", py.name)
             self.assertIsNone(_re.search(r"collect\.[A-Z][A-Z_]+\s*=(?!=)", src), py.name)
+
+    # ---- r16（来源级冷却，Grok Bot 2026-10-18 18:12 SGT 采纳）① 来源 → 主机对照表：一个主机被拒，下一轮同来源的所有主机 / id 都停
+    def test_r16_source_host_table_groups_hosts_and_ids(self):
+        self.assertEqual(collect.SOURCE_HOSTS["fda"], frozenset({"www.fda.gov", "api.fda.gov"}))
+        self.assertEqual(collect.cooldown_source("API.fda.gov", "openfda-510k"), "table:fda")
+        self.assertEqual(collect.cooldown_source("a.org", "s"), "s")
+        with self.assertRaises(TypeError):
+            collect.SOURCE_HOSTS["x"] = frozenset({"a.org"})                    # 单一一份、不可改
+        import yaml
+        cfg = yaml.safe_load((Path(collect.__file__).resolve().parents[2] / "improve" / "sources.yaml").read_text(encoding="utf-8"))
+        approved = {collect.host_of(s["url"].replace("{", "").replace("}", "")) for s in cfg["sources"]}
+        for name, hs in collect.SOURCE_HOSTS.items():
+            self.assertLessEqual(set(hs), approved, name)                       # 只收已批准的主机，不新增来源
+        t = [2_000_000.0]
+        d = self.tmpdir()
+        routes = {"https://api.fda.gov/device/510k.json": Resp(429), "https://www.fda.gov/bio": Resp(200, b"ok"),
+                  "https://a.org/z": Resp(200, b"ok")}
+
+        def fx(rid):
+            return collect.Fetcher(collect.SourceHealth(d / "st.json", clock=lambda: t[0]), opener=FakeOpener(routes),
+                                   sleep=lambda w: None, clock=lambda: t[0], resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=rid)
+        f = fx(ROUND)
+        self.assertEqual(f.get("https://api.fda.gov/device/510k.json", sid="openfda-510k").error, "http_429")
+        self.assertTrue(f.get("https://www.fda.gov/bio", sid="fda-biologics").ok)   # 触发轮：别的主机照常
+        t[0] += 6 * 3600
+        f = fx("2026-10-12/r2")
+        r = f.get("https://www.fda.gov/bio", sid="fda-biologics")               # 同一来源（表）、别的主机、别的 id
+        self.assertEqual((r.error, r.detail), ("source_blocked", "source cooldown:http_429"))
+        self.assertEqual(f.opener.calls, [])
+        self.assertTrue(f.get("https://a.org/z", sid="other").ok)
+        with mock.patch.object(collect, "_HOST_SOURCE", {}):                     # 对照表被替换 → 门禁拒绝
+            with self.assertRaises(collect.ConfigError):
+                collect.Fetcher(opener=FakeOpener({}), resolver=PUBLIC_DNS)
+
+    # ---- r16 ② 24 小时从判定时刻起算（不是发送之前）：慢响应
+    def test_r16_cooldown_starts_at_judgement_not_send(self):
+        t = [5_000_000.0]
+        d = self.tmpdir()
+
+        class Slow(FakeOpener):
+            def open(self, req, timeout=None):
+                t[0] += 2 * 3600                                                 # 响应 2 小时后才到
+                return super().open(req, timeout)
+        sent = []
+        f = collect.Fetcher(collect.SourceHealth(d / "st.json", clock=lambda: t[0]),
+                            opener=Slow({"https://a.org/x": Resp(403)}), sleep=lambda w: None, clock=lambda: t[0],
+                            resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=ROUND)
+        f.log = lambda *a: sent.append(t[0])
+        send_at = t[0]
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "http_403")
+        rec = next(iter(collect.SourceHealth(d / "st.json").data["urls"][ROUND].values()))
+        self.assertGreaterEqual(rec["at"], send_at + 2 * 3600)                  # 判定之后才取时钟
+        self.assertEqual(rec["until"], rec["at"] + 24 * 3600)
+        st = collect.SourceHealth(d / "st.json", clock=lambda: send_at + 24 * 3600 + 60)   # 发送后 24h+1min：仍在冷却
+        self.assertTrue(st.url_cooling("https://a.org/x"))
+        self.assertEqual(st.blocked("s", "2026-10-13/r1"), "source cooldown:http_403")
+        st = collect.SourceHealth(d / "st.json", clock=lambda: rec["at"] + 24 * 3600 + 1)  # 判定后 24h：解除
+        self.assertIsNone(st.blocked("s", "2026-10-13/r1"))
+
+    # ---- r16 ③ 跨运行持久 + ④ 去 key / token 后比对（新进程、换 key、来源级同样生效）
+    def test_r16_cross_run_and_credential_stripped_comparison(self):
+        t = [7_000_000.0]
+        d = self.tmpdir()
+        u1 = "https://api.fda.gov/drug/event.json?search=x&api_key=K1&access_token=T1"
+        u2 = "https://api.fda.gov/drug/event.json?api_key=K2&search=x"
+
+        def fx(rid, routes):
+            return collect.Fetcher(collect.SourceHealth(d / "st.json", clock=lambda: t[0]), opener=FakeOpener(routes),
+                                   sleep=lambda w: None, clock=lambda: t[0], resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=rid)
+        self.assertEqual(fx(ROUND, {u1: Resp(403)}).get(u1, sid="openfda-510k").error, "http_403")
+        raw = (d / "st.json").read_text()
+        self.assertNotIn("K1", raw); self.assertNotIn("T1", raw)
+        t[0] += 3600
+        f = fx(ROUND, {u2: Resp(200, b"ok")})                                   # 新进程、同一轮：换 key 仍是同一 URL
+        self.assertEqual(f.get(u2, sid="other").error, "host_stopped_this_round")
+        self.assertTrue(collect.SourceHealth(d / "st.json", clock=lambda: t[0]).url_cooling(u2))
+        t[0] += 6 * 3600
+        f = fx("2026-10-12/r2", {u2: Resp(200, b"ok")})                         # 新进程、下一轮：来源级冷却从磁盘读到
+        self.assertEqual(f.get(u2, sid="openfda-510k").error, "source_blocked")
+        self.assertEqual(f.opener.calls, [])
 
 
 if __name__ == "__main__":
