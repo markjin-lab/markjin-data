@@ -185,12 +185,13 @@ sources:
   url: https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0
   check_status: '200'
   checked_at: '2026-10-12T00:07:35+08:00'
-  enabled: true
+  enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.5
   license: url+hash-only
   internal_only: false
-  notes: v1 no key; daily cap 25 req; attribute+revision
+  notes: 'disabled 2026-10-18: api.bls.gov robots.txt disallows crawling; do not request. v1 no key; daily cap 25 req;
+    attribute+revision'
 - id: bea-gdp
   theme: macro
   priority: P0
