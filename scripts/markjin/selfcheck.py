@@ -1016,7 +1016,7 @@ def _neg_state(seg):
     return numnorm.neg_count(m) % 2, h > 0
 
 
-def _neg_parity_ok(claim, loc, kind=None):
+def _neg_parity_ok(claim, loc):
     """#32 r4–r8：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
     1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
        原文有、断言没写同样的短语 → 提示 support_scope（R-SUPPORT-SCOPE，人工必查：断言是否写成了相反前提，
@@ -1151,7 +1151,7 @@ def support_at(scopes, kind, claim, loc, fred_units=None):
                 for u in us - {None}:
                     if u not in lu.get(n, set()):
                         return False, hints
-    ok_neg, neg_hints = _neg_parity_ok(c, norm(loc), kind)
+    ok_neg, neg_hints = _neg_parity_ok(c, norm(loc))
     if not ok_neg:
         return False, hints
     lt = norm(loc).lower()
