@@ -126,7 +126,9 @@ NOT_NEG_ZH = ("不变", "不同", "不断", "不少", "不仅", "不久", "不�
 NEG_EN = re.compile(r"\b(?:no\s+longer|not|no|never|cannot|without|unable|neither|nor|hardly|barely|scarcely|"
                     r"yet\s+to|remains?\s+to\s+be|fail(?:s|ed|ing)?\s+to)\b|n't", re.I)
 NOT_NEG_EN = re.compile(r"\bno\.\s*\d|\bnot only\b|\b(?:like\s+)?never[\s\-]+before\b|\bnever\s+(?:been\s+)?seen\s+before\b", re.I)
-CLAUSE_RE = re.compile(r"[，；;。！？、]|,(?!\d{3})|[.!?](?=\s|$)")
+# #79 r9（审查 HIGH）：破折号、括号与不带逗号的 while / whereas / but 也切分句，避免两个对象的相反说法留在同一分句；
+# 短横线只在两侧有空格时切，不拆 1–3 这类数字范围
+CLAUSE_RE = re.compile(r"[，；;。！？、—()（）]|\s[–-]\s|,(?!\d{3})|[.!?](?=\s|$)|\b(?:while|whereas|but)\b", re.I)
 
 
 def neg_count(s):
