@@ -64,6 +64,12 @@ URL_KINDS = {
 # 匹配前去掉默认不可见字符（变体选择符等）。原文直引行不豁免。
 FRED_CUTOFF = "2026-10-18"
 FRED_LINK_RE = re.compile(r"(?:(?:al)?fred|api)\.stlouisfed\.org|stlouisfed\.org/fred|raw/[^\s`]*/fred/[^\s`/]", re.I)
+# #87 撤回、不在 fred/ 目录下的三个文件（以 main 上 raw/2026-10-11/RETRACTIONS.md 为准；#90 r2 MEDIUM，Grok Bot 2026-10-18 21:01 SGT 决定写死，
+# 从 RETRACTIONS 索引自动取路径另开 Issue）。与 fred/ 目录同样拦法：本组织 GitHub 链接（含 blob、raw 的历史提交链接）与相对路径引用都含 raw/… 路径段。
+FRED_RETRACTED_PATHS = ("raw/2026-10-11/nbs-gdp/fred-CHNGDPNQDSMEI.csv",
+                        "raw/2026-10-11/nbs-gdp/annual-reconciliation.csv",
+                        "raw/2026-10-11/nbs-gdp/annual-reconciliation.md")
+FRED_RETRACTED_RE = re.compile(r"raw/[^\s`]*?2026-10-11/nbs-gdp/(?:fred-CHNGDPNQDSMEI\.csv|annual-reconciliation\.(?:csv|md))", re.I)
 FRED_WORD_CASE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:AL)?FRED(?![A-Za-z0-9_])")   # 英文简称只认全大写（Fred 等人名不算）
 FRED_NAME_RE = re.compile(r"federal\s*reserve\s*economic\s*data|圣\s*路\s*易\s*斯\s*联\s*(?:邦\s*)?储\s*(?:备\s*)?经\s*济\s*数\s*据", re.I)
 # 默认不可见字符（Unicode Default_Ignorable_Code_Point 中 norm() 未去掉的部分：组合用字形连接符、韩文填充符、蒙古文变体选择符、变体选择符等）
@@ -970,9 +976,9 @@ def _fm_value(s, fm_parsed=None, raw=None):
 
 
 def _fred_hit(s):
-    """一段文字里是否有 FRED 链接、raw/…/fred/ 文件或文字提到 FRED（先去掉默认不可见字符）。"""
+    """一段文字里是否有 FRED 链接、raw/…/fred/ 文件、#87 撤回的三个 nbs-gdp 文件或文字提到 FRED（先去掉默认不可见字符）。"""
     s = _IGNORABLE_RE.sub("", s)
-    return bool(FRED_LINK_RE.search(s) or FRED_WORD_CASE_RE.search(s) or FRED_NAME_RE.search(s))
+    return bool(FRED_LINK_RE.search(s) or FRED_RETRACTED_RE.search(s) or FRED_WORD_CASE_RE.search(s) or FRED_NAME_RE.search(s))
 
 
 def _check_fred(lines, date, fm_end, fm_parsed, err, text=""):

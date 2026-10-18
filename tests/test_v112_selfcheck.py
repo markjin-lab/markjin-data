@@ -134,5 +134,66 @@ class FredCited(unittest.TestCase):
         self.assertEqual(r["status"], "PASS", r["error_codes"])
 
 
+# #87 撤回、不在 fred/ 目录下的三个文件（#90 r2 MEDIUM；Grok Bot 2026-10-18 21:01 SGT 决定写死这三个路径）
+OLD_SHA = "f771767be92964e118712144856a32d9b2e4d1a2"   # #87 合并前的 main，三个文件仍在
+RETRACTED = ("raw/2026-10-11/nbs-gdp/fred-CHNGDPNQDSMEI.csv",
+             "raw/2026-10-11/nbs-gdp/annual-reconciliation.csv",
+             "raw/2026-10-11/nbs-gdp/annual-reconciliation.md")
+KEPT = ("raw/2026-10-11/nbs-gdp/nbs-t20260716_1964142.html", "raw/2026-10-11/nbs-gdp/PROVENANCE.md",
+        "raw/2026-10-11/nbs-gdp/README.md", "raw/2026-10-11/nbs-gdp/query-log.jsonl")
+ORG = "markjin-lab/markjin-data"
+
+
+def forms(path):
+    return {"blob": f"https://github.com/{ORG}/blob/{OLD_SHA}/{path}",
+            "blob-short": f"https://github.com/{ORG}/blob/{OLD_SHA[:7]}/{path}#L2",
+            "raw": f"https://raw.githubusercontent.com/{ORG}/{OLD_SHA}/{path}",
+            "github-raw": f"https://github.com/{ORG}/raw/{OLD_SHA}/{path}",
+            "relative": f"`{path}`",
+            "relative-up": f"[见存档](../{path})"}
+
+
+class FredRetractedPaths(unittest.TestCase):
+    def codes(self, s, date=NEW, repo=None, fm=""):
+        repo = repo or NEW_REPO
+        # 链接写在带 arxiv 来源的断言行里：修复前 blob、raw 两种链接此写法自检为 PASS（#90 r2 复现）
+        return run(fm + f"# 日报 {date}\n" + arx(date, f"模型在 MMLU 上达到 90% 准确率（对照 {s}）。"), date, repo)
+
+    def test_paths_match_constant(self):
+        from markjin.selfcheck import FRED_RETRACTED_PATHS
+        self.assertEqual(tuple(FRED_RETRACTED_PATHS), RETRACTED)
+
+    def test_blob_raw_and_relative_blocked(self):
+        for path in RETRACTED:
+            for kind, s in forms(path).items():
+                for date, repo in ((NEW, NEW_REPO), (CUT, CUT_REPO)):
+                    r = self.codes(s, date, repo)
+                    self.assertEqual(r["status"], "FAIL", (path, kind, r["error_codes"]))
+                    self.assertIn("E-FRED-CITED", r["error_codes"], (path, kind))
+
+    def test_case_and_invisible_chars(self):
+        for s in (forms(RETRACTED[2])["blob"].upper().replace("HTTPS://GITHUB.COM", "https://github.com"),
+                  forms(RETRACTED[1])["raw"].replace("annual-", "annual-\ufe0f")):
+            self.assertIn("E-FRED-CITED", self.codes(s)["error_codes"], s)
+
+    def test_correction_of_old_draft(self):
+        fm = "---\ntitle: x\ncorrects: daily-2026-01-05\ncorrected_at: 2026-10-17\n---\n"
+        for path in RETRACTED:
+            for kind in ("blob", "raw", "relative"):
+                r = self.codes(forms(path)[kind], DATE, OLD_REPO, fm)
+                self.assertIn("E-FRED-CITED", r["error_codes"], (path, kind))
+
+    def test_other_nbs_gdp_files_not_blocked(self):
+        # 正常引用其他 nbs-gdp 文件不误拦（只看 E-FRED-CITED；其他回放规则另由现有检查负责）
+        for path in KEPT:
+            for kind, s in forms(path).items():
+                r = self.codes(s)
+                self.assertNotIn("E-FRED-CITED", r["error_codes"], (path, kind))
+                if kind != "relative":                       # 反引号相对路径另受回放规则（E-REPLAY-006）约束，与本项无关
+                    self.assertEqual(r["status"], "PASS", (path, kind, r["error_codes"]))
+        for s in ("raw/2026-10-11/nbs-gdp/annual-reconciliation-notes.txt", "raw/2026-10-19/nbs-gdp/annual-reconciliation.csv",
+                  "raw/2026-10-11/nbs-gdp/CHNGDPNQDSMEI.html", "国家统计局年度核算（annual reconciliation）"):
+            self.assertNotIn("E-FRED-CITED", self.codes(f"`{s}`")["error_codes"], s)
+
 if __name__ == "__main__":
     unittest.main()
