@@ -168,13 +168,13 @@ def rendered_pages(repo, ref, clock, exe):
             path = (row.get("path") or "").replace("\\", "/")
             if row.get("kind") != "page" or not path.startswith(SITE_PAGE_ROOTS):
                 continue
-            url = urlparse(row.get("permalink") or "").path
-            rel = url.lstrip("/")
+            permalink = row.get("permalink") or ""
+            rel = urlparse(permalink).path.lstrip("/")
             if not rel:
                 continue                     # build.render: never 等不生成页面时 permalink 为空，不能落到首页
             html = pub / rel / "index.html" if rel.endswith("/") else pub / rel
             if html.is_file():
-                out[path] = url
+                out[path] = permalink        # 存完整 permalink：只改 baseURL 主机名也算 URL 改变（PR #52 r3 MEDIUM 1）
         return out
 
 
@@ -186,7 +186,7 @@ def _corrections_dated(body, at, en):
     if heads:
         return sum(1 for d, _ in entries if d == at)
     vis = R.visible_text(body).splitlines()
-    dated_heads = sum(1 for ln in vis if _HEADING_RE.match(ln) and at in R._heading_shown(ln))
+    dated_heads = R.old_correction_heading_dates(body).count(at)   # 只数旧格式更正标题（PR #52 r3 MEDIUM 3）
     notes = sum(1 for ln in vis if (m := _OLD_NOTE_RE[en].match(ln.strip())) and m.group(1) == at)
     return max(dated_heads, notes)
 
@@ -248,7 +248,14 @@ def format_migration_only(old, new, en):
         return False
     # 页首白名单只适用于第一个标题之前唯一的那一行页首提示（PR #52 r2 MEDIUM 5）
     candidates = [i for i, ln in enumerate(pre_o) if _TOP_LINE_RE[en].match(ln)]
-    first_heading = next((i for i, ln in enumerate(pre_o) if _HEADING_RE.match(ln)), len(pre_o))
+    first_heading = len(pre_o)
+    for i, ln in enumerate(pre_o):
+        if _HEADING_RE.match(ln):
+            first_heading = i
+            break
+        if i and re.fullmatch(r"[ ]{0,3}(?:=+|-+)[ \t]*", ln) and pre_o[i - 1].strip():
+            first_heading = i - 1                     # Setext 标题（PR #52 r3 LOW 5）
+            break
     allowed = candidates[0] if len(candidates) == 1 and candidates[0] < first_heading else None
     for i, (a, b) in enumerate(zip(pre_o, pre_n)):
         if a != b:
@@ -274,8 +281,8 @@ def check_page(repo, mb, head, path, status, today, base_pages, head_pages):
     except R.FrontMatterError:
         return sorted(set(codes + ["E-ROUTE-FRONT-MATTER"]))
     en = path.endswith(".en.md")
-    if published and old is not None and format_migration_only(old, new, en):
-        return sorted(set(codes))                     # 纯格式迁移不算新更正（Issue #71 例外）
+    # 纯格式迁移不算新更正（Issue #71 例外）：只豁免“同日须新增一条”，其余字段与新格式更正区校验照常（PR #52 r3 MEDIUM 2）
+    migration = published and old is not None and format_migration_only(old, new, en)
     if "corrects" not in fm and "corrected_at" not in fm:
         if published:
             codes.append("E-SITE-CORRECTION-MISSING")
@@ -304,7 +311,7 @@ def check_page(repo, mb, head, path, status, today, base_pages, head_pages):
                 or (ofm is not None and fm.get("date") != ofm.get("date")) \
                 or (isinstance(prev, str) and R.valid_date(prev) and ca < dt.date.fromisoformat(prev)):
             codes.append("E-ROUTE-CORRECTION-DATE")     # date 按完整值比较（r1 MEDIUM 4）
-        elif isinstance(prev, str) and prev == fm["corrected_at"] and old != new and \
+        elif not migration and isinstance(prev, str) and prev == fm["corrected_at"] and old != new and \
                 _corrections_dated(body, prev, en) <= _corrections_dated(old_body, prev, en):
             codes.append("E-ROUTE-CORRECTION-NOTE")     # 同日再次更正须新增写有该日期的标题或条目（r1 HIGH 1）
     if not R.correction_heading_ok(body, fm["corrected_at"], en=en):

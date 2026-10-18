@@ -598,8 +598,22 @@ def correction_section(body, en=None):
     return heads, entries
 
 
-_OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}##[ \t]+(?:更正|Correction)[ \t]+\d{4}-\d{2}-\d{2}(?!\d)")
-_ENTRY_LIKE_RE = re.compile(r"^\*\*\d{4}-\d{2}-\d{2}\*\*")
+# 旧格式更正标题：「## 更正 YYYY-MM-DD…」/「## Correction YYYY-MM-DD…」，捕获日期。只有这种标题算旧格式更正标题，
+# 「## 数据截至 2026-10-17」之类带日期的普通标题不算（PR #52 r3 MEDIUM 3）。
+_OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?)[ \t]+(\d{4}-\d{2}-\d{2})(?!\d)")
+# 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：… 等残缺写法），都要过严格条目校验（PR #52 r3 MEDIUM 4）
+_ENTRY_LIKE_RE = re.compile(r"^[ \t]*(?:\*{1,2}[ \t]*\d|\d{4}[-/.年])")
+
+
+def old_correction_heading_dates(body):
+    """渲染后可见的旧格式更正标题的日期列表（每个标题一项）。"""
+    out = []
+    for ln in visible_text(body).splitlines():
+        if _HEADING_LINE_RE.match(ln):
+            m = _OLD_DATED_HEADING_RE.match(_heading_shown(ln))
+            if m:
+                out.append(m.group(1))
+    return out
 
 
 def _section_malformed(body):
@@ -622,19 +636,18 @@ def correction_heading_ok(body, corrected_at, en=None):
     新格式（Issue #71）：全页（不分语言）恰好一个「## 更正」/「## Corrections」标题，且是本稿语言的那个；不得同时有旧格式
     带日期的更正标题；更正区里以「**YYYY-MM-DD**」开头的行都须是本语言的合法条目、日期真实；条目按日期升序，且有日期等于
     corrected_at 的条目。出现了新格式标题就按新格式判（不能新旧混用来凑）。
-    过渡期旧格式（整体验收 r2/r3/r6）：corrected_at 出现在某个标题行渲染后可见的文字里。"""
+    过渡期旧格式（整体验收 r2/r3/r6）：有渲染后可见的旧格式更正标题「## 更正 YYYY-MM-DD…」/「## Correction YYYY-MM-DD…」，
+    其日期等于 corrected_at；带日期的其他标题不算（PR #52 r3 MEDIUM 3）。"""
     any_heads, _ = correction_section(body, None)
     if any_heads:
         heads, entries = correction_section(body, en)
         if any_heads != 1 or heads != 1 or _section_malformed(body):
             return False
-        if any(_HEADING_LINE_RE.match(ln) and _OLD_DATED_HEADING_RE.match(_heading_shown(ln))
-               for ln in visible_text(body).splitlines()):
+        if old_correction_heading_dates(body):
             return False
         dates = [d for d, _ in entries]
         return dates == sorted(dates) and corrected_at in dates
-    return any(_HEADING_LINE_RE.match(ln) and corrected_at in _heading_shown(ln)
-               for ln in visible_text(body).splitlines())
+    return corrected_at in old_correction_heading_dates(body)
 
 
 def _correction(rel, text, did, date, now, site_repo):

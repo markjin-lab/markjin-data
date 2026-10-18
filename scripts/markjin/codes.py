@@ -67,7 +67,7 @@ ERROR_CODES = {
     "E-ROUTE-CORRECTION-INVALID": "更正稿 front matter 的 corrects / corrected_at 缺一或为空",
     "E-ROUTE-CORRECTION-TARGET": "更正稿的 corrects 与本稿 draft_id 不一致，或站点仓库 origin/main 上查不到原稿（未发布）、原稿 front matter 无日期、内容未变",
     "E-ROUTE-CORRECTION-DATE": "corrected_at 不是 YYYY-MM-DD，或早于原稿日期、晚于实际发布当天（SGT）",
-    "E-ROUTE-CORRECTION-NOTE": "更正区不合格式：新格式（Issue #71）须恰好一个「## 更正」/「## Corrections」标题、其下条目按日期升序且有日期等于 corrected_at 的「**YYYY-MM-DD**：说明」条目；过渡期旧格式须有标题行（渲染后可见文字，链接目标、图片、HTML 属性不算）注明 corrected_at；同日再次更正未新增条目或标题",
+    "E-ROUTE-CORRECTION-NOTE": "更正区不合格式：新格式（Issue #71）须恰好一个「## 更正」/「## Corrections」标题、其下条目按日期升序且有日期等于 corrected_at 的「**YYYY-MM-DD**：说明」条目；过渡期旧格式须有日期等于 corrected_at 的可见旧格式更正标题「## 更正 YYYY-MM-DD」/「## Correction YYYY-MM-DD」（链接目标、图片、HTML 属性及其他带日期的标题不算）；同日再次更正未新增条目或标题",
     "E-ROUTE-CORRECTION": "更正稿被拦住（如 codex_in_production 为真），不归档原稿",
     # —— 站点 PR 页面检查（scripts/check-site-corrections.py，Grok Bot 2026-10-18）
     "E-SITE-CORRECTION-MISSING": "站点 PR 改动了 base 上已发布（按 Hugo 实际构建判定）的 content/posts 或 content/cards 页面，但 front matter 没有 corrects / corrected_at（改已发布页面一律按更正处理）",

@@ -590,6 +590,55 @@ class R2CheckTest(unittest.TestCase):
         self.assertEqual(json.loads(out.getvalue())["codes"], ["E-SITE-INPUT"])
 
 
+class R3FormatTest(unittest.TestCase):
+    """PR #52 r3 MEDIUM 3/4、LOW 5。"""
+    def test_unrelated_dated_heading_not_old_correction_heading(self):
+        self.assertFalse(R.correction_heading_ok("## 数据截至 2026-10-17\n\n正文。\n", "2026-10-17", en=False))
+        self.assertTrue(R.correction_heading_ok("## 更正 2026-10-17：说明见下。\n", "2026-10-17", en=False))
+        self.assertTrue(R.correction_heading_ok("## 更正 <b>2026-10-17</b>\n", "2026-10-17", en=False))
+        self.assertTrue(R.correction_heading_ok("## Correction 2026-10-17: see below.\n", "2026-10-17", en=True))
+        self.assertEqual(S._corrections_dated(corr() + "\n## 数据截至 2026-10-17\n", "2026-10-17", False), 1)
+
+    def test_partial_date_entries_are_malformed(self):
+        for bad in ("**2026-1-18**：畸形。", "**2026-10-18*：畸形。", "*2026-10-18*：畸形。", "2026-10-18：没加粗。", "** 2026-10-18**：空格。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n"
+            self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), bad)
+
+    def test_setext_heading_ends_top_area(self):
+        mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
+        old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")
+        new = NEW_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid.replace("文末。", "文末「更正」。") + "\n\n导语。")
+        self.assertNotEqual(old, OLD_SEC)
+        self.assertFalse(S.format_migration_only(old, new, False))
+        self.assertTrue(S.format_migration_only(old, new.replace("文末「更正」。", "文末。"), False))
+
+
+@unittest.skipUnless(HAVE_HUGO, "需要 hugo")
+class R3CheckTest(unittest.TestCase):
+    def setUp(self):
+        self.s = SiteRepo()
+
+    def check(self, base):
+        head = self.s.commit("head")
+        return {p["path"]: p["codes"] for p in S.check_range(str(self.s.d), base, head, today=TODAY, clock=CLOCK)["pages"]}
+
+    def test_baseurl_host_change_detected(self):
+        self.s.write(P, ORIG); base = self.s.commit("base")
+        self.s.write("hugo.toml", HUGO_TOML.replace("https://example.test/", "https://other.test/"))
+        self.assertEqual(self.check(base).get(P), ["E-SITE-PAGE-DELETED"])
+
+    def test_migration_still_checks_new_section(self):
+        self.s.write(P, OLD_SEC + "\n## Corrections\n"); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC + "\n## Corrections\n")
+        self.assertTrue(S.format_migration_only(OLD_SEC + "\n## Corrections\n", NEW_SEC + "\n## Corrections\n", False))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_old_format_unrelated_dated_heading_same_day(self):
+        self.s.write(P, corr()); base = self.s.commit("base")
+        self.s.write(P, corr(body="第 2 条：又一句。") + "\n## 数据截至 2026-10-17\n")
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+
 class HeadingHelperTest(unittest.TestCase):
     def test_shared_helper(self):
         self.assertTrue(R.correction_heading_ok("x\n## 更正 2026-10-17\n", "2026-10-17"))
