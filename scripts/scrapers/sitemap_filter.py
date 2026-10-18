@@ -42,7 +42,7 @@ def _entries(fetch, url, depth=0):
             loc = (sm.findtext(NS + "loc") or "").strip()
             if not loc:
                 raise ScrapeError("sitemap index entry without loc")
-            try:   # 每个子 sitemap 都经 fetch（逐个查 robots/源状态/本轮失败 URL/限速）
+            try:   # 每个子 sitemap 都经 fetch（逐个查 robots/源状态/主机停用与本轮停止/URL 冷却/限速）
                 out += _entries(fetch, loc, depth + 1)
             except ScrapeError as e:
                 if str(e) in SKIPPABLE:      # 只有明确允许跳过的错误才跳过（robots 不允许、子 sitemap 不存在）

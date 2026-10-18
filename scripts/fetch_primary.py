@@ -7,13 +7,14 @@ Usage:
                    [--interval 2.0] [--max 50]
 
 对每条线索的 unwound_url / expanded_url（x.com、t.co、pic 链接忽略；t.co 永不解析）抓一次一手 URL：
-  - 经 collect.Fetcher：如实 UA、不自动重定向、每一跳查 robots/源状态/本轮失败 URL/限速、
-    429/5xx 有上限退避、超过 25 MiB 明确失败（不存半截）。
-  - 可疑响应（2026-10-18 新规则）：401/403、验证页只让这篇文章的 URL 本轮失败（本轮内跨进程不再请求，绝不重试）。
-    文章按主机归入伪源 primary:<主机> 计数；同一伪源连续 3 轮可疑 → pending-disable，写公开 primary/source-health-<run>.json
-    与 primary/GROK-BOT-REVIEW-<run>.md（当天汇报照抄）。旧 collector-hosts.json 的停用主机：启动时导入，不请求（host_disabled），不计数。
-    并在 stderr 打 PENDING-DISABLE，交 Grok Bot 复核。伪源与 sources.yaml 里的源互不影响：文章被拒不会连带
-    同主机已批准的 RSS/API 源（审查 r13 第 4 条）。
+  - 经 collect.Fetcher：如实 UA、不自动重定向、每一跳查 robots/源状态/主机停用与本轮停止/URL 冷却/站点限速、
+    收到任何 HTTP 状态都不重发（只有网络错误有限重试）、超过 25 MiB 明确失败（不存半截）。
+  - 封锁规则（现行版，出处与细则见 markjin/collect.py「封锁规则与来源健康状态」）：401/403、429、验证页、登录墙
+    → 该主机本轮全部停止、被拒 URL 冷却 ≥24 小时；未公布限速的站点每站每分钟最多 1 次（OUT/improve/sources.yaml 的
+    site_rate_limits 写明依据的除外）。文章按返回可疑响应那一跳的主机归入伪源 primary:<主机> 计数（r14 ⑩）；
+    同一伪源最近 5 轮 3 轮可疑 → pending-disable（下一轮起），写公开 primary/source-health-<run>.json 与
+    primary/GROK-BOT-REVIEW-<run>.md（当天汇报照抄），stderr 打 PENDING-DISABLE，交 Grok Bot 复核。
+    旧 collector-hosts.json 有未迁移条目 → 拒绝运行（先 source_health.py migrate）；已迁移的停用主机不请求（host_disabled）。
   - 原字节 → PRIVATE/raw/DATE/primary/<sha256>.<ext>（独占创建 + MANIFEST.sha256）；提取文本 → 私有派生物。
   - 目标地址：初始 URL、DNS 解析结果、每一跳都经 collect.AddressPolicy，拒绝本机/内网/链路本地/保留地址。
     出站经透明代理（DNS 返回 RFC 2544 基准网段 198.18.0.0/15 内的假 IP）时用 --proxy-fakeip-cidr / MARKJIN_PROXY_FAKEIP_CIDR 显式声明，
@@ -33,6 +34,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import yaml  # noqa: E402
+
 from markjin import collect, strictjson  # noqa: E402
 
 SKIP_HOSTS = ("x.com", "twitter.com", "t.co", "pic.x.com", "pic.twitter.com", "mobile.twitter.com", "www.x.com")
@@ -150,18 +153,21 @@ def main(argv=None, fetcher=None):
     priv = collect.Archive(priv_root / "raw" / a.date)
     rid = collect.round_id(a.date, a.round)
     if fetcher is None:
-        try:     # 旧 collector-hosts.json 在则先导入为「已停用、等人工复核」；损坏 → 拒绝运行
-            st0, imported = collect.open_source_health(priv_root)
+        try:     # 旧 collector-hosts.json 有未迁移条目或损坏 → 拒绝运行（先 source_health.py migrate）
+            st0 = collect.open_source_health(priv_root)
         except (collect.StateError, OSError) as e:
             print(f"source health: {e}; refusing to run", file=sys.stderr); return 2
-        if imported and not imported["skipped"]:
-            print(f"LEGACY-IMPORT {collect.LEGACY_HOSTS_FILE}: {imported['hosts']} hosts, {imported['sources']} sources "
-                  f"→ disabled (awaiting manual review)", file=sys.stderr)
+        try:     # 只认 sources.yaml 里写明公布限额和依据的站点；其余每站每分钟 1 次
+            cfg_p = Path(a.out_root) / "improve" / "sources.yaml"
+            site_limits = collect.load_site_limits(
+                (yaml.safe_load(cfg_p.read_text(encoding="utf-8")) or {}).get("site_rate_limits")) if cfg_p.exists() else {}
+        except (collect.ConfigError, yaml.YAMLError, AttributeError) as e:
+            print(f"config: site_rate_limits: {e}", file=sys.stderr); return 2
     f = fetcher or collect.Fetcher(st0,
                                    interval=a.interval, fakeip_cidr=a.proxy_fakeip_cidr or "",
-                                   lock_dir=priv_root / "state" / "locks", round_id=rid)    # SEC 跨进程限速锁
+                                   lock_dir=priv_root / "state" / "locks", round_id=rid,    # 站点/URL 跨进程锁
+                                   site_limits=site_limits)
     health = f.state
-    ran = {}                  # 本轮实际尝试过的伪源 primary:<主机> → 可疑原因
     # 外部传入的 Fetcher：其自带策略与本次强制策略合取（两边都放行才放行），不能用宽松策略绕过
     # （强制策略沿用该 Fetcher 的解析器，保证检查的是它实际会连接的解析结果）
     policy = collect.AddressPolicy(a.proxy_fakeip_cidr, resolver=f.resolver)
@@ -191,10 +197,8 @@ def main(argv=None, fetcher=None):
             def sink(body, st, ctype, _acc=hop_raws):     # 每一跳原字节先私有存档，再决定丢弃/跳转
                 rel_h, sha_h = priv.put_raw("", "primary", body, collect.ext_for(ctype, body))
                 _acc.append({"raw": rel_h, "sha256": sha_h, "status": st})
-            psid = primary_sid(orig)
-            r = f.get(orig, sid=psid, raw_sink=sink)
-            if r.error not in ("source_blocked", "host_disabled"):   # 不发请求的情况不计入 3 轮计数
-                ran.setdefault(psid, [])
+            # r14 ⑩：按每一跳的主机给伪源 id，可疑记在返回可疑响应那一跳的主机上
+            r = f.get(orig, sid=lambda host: f"primary:{host or 'unknown'}", raw_sink=sink)
             rec = {"url": cu, "fetched_at": t0, "http_status": r.status, "license": "url+hash-only",
                    "stored": None, "fetch_status": "fetched" if r.ok else r.error}
             if r.error == "blocked_address":
@@ -241,8 +245,9 @@ def main(argv=None, fetcher=None):
         g.update(fetch_status=rr["fetch_status"], license=rr["license"], sha256=rr.get("sha256"),
                  fetched_at=rr.get("fetched_at"))
         lead.update(g)
-    for sid in ran:
-        ran[sid] = sorted({e["reason"] for e in f.suspicious.get(sid, [])})
+    # 本轮实际发出过请求（或有可疑事件）的伪源各记一轮；没发请求的（冷却、主机已停、停用）不记
+    psids = {s for s in set(f.contacted) | set(f.suspicious) if isinstance(s, str) and s.startswith("primary:")}
+    ran = {sid: sorted({e["reason"] for e in f.suspicious.get(sid, [])}) for sid in psids}
     try:
         newly = health.record_round(rid, ran) if ran else {}
         report = health.report(sids=set(ran) | {primary_sid(x["url"]) for x in index if x.get("fetch_status") == "source_blocked"})
@@ -255,7 +260,7 @@ def main(argv=None, fetcher=None):
     if pend:            # 当天汇报显眼可见：单独一份 Markdown + stderr 一行，写 capture-failures.md 时照抄
         pub.put(f"primary/GROK-BOT-REVIEW-{run}.md", collect.review_md(a.date, a.round, pend, newly).encode())
     for e in pend:
-        print(f"PENDING-DISABLE {e['id']}: {e['consecutive_suspicious_rounds']} consecutive suspicious rounds "
+        print(f"PENDING-DISABLE {e['id']}: {e['suspicious_rounds_in_window']} of the last {e['window']} rounds suspicious "
               f"— flag for Grok Bot review (confirm-disable or enable)", file=sys.stderr)
     if pend:
         print(f"=== 待 Grok Bot 复核（pending-disable）{len(pend)} 个源：{', '.join(e['id'] for e in pend)} "

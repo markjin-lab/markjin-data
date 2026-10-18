@@ -7,12 +7,13 @@
 - 原件：响应原字节不解压、不脱敏，按 sha256 独占创建写入私有档案，并追加 MANIFEST.sha256；
   解压、提取、条目 JSON 只作派生物另存（derived/，登记 DERIVED.sha256，带 derived_from）。
 - 每次运行写入的公开文件都按运行戳独占创建（不覆盖），并追加到当天公开 MANIFEST.sha256。
-- 访问礼仪：如实 UA（含联系方式）；每次请求（含每一跳重定向、子 sitemap、robots.txt 本身）都按主机限速；
-  每一跳都先查目标主机 robots.txt、源状态与本轮失败 URL；不自动跟随重定向；拒绝 t.co。
-- 401/403 / 验证页（2026-10-18 新规则）：只让该 URL 本轮失败，给源记一次可疑；源连续 3 轮可疑 → pending-disable
-  并写报告交 Grok Bot 复核，人工确认后才 disabled（见 SourceHealth）。不按主机持久停用。只有 429、5xx、网络错误按
-  Retry-After 或指数退避重试，次数与等待均有上限。
-- robots.txt 自身的跳转逐跳校验（scheme / t.co / 跨主机即禁止）；robots 401/403 或验证页 → robots.txt 本轮失败，该站本轮按禁止。
+- 访问礼仪：如实 UA（含联系方式）；每次请求（含每一跳重定向、子 sitemap、robots.txt 本身）都按站点限速：未公布限速的站点
+  每站每分钟最多 1 次（跨进程共享），只有 sources.yaml site_rate_limits 写明公布限额和依据的站点按其限额，SEC 5 次/秒；
+  每一跳都先查目标主机 robots.txt、源状态、本轮主机停止与 URL 冷却；不自动跟随重定向；拒绝 t.co。
+- 封锁规则（出处与细则见「封锁规则与来源健康状态」一节）：单次可疑（401/403、429、验证页、登录墙）→ 该主机本轮全部停止、
+  被拒 URL 冷却 ≥24 小时；最近 5 轮 3 轮可疑 → pending-disable（下一轮起不抓，等人工确认）。收到任何 HTTP 状态都不重发，
+  只有没收到响应的网络错误有限重试。
+- robots.txt 自身的跳转逐跳校验（scheme / t.co / 跨主机即禁止）；robots 401/403/429、验证页或登录墙 → 与正文相同处理。
 - 一切日志（公开与私有）不写本机路径、不写凭证：URL 不带查询值（只记参数个数，不记参数名；按源 public_params 声明的才留值），hops 只存脱敏 URL；
 - 地址策略强制安装（AddressPolicy，每一跳/子 sitemap 在任何请求前检查）；外部策略只能叠加更严。
 - robots.txt 返回 HTML 但不是验证页 → 本轮按禁止，不算可疑。私有根目录必须显式给出且不能与公开根目录重叠。
@@ -58,13 +59,22 @@ UA_TOKEN = "markjin-collector"
 MAX_BYTES = 25 * 1024 * 1024
 HOST_INTERVAL = 2.0          # 每主机最小请求间隔（秒）；robots Crawl-delay / Request-rate 更严时取更严者
 MAX_REDIRECTS = 5
-MAX_RETRIES = 3
+NET_RETRIES = 2              # 只对没收到 HTTP 响应的网络错误重试；任何 HTTP 状态（含 429、5xx）都不重发
+LOCAL_ROUND = "0000-00-00/r1"  # 无持久状态（测试、单次调用）时的进程内轮次
 BACKOFF_BASE = 2.0
 BACKOFF_CAP = 120.0          # Retry-After 超过此值直接放弃本次（不长时间挂起）
+_LOGIN_PATH = re.compile(r"/(?:log-?in|sign-?in|signon|sso|servicelogin|auth(?:orize)?|account/login|users/sign_in|session/new)(?:[/?.;#]|$)", re.I)
+
+
+def is_login_url(u):
+    """跳转目标是登录页（登录墙）：路径命中常见登录路径，或主机以 login. / signin. / sso. / accounts. 开头。"""
+    p = urlsplit(u)
+    h = (p.hostname or "").lower()
+    return bool(_LOGIN_PATH.search(p.path or "/")) or h.split(".")[0] in ("login", "signin", "sso", "auth", "accounts")
 REFUSED_HOSTS = {"t.co"}
 REDIRECT_CODES = {301, 302, 303, 307, 308}
-# 验证页识别（collector 与 scrapers 共用这一份）。厂商标记（vendor）与泛用短语（phrase）都只让该 URL 本轮失败、
-# 给源记一次可疑（2026-10-18 新规则，见 SourceHealth）；区分两者只为报告里写清原因。误判代价是该 URL 本轮丢失，
+# 验证页识别（collector 与 scrapers 共用这一份）。厂商标记（vendor）与泛用短语（phrase）都算可疑：该主机本轮停止、
+# URL 冷却，给源记一次可疑（见「封锁规则与来源健康状态」）；区分两者只为报告里写清原因。误判代价是该主机本轮丢失，
 # 并可能累积成源的 pending-disable，所以两类仍尽量收紧。
 # 高置信厂商标记：用 html.parser 逐个标签解析，只看精确属性（class、src、id、meta），不用字节正则。
 # 地址一律用 urljoin(响应 URL, src) 补全后比对：同源（scheme + 主机 + 端口与响应一致）的才算本站资源。
@@ -294,7 +304,7 @@ def phrase_hit(body):
 
 
 def classify_page(ctype, body, headers=None, url=None):
-    """返回 'vendor'（厂商标记，高置信）、'phrase'（只命中泛用短语或单一弱标记，疑似）或 None。两者都只让该 URL 本轮失败。
+    """返回 'vendor'（厂商标记，高置信）、'phrase'（只命中泛用短语或单一弱标记，疑似）或 None。两者后果相同（该主机本轮停止、URL 冷却）。
     url = 响应 URL，用来把相对 / 协议相对 / 同主机绝对地址补全并核对同源。响应头 cf-mitigated: challenge 不论正文都算 vendor；
     正文只对 HTML 形态判断（JSON / XML / 普通文本交给格式校验）。"""
     for k, v in (headers or {}).items():
@@ -675,29 +685,43 @@ def ext_for(ctype, body):
     return "bin"
 
 
-# ---------------------------------------------------------------- 逐 URL / 逐源可疑状态（2026-10-18 新规则）
-# 规则（王总 2026-10-18 决定）：
-#  - 单次可疑响应（401/403、验证页、厂商标记、只命中短语的疑似验证页、rss/api 格式校验不通过）只让「这个 URL」本轮失败：
-#    本轮内不再请求该 URL（跨进程同样生效），同主机的其他 URL、其他源照常。不按主机持久停用。
-#  - 一个源连续 DISABLE_AFTER_ROUNDS（3）轮都有可疑结果 → 状态 pending-disable，并写入报告条目交 Grok Bot 复核；
-#    从下一轮起不再请求该源（不静默：每轮都在报告里列出）。人工确认（confirm-disable / disable）后为 disabled，
-#    人工恢复（enable）后清零重新计数。中间任一轮该源跑过且没有可疑结果 → 连续计数清零。
-#  - 永不绕过付费墙、登录或验证：验证页只记失败，不重试、不换 UA、不跑 JS、不带 cookie。
-DISABLE_AFTER_ROUNDS = 3
+# ---------------------------------------------------------------- 封锁规则与来源健康状态
+# 出处：王总 10-18 13:50 决定切回正常模式、恢复 #3/#6（14:15 改为立即生效）；封锁细则由 Grok Bot 定，10-18 13:51 初版，
+# 15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。现行细则：
+#  1. 单次可疑（401/403、429、验证页、登录墙；robots.txt 同样）→ 该主机本轮全部停止（跨进程、跨源生效），429 不重试。
+#  2. 被拒的 URL（含跳转起点）至少冷却 COOLDOWN_SECONDS（24 小时）；失败记录按轮次分别保存，补跑旧轮不清新轮的记录。
+#  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
+#     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
+#  4. 没有公布限速的站点，每站（site_of）每分钟最多 1 次（跨进程共享）；只有 sources.yaml site_rate_limits 写明
+#     公布限额和依据的站点按其限额；SEC 维持 5 次/秒。robots Crawl-delay 更严时从严。
+#  5. 旧 collector-hosts.json 的主机全部保持停用：未迁移时拒绝运行，迁移（source_health.py migrate）后不再请求。
+#  永不绕过付费墙、登录或验证：不重试、不换 UA、不跑 JS、不带 cookie。
+WINDOW_ROUNDS = 5
+PENDING_AFTER = 3
 KEEP_ROUNDS = 10
+COOLDOWN_SECONDS = 24 * 3600
+SITE_INTERVAL = 60.0          # 未公布限速的站点：每站每分钟最多 1 次
 SOURCE_STATUSES = ("ok", "pending-disable", "disabled")
-STATE_VERSION = 3
-LEGACY_HOSTS_FILE = "collector-hosts.json"   # 旧 HostState 文件（#3 的持久停用表），只读导入，不再写
+STATE_VERSION = 2
+LEGACY_HOSTS_FILE = "collector-hosts.json"   # 旧 HostState 文件（#3 的持久停用表），只读迁移，不再写
 HOST_CATEGORIES = ("bot_check", "login", "http_403", "other")
 UNRECOVERABLE_CATEGORIES = frozenset({"bot_check", "login"})
 _ROUND_ID = re.compile(r"\d{4}-\d{2}-\d{2}/r[12]")
-SUSPICIOUS_ERRORS = frozenset({"http_401", "http_403", "challenge", "suspected_challenge", "robots_http_401",
-                               "robots_http_403", "robots_challenge", "robots_suspected_challenge",
-                               "url_failed_this_round"})
+_SHA = re.compile(r"[0-9a-f]{64}")
+SUSPICIOUS_ERRORS = frozenset({"http_401", "http_403", "http_429", "challenge", "suspected_challenge", "login_wall",
+                               "robots_http_401", "robots_http_403", "robots_http_429", "robots_challenge",
+                               "robots_suspected_challenge", "robots_login_wall"})
+_TOP_KEYS = frozenset({"version", "sources", "urls", "host_stops", "hosts", "legacy_imports"})
+_SRC_KEYS = frozenset({"status", "rounds", "status_at", "status_reason", "pending_round", "unrecoverable"})
+_URL_KEYS = frozenset({"reason", "sid", "host", "at", "until"})
+_STOP_KEYS = frozenset({"reason", "sid", "at"})
+_HOST_REQ = frozenset({"status", "reason", "category", "unrecoverable"})
+_HOST_KEYS = _HOST_REQ | {"review", "since", "origin", "imported_at"}
 
 
 def is_suspicious(error):
-    """是否算「可疑结果」（计入源的连续可疑轮数）。网络错误、404、5xx、robots 禁止等不算。"""
+    """是否算「可疑结果」（计入源的可疑轮数，并让该主机本轮停止）。网络错误、404、5xx、robots 禁止、
+    因冷却 / 本轮主机已停 / 旧表停用而没发请求等都不算。"""
     e = error or ""
     return e in SUSPICIOUS_ERRORS or e.startswith("suspected_challenge:")
 
@@ -709,13 +733,70 @@ def round_id(date, rnd):
     return rid
 
 
+def normalize_url(u):
+    """失败记录用的规范化请求身份：scheme、主机转小写，去默认端口（http:80 / https:443），空路径补 /，去片段；
+    路径大小写、尾斜杠、查询串原样保留（它们可能指向不同资源）。"""
+    p = urlsplit((u or "").strip())
+    scheme = p.scheme.lower()
+    host = (p.hostname or "").lower()
+    try:
+        port = p.port
+    except ValueError:
+        port = None
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        host = f"{host}:{port}"
+    if p.username or p.password:
+        ui = p.netloc.rsplit("@", 1)[0]
+        host = f"{ui}@{host}"
+    return urlunsplit((scheme, host, p.path or "/", p.query, ""))
+
+
+def url_key(u):
+    """失败 URL 的持久键：规范化后的 sha256（不写 URL 本身）。"""
+    return hashlib.sha256(normalize_url(u).encode("utf-8")).hexdigest()
+
+
+_TWO_LEVEL = frozenset({"co.uk", "ac.uk", "gov.uk", "org.uk", "com.cn", "gov.cn", "edu.cn", "ac.cn", "org.cn", "net.cn",
+                        "com.au", "gov.au", "edu.au", "co.jp", "ac.jp", "go.jp", "or.jp", "com.hk", "gov.hk",
+                        "com.sg", "gov.sg", "edu.sg", "com.tw", "gov.tw", "co.kr", "go.kr", "co.in", "gov.in"})
+
+
+def site_of(host):
+    """限速用的「站点」：注册域名的近似（最后两段；常见二级后缀取最后三段）。IP 字面量按自身。
+    同一站点的所有主机（如 rss.arxiv.org 与 export.arxiv.org）共用一个限速桶。"""
+    h = (host or "").lower().strip(".")
+    try:
+        ipaddress.ip_address(h.strip("[]"))
+        return h
+    except ValueError:
+        pass
+    parts = h.split(".")
+    if len(parts) >= 3 and ".".join(parts[-2:]) in _TWO_LEVEL:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def load_site_limits(cfg):
+    """sources.yaml 顶层 site_rate_limits：{站点: {min_interval_s: 正数, basis: 公布限额的出处}}。缺依据或数值不对 → ConfigError。
+    只有写明公布限额和依据的站点才按其限额；其余一律 SITE_INTERVAL。SEC 内置 5 次/秒（RATE_GROUPS）。"""
+    out = {}
+    for site, rec in (cfg or {}).items():
+        if not isinstance(rec, dict) or not str(rec.get("basis") or "").strip():
+            raise ConfigError(f"site_rate_limits.{site}: basis (published limit source) required")
+        v = rec.get("min_interval_s")
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
+            raise ConfigError(f"site_rate_limits.{site}: min_interval_s must be a positive number")
+        out[site_of(site)] = float(v)
+    return out
+
+
 class StateError(ValueError):
     """状态文件损坏或结构不对。"""
 
 
 def legacy_category(reason):
     """旧停用原因（按记录原文）归类：验证页 → bot_check；401 / 登录 → login；403 → http_403；其他 → other。
-    bot_check 与 login 属于「不可恢复」（王总 2026-10-18 经 Grok Bot 定）：enable 默认拒绝。"""
+    bot_check 与 login 属于「不可恢复」：enable 默认拒绝。"""
     r = (reason or "").lower()
     if "challenge" in r or "captcha" in r or "验证" in r:
         return "bot_check"
@@ -748,25 +829,32 @@ def read_legacy_hosts(path):
     return out[0], out[1], hashlib.sha256(raw).hexdigest()
 
 
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _nonempty(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
 class SourceHealth:
-    """私有状态文件（默认 PRIVATE/state/source-health.json）：
-    {"version": 3,
+    """私有状态文件（PRIVATE/state/source-health.json），顶层键恰好是：
+    {"version": 2（整数）,
      "sources": {sid: {"status": ok|pending-disable|disabled, "rounds": {"YYYY-MM-DD/rN": {"suspicious": bool, "reasons": [..]}},
-                       ["status_at": ..., "status_reason": ...]}},
-     "urls": {sha256(完整 URL): {"round": "YYYY-MM-DD/rN", "reason": ..., "sid": sid 或 null, "host": 主机}},
-     "hosts": {主机: {"status": "disabled", "review": "pending-manual-review", "reason": 原文, "since": ..., "category": ...,
-                     "unrecoverable": bool, "origin": "legacy collector-hosts.json"}},
-     "legacy_imports": {旧文件 sha256: 导入时间}}
-    hosts 只来自旧 collector-hosts.json 的导入：这些主机已停用、等人工复核，不会自动恢复，也不参与 3 轮计数
-    （对它们一律不发请求，返回 host_disabled，不算可疑）；category 为 bot_check / login 的标 unrecoverable，
-    enable 默认拒绝。legacy_imports 记已导入的旧文件，人工恢复后不会因为旧文件还在而再被导入。
-    urls 只保留当前轮（写入时清掉别的轮），记的是完整 URL 的 sha256，不写 URL 本身。
-    严格读取：文件存在时 version、sources、urls、hosts、legacy_imports 都必须在且类型正确，否则 StateError（损坏不当作空状态）；
-    文件不存在 = 首次运行。损坏时 blocked() 对一切请求返回拒绝，写操作一律拒绝改写。
+                       ["status_at", "status_reason", "pending_round": 触发 pending 的轮次, "unrecoverable": bool]}},
+     "urls": {轮次: {url_key(规范化 URL): {"reason", "sid": 字符串或 null（必填）, "host", "at": 秒, "until": 秒}}},
+     "host_stops": {轮次: {主机: {"reason", "sid", "at"}}},
+     "hosts": {主机: 旧表迁移来的停用条目（status=disabled、review=pending-manual-review、reason 原文、category、unrecoverable…）},
+     "legacy_imports": {旧文件 sha256: 迁移时间}}
+    urls 与 host_stops 按轮次分别保存：写一轮不会动别的轮。URL 冷却按 until（≥24 小时）判定，过期才清理；
+    host_stops 只保留最近 KEEP_ROUNDS 个轮次。只存 URL 的 sha256，不写 URL 本身。
+    严格读取：顶层键、各条目的键与类型都必须精确匹配（多键、少键、2.0、true 都算损坏）；文件不存在 = 首次运行。
+    损坏时 blocked() 对一切请求返回拒绝，report() 抛 StateError，写操作一律拒绝改写。
     写入：fcntl 排他锁（同目录 locks/<name>.lock）内重读磁盘、只改本次条目，mkstemp + fsync + os.replace。"""
 
-    def __init__(self, path):
+    def __init__(self, path, clock=None):
         self.path = Path(path) if path else None
+        self.clock = clock or (lambda: time.time())     # 冷却按墙钟；调用时取 time.time（测试可替换）
         self.data = self._empty()
         self.error = None
         try:
@@ -776,7 +864,7 @@ class SourceHealth:
 
     @staticmethod
     def _empty():
-        return {"version": STATE_VERSION, "sources": {}, "urls": {}, "hosts": {}, "legacy_imports": {}}
+        return {"version": STATE_VERSION, "sources": {}, "urls": {}, "host_stops": {}, "hosts": {}, "legacy_imports": {}}
 
     # -- 读取与校验
     def _read(self):
@@ -786,44 +874,63 @@ class SourceHealth:
             d = strictjson.loads(self.path.read_text(encoding="utf-8"))
         except (ValueError, UnicodeDecodeError) as e:
             raise StateError(f"source health unreadable: {type(e).__name__}")
-        if not isinstance(d, dict):
-            raise StateError("source health top level must be an object")
-        for k in ("version", "sources", "urls", "hosts", "legacy_imports"):
-            if k not in d:
-                raise StateError(f"source health missing key '{k}'")
-        if d["version"] != STATE_VERSION or isinstance(d["version"], bool):
-            raise StateError(f"source health version must be {STATE_VERSION}")
-        if not all(isinstance(d[k], dict) for k in ("sources", "urls", "hosts", "legacy_imports")):
-            raise StateError("source health 'sources', 'urls', 'hosts', 'legacy_imports' must be objects")
-        for h, rec in d["hosts"].items():
-            if not h or not isinstance(rec, dict) or rec.get("status") != "disabled" or \
-                    not (isinstance(rec.get("reason"), str) and rec["reason"].strip()) or \
-                    rec.get("category") not in HOST_CATEGORIES or not isinstance(rec.get("unrecoverable"), bool):
-                raise StateError("source health host entry malformed")
-        for k, v in d["legacy_imports"].items():
-            if not re.fullmatch(r"[0-9a-f]{64}", k) or not isinstance(v, str):
-                raise StateError("source health legacy_imports entry malformed")
-        for sid, rec in d["sources"].items():
-            if not isinstance(rec, dict) or rec.get("status") not in SOURCE_STATUSES or \
-                    not isinstance(rec.get("rounds"), dict):
-                raise StateError("source health entry malformed")
-            for rid, rr in rec["rounds"].items():
-                if not _ROUND_ID.fullmatch(rid) or not isinstance(rr, dict) or \
-                        not isinstance(rr.get("suspicious"), bool) or not isinstance(rr.get("reasons"), list) or \
-                        not all(isinstance(x, str) for x in rr["reasons"]):
-                    raise StateError("source health round entry malformed")
-            if rec["status"] != "ok" and not (isinstance(rec.get("status_reason"), str) and rec["status_reason"].strip()):
-                raise StateError("non-ok source without status_reason")
-            if "unrecoverable" in rec and not isinstance(rec["unrecoverable"], bool):
-                raise StateError("source health entry malformed")
-        for k, rec in d["urls"].items():
-            if not re.fullmatch(r"[0-9a-f]{64}", k) or not isinstance(rec, dict) or \
-                    not _ROUND_ID.fullmatch(str(rec.get("round"))) or \
-                    not (isinstance(rec.get("reason"), str) and rec["reason"].strip()) or \
-                    not (rec.get("sid") is None or isinstance(rec.get("sid"), str)) or \
-                    not isinstance(rec.get("host"), str):
-                raise StateError("source health url entry malformed")
+        self.validate(d)
         return d
+
+    @staticmethod
+    def validate(d):
+        def bad(msg):
+            raise StateError(msg)
+        if not isinstance(d, dict):
+            bad("source health top level must be an object")
+        if set(d) != _TOP_KEYS:
+            bad(f"source health top-level keys must be exactly {sorted(_TOP_KEYS)}")
+        if type(d["version"]) is not int or d["version"] != STATE_VERSION:
+            bad(f"source health version must be the integer {STATE_VERSION}")
+        if not all(isinstance(d[k], dict) for k in _TOP_KEYS - {"version"}):
+            bad("source health sections must be objects")
+        for sid, rec in d["sources"].items():
+            if not sid or not isinstance(rec, dict) or not {"status", "rounds"} <= set(rec) <= _SRC_KEYS or \
+                    rec["status"] not in SOURCE_STATUSES or not isinstance(rec["rounds"], dict):
+                bad("source health entry malformed")
+            for rid, rr in rec["rounds"].items():
+                if not _ROUND_ID.fullmatch(rid) or not isinstance(rr, dict) or set(rr) != {"suspicious", "reasons"} or \
+                        not isinstance(rr["suspicious"], bool) or not isinstance(rr["reasons"], list) or \
+                        not all(isinstance(x, str) for x in rr["reasons"]):
+                    bad("source health round entry malformed")
+            if rec["status"] != "ok" and not _nonempty(rec.get("status_reason")):
+                bad("non-ok source without status_reason")
+            if rec["status"] == "pending-disable" and not _ROUND_ID.fullmatch(str(rec.get("pending_round"))):
+                bad("pending-disable source without pending_round")
+            if "unrecoverable" in rec and not isinstance(rec["unrecoverable"], bool):
+                bad("source health entry malformed")
+            for k in ("status_at", "status_reason", "pending_round"):
+                if k in rec and rec[k] is not None and not isinstance(rec[k], str):
+                    bad("source health entry malformed")
+        for rid, m in d["urls"].items():
+            if not _ROUND_ID.fullmatch(rid) or not isinstance(m, dict):
+                bad("source health urls round malformed")
+            for k, rec in m.items():
+                if not _SHA.fullmatch(k) or not isinstance(rec, dict) or set(rec) != _URL_KEYS or \
+                        not _nonempty(rec["reason"]) or not (rec["sid"] is None or _nonempty(rec["sid"])) or \
+                        not isinstance(rec["host"], str) or not _num(rec["at"]) or not _num(rec["until"]) or \
+                        rec["until"] < rec["at"] + COOLDOWN_SECONDS:
+                    bad("source health url entry malformed")
+        for rid, m in d["host_stops"].items():
+            if not _ROUND_ID.fullmatch(rid) or not isinstance(m, dict):
+                bad("source health host_stops round malformed")
+            for h, rec in m.items():
+                if not h or not isinstance(rec, dict) or set(rec) != _STOP_KEYS or not _nonempty(rec["reason"]) or \
+                        not (rec["sid"] is None or _nonempty(rec["sid"])) or not _num(rec["at"]):
+                    bad("source health host_stop entry malformed")
+        for h, rec in d["hosts"].items():
+            if not h or not isinstance(rec, dict) or not _HOST_REQ <= set(rec) <= _HOST_KEYS or \
+                    rec["status"] != "disabled" or not _nonempty(rec["reason"]) or \
+                    rec["category"] not in HOST_CATEGORIES or not isinstance(rec["unrecoverable"], bool):
+                bad("source health host entry malformed")
+        for k, v in d["legacy_imports"].items():
+            if not _SHA.fullmatch(k) or not isinstance(v, str):
+                bad("source health legacy_imports entry malformed")
 
     def refresh(self):
         if self.path:
@@ -839,18 +946,21 @@ class SourceHealth:
         return self.error
 
     # -- 查询
-    def blocked(self, sid=None):
-        """返回拒绝原因或 None：状态文件损坏 → 一律拒绝；源为 pending-disable / disabled → 拒绝。"""
+    def blocked(self, sid=None, rid=None):
+        """拒绝原因或 None：状态文件损坏 → 一律拒绝；disabled → 立即拒绝；pending-disable → 从触发轮的下一轮起拒绝
+        （rid 为空时保守拒绝）。"""
         bad = self._fresh()
         if bad:
             return f"source health invalid ({bad}); refusing requests"
         rec = self.data["sources"].get(sid) if sid else None
-        if rec and rec["status"] != "ok":
-            return f"source {rec['status']}: {rec['status_reason']}"
-        return None
+        if not rec or rec["status"] == "ok":
+            return None
+        if rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]:
+            return None                                    # 触发 pending 的那一轮照常跑完
+        return f"source {rec['status']}: {rec['status_reason']}"
 
     def host_blocked(self, host):
-        """旧表导入的停用主机（或状态文件损坏）→ 拒绝原因；否则 None。对这些主机不发任何请求（含 robots.txt）。"""
+        """旧表迁移来的停用主机（或状态文件损坏）→ 拒绝原因；否则 None。对这些主机不发任何请求（含 robots.txt）。"""
         bad = self._fresh()
         if bad:
             return f"source health invalid ({bad}); refusing requests"
@@ -860,21 +970,35 @@ class SourceHealth:
                     f"{rec['reason']}")
         return None
 
-    def url_failed(self, url, rid):
-        if not (self.path and rid) or self._fresh():
-            return None
-        rec = self.data["urls"].get(url_sha256(url))
-        return rec["reason"] if rec and rec["round"] == rid else None
+    def host_stopped(self, host, rid):
+        """本轮该主机已因可疑响应停止 → 原因；否则 None。损坏 → 拒绝原因。"""
+        bad = self._fresh()
+        if bad:
+            return f"source health invalid ({bad}); refusing requests"
+        rec = self.data["host_stops"].get(rid or "", {}).get((host or "").lower())
+        return rec["reason"] if rec else None
+
+    def url_cooling(self, url, now=None):
+        """该 URL（规范化后）在任一轮被拒且仍在冷却期 → 原因；否则 None。损坏 → 拒绝原因。"""
+        bad = self._fresh()
+        if bad:
+            return f"source health invalid ({bad}); refusing requests"
+        t = self.clock() if now is None else now
+        k = url_key(url)
+        for rid in sorted(self.data["urls"], reverse=True):
+            rec = self.data["urls"][rid].get(k)
+            if rec and rec["until"] > t:
+                return rec["reason"]
+        return None
 
     @staticmethod
-    def streak(rec):
-        """按轮次 id 倒序数连续可疑的轮数（只数该源实际跑过的轮）。"""
-        n = 0
-        for rid in sorted(rec.get("rounds", {}), reverse=True):
-            if not rec["rounds"][rid]["suspicious"]:
-                break
-            n += 1
-        return n
+    def window(rec):
+        """最近 WINDOW_ROUNDS 个记录过的轮次（新→旧）。"""
+        return sorted(rec.get("rounds", {}), reverse=True)[:WINDOW_ROUNDS]
+
+    @classmethod
+    def suspicious_in_window(cls, rec):
+        return sum(1 for r in cls.window(rec) if rec["rounds"][r]["suspicious"])
 
     # -- 写入（锁内重读）
     def _locked_update(self, fn):
@@ -890,6 +1014,7 @@ class SourceHealth:
             try:
                 d = self._read()                       # 损坏 → StateError，不改写
                 out = fn(d)
+                self.validate(d)                       # 写出前同样严格校验
                 fd, tmp = tempfile.mkstemp(prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent)
                 try:
                     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -905,18 +1030,32 @@ class SourceHealth:
             finally:
                 fcntl.flock(lk, fcntl.LOCK_UN)
 
-    def fail_url(self, url, rid, sid, reason):
-        """本轮这个 URL 失败（只影响这个 URL、只到本轮结束）。别的轮的 URL 记录顺手清掉。"""
-        key = url_sha256(url)
+    def stop(self, urls, rid, sid, reason):
+        """单次可疑：urls（实际被拒的那一跳、跳转起点等）各记一条冷却 ≥24 小时的失败记录（记在本轮名下），
+        并把这些 URL 的主机记为本轮停止。只动本轮的条目；别的轮只清理冷却已过期的 URL 记录。"""
+        if not _ROUND_ID.fullmatch(rid or ""):
+            raise ConfigError(f"bad round id {rid!r}")
+        t = float(self.clock())
 
         def upd(d):
-            d["urls"] = {k: v for k, v in d["urls"].items() if v["round"] == rid}
-            d["urls"].setdefault(key, {"round": rid, "reason": reason, "sid": sid, "host": host_of(url)})
+            for r in list(d["urls"]):
+                d["urls"][r] = {k: v for k, v in d["urls"][r].items() if v["until"] > t}
+                if not d["urls"][r] and r != rid:
+                    del d["urls"][r]
+            cur = d["urls"].setdefault(rid, {})
+            stops = d["host_stops"].setdefault(rid, {})
+            for u in urls:
+                h = host_of(u)
+                cur.setdefault(url_key(u), {"reason": reason, "sid": sid, "host": h, "at": t, "until": t + COOLDOWN_SECONDS})
+                stops.setdefault(h, {"reason": reason, "sid": sid, "at": t})
+            for old in sorted(d["host_stops"])[:-KEEP_ROUNDS]:
+                del d["host_stops"][old]
         self._locked_update(upd)
 
     def record_round(self, rid, results):
-        """results: {sid: [可疑原因, ...]}（空列表 = 该源本轮跑过且无可疑）。同一轮重复记录按「任一次可疑即可疑」合并。
-        连续可疑达到 DISABLE_AFTER_ROUNDS 且状态为 ok → 改为 pending-disable。返回 {sid: 本轮新转入 pending-disable 与否}。"""
+        """results: {sid: [可疑原因, ...]}（空列表 = 该源本轮实际请求过且无可疑）。同一轮重复记录按「任一次可疑即可疑」合并。
+        最近 WINDOW_ROUNDS 轮里可疑轮数达到 PENDING_AFTER 且状态为 ok → pending-disable（记 pending_round = 本轮）。
+        返回 {sid: 本轮新转入 pending-disable 与否}。"""
         if not _ROUND_ID.fullmatch(rid or ""):
             raise ConfigError(f"bad round id {rid!r}")
         changed = {}
@@ -929,19 +1068,20 @@ class SourceHealth:
                 rr["reasons"] = sorted(set(rr["reasons"]) | set(reasons))
                 for old in sorted(rec["rounds"])[:-KEEP_ROUNDS]:
                     del rec["rounds"][old]
-                n = self.streak(rec)
+                n = self.suspicious_in_window(rec)
                 changed[sid] = False
-                if rec["status"] == "ok" and n >= DISABLE_AFTER_ROUNDS:
-                    rec.update(status="pending-disable", status_at=now(),
-                               status_reason=f"{n} consecutive rounds with suspicious results; awaiting Grok Bot review")
+                if rec["status"] == "ok" and n >= PENDING_AFTER:
+                    rec.update(status="pending-disable", status_at=now(), pending_round=rid,
+                               status_reason=f"{n} of the last {WINDOW_ROUNDS} rounds had suspicious results; "
+                                             f"awaiting Grok Bot review")
                     changed[sid] = True
         self._locked_update(upd)
         return changed
 
     def set_status(self, sid, status, reason, allow_unrecoverable=False):
-        """人工操作：confirm-disable / disable（status=disabled，须写明确认依据）或 enable（status=ok，清空轮次计数）。
-        旧表导入且标 unrecoverable 的源：enable 默认拒绝（ConfigError），须 allow_unrecoverable 并写明依据。"""
-        if status not in SOURCE_STATUSES:
+        """人工操作：confirm-disable（status=disabled，须写明确认依据，立即生效）或 enable（status=ok，清空轮次）。
+        旧表迁移且标 unrecoverable 的源：enable 默认拒绝（ConfigError），须 allow_unrecoverable 并写明依据。"""
+        if status not in ("ok", "disabled"):
             raise ConfigError(f"bad status {status!r}")
         if status != "ok" and not (reason or "").strip():
             raise ConfigError("reason required")
@@ -954,13 +1094,22 @@ class SourceHealth:
                 d["sources"][sid] = {"status": "ok", "rounds": {}, "status_at": now(),
                                      "status_reason": reason or "manually re-enabled"}
             else:
-                rec.update(status=status, status_at=now(), status_reason=reason.strip())
+                rec.pop("pending_round", None)
+                rec.update(status="disabled", status_at=now(), status_reason=reason.strip())
         self._locked_update(upd)
 
-    def import_legacy(self, legacy_path):
-        """把旧 collector-hosts.json 的每个主机 / 源导入为「已停用、等人工复核」（不自动恢复，不参与 3 轮计数）。
-        幂等：同一份旧文件（按 sha256）只导入一次；已存在的主机条目不覆盖。旧文件不改不删。
-        返回 {"hosts": 新导入主机数, "sources": 新导入源数, "skipped": 旧文件是否已导入过}。"""
+    def legacy_pending(self, legacy_path):
+        """旧 collector-hosts.json 存在且尚未迁移（按文件 sha256）→ True。旧文件损坏 → StateError。"""
+        _, _, sha = read_legacy_hosts(legacy_path)
+        bad = self._fresh()
+        if bad:
+            raise StateError(bad)
+        return sha not in self.data["legacy_imports"]
+
+    def migrate_legacy(self, legacy_path):
+        """把旧 collector-hosts.json 的每个主机 / 源迁移为「已停用、等人工复核」（不自动恢复，不参与可疑计数）。
+        幂等：同一份旧文件（按 sha256）只迁移一次；已存在的主机条目不覆盖。旧文件不改不删。
+        返回 {"hosts": 新迁移主机数, "sources": 新迁移源数, "skipped": 旧文件是否已迁移过}。"""
         hosts, sources, sha = read_legacy_hosts(legacy_path)
         res = {"hosts": 0, "sources": 0, "skipped": False}
 
@@ -994,7 +1143,7 @@ class SourceHealth:
         return res
 
     def enable_host(self, host, reason, allow_unrecoverable=False):
-        """人工恢复旧表导入的停用主机。unrecoverable（bot_check / login）默认拒绝；须 allow_unrecoverable 且写明依据。"""
+        """人工恢复旧表迁移来的停用主机。unrecoverable（bot_check / login）默认拒绝；须 allow_unrecoverable 且写明依据。"""
         host = (host or "").lower()
 
         def upd(d):
@@ -1006,27 +1155,34 @@ class SourceHealth:
             del d["hosts"][host]
         self._locked_update(upd)
 
+    def _strict(self):
+        bad = self._fresh()
+        if bad:
+            raise StateError(bad)
+
     def host_report(self):
-        """旧表导入的停用主机（私有：只给 source_health.py report，不写进公开目录）。"""
-        self._fresh()
+        """旧表迁移来的停用主机（私有：只给 source_health.py report，不写进公开目录）。读取失败 → StateError。"""
+        self._strict()
         return [dict(rec, host=h) for h, rec in sorted(self.data["hosts"].items())]
 
     def report(self, sids=None):
-        """报告条目：所有非 ok 的源，以及连续可疑轮数 > 0 的源（观察中）。pending-disable 标明交 Grok Bot 复核。"""
-        self._fresh()
+        """报告条目：所有非 ok 的源，以及最近 WINDOW_ROUNDS 轮内有可疑轮的源（watch）。pending-disable 标明交 Grok Bot 复核。
+        读取失败 → StateError（不输出旧缓存）。"""
+        self._strict()
         out = []
         for sid, rec in sorted(self.data["sources"].items()):
             if sids is not None and sid not in sids:
                 continue
-            n = self.streak(rec)
+            n = self.suspicious_in_window(rec)
             if rec["status"] == "ok" and n == 0:
                 continue
-            recent = [{"round": r, "reasons": rec["rounds"][r]["reasons"]}
-                      for r in sorted(rec["rounds"], reverse=True)[:max(n, 1)]]
+            recent = [{"round": r, "suspicious": rec["rounds"][r]["suspicious"], "reasons": rec["rounds"][r]["reasons"]}
+                      for r in self.window(rec)]
             e = {"id": sid, "status": rec["status"] if rec["status"] != "ok" else "watch",
-                 "consecutive_suspicious_rounds": n, "threshold": DISABLE_AFTER_ROUNDS, "recent": recent}
+                 "suspicious_rounds_in_window": n, "window": WINDOW_ROUNDS, "threshold": PENDING_AFTER, "recent": recent}
             if rec["status"] == "pending-disable":
-                e.update(flag="grok-bot-review", since=rec.get("status_at"),
+                e.update(flag="grok-bot-review", since=rec.get("status_at"), pending_round=rec.get("pending_round"),
+                         effective="from the round after pending_round",
                          action="confirm-disable or enable (scripts/source_health.py)")
             elif rec["status"] == "disabled":
                 e.update(since=rec.get("status_at"), reason=rec.get("status_reason"))
@@ -1034,29 +1190,30 @@ class SourceHealth:
         return out
 
 
-def open_source_health(priv_root):
-    """打开 PRIVATE/state/source-health.json；同目录有旧 collector-hosts.json 时先导入（幂等）。
-    旧文件损坏 → StateError，调用方须拒绝运行（不能把停用的主机悄悄放开）。返回 (SourceHealth, 导入结果或 None)。"""
+def open_source_health(priv_root, clock=None):
+    """打开 PRIVATE/state/source-health.json。同目录有旧 collector-hosts.json 且尚未迁移 → StateError（拒绝运行，
+    须先 scripts/source_health.py migrate）；旧文件损坏同样 StateError。不会把旧表停用的主机悄悄放开。"""
     st = Path(priv_root) / "state"
-    h = SourceHealth(st / "source-health.json")
+    h = SourceHealth(st / "source-health.json", clock=clock)
     legacy = st / LEGACY_HOSTS_FILE
-    if not legacy.exists():
-        return h, None
     if h.error:
         raise StateError(h.error)
-    return h, h.import_legacy(legacy)
+    if legacy.exists() and h.legacy_pending(legacy):
+        raise StateError(f"legacy {LEGACY_HOSTS_FILE} not migrated; run scripts/source_health.py migrate first")
+    return h
 
 
 def review_md(date, rnd, entries, newly):
-    """pending-disable 源的当天汇报片段（capture_sources 与 fetch_primary 共用）（只含源 id、轮次与原因，不含 URL）。"""
+    """pending-disable 源的当天汇报片段（只含源 id、轮次与原因，不含 URL）。capture_sources 与 fetch_primary 共用。"""
     out = [f"# {date} round-{rnd}：待 Grok Bot 复核（pending-disable）", "",
-           "以下源连续 3 轮有可疑结果，已转为 pending-disable，下一轮起不再请求，等人工 "
-           "`scripts/source_health.py confirm-disable` 或 `enable`。请把本节写进当天 capture-failures.md 并报给 Grok Bot。", "",
-           "| 源 | 本轮新转入 | 连续可疑轮数 | 最近原因 |", "|---|---|---|---|"]
+           f"以下源最近 {WINDOW_ROUNDS} 轮里有 {PENDING_AFTER} 轮及以上可疑，已转为 pending-disable：触发轮照常跑完，"
+           "下一轮起不再请求，等人工 `scripts/source_health.py confirm-disable` 或 `enable`。"
+           "请把本节写进当天 capture-failures.md 并报给 Grok Bot。", "",
+           "| 源 | 本轮新转入 | 最近 5 轮可疑轮数 | 触发轮 | 最近原因 |", "|---|---|---|---|---|"]
     for e in entries:
-        why = "; ".join(f"{x['round']}: {', '.join(x['reasons']) or '-'}" for x in e.get("recent", []))
+        why = "; ".join(f"{x['round']}: {', '.join(x['reasons']) or '-'}" for x in e.get("recent", []) if x["suspicious"])
         out.append(f"| {e['id']} | {'是' if newly.get(e['id']) else '否（此前已转入）'} | "
-                   f"{e['consecutive_suspicious_rounds']} | {why} |")
+                   f"{e['suspicious_rounds_in_window']} | {e.get('pending_round') or '-'} | {why} |")
     return "\n".join(out) + "\n"
 
 
@@ -1121,14 +1278,16 @@ def retry_after(headers):
 class Fetcher:
     def __init__(self, state=None, interval=HOST_INTERVAL, timeout=30, opener=None, sleep=time.sleep,
                  clock=time.monotonic, max_bytes=MAX_BYTES, log=None, addr_policy=None, resolver=None,
-                 fakeip_cidr=None, lock_dir=None, round_id=None):
-        # state = SourceHealth（逐源连续可疑计数 + 本轮失败 URL）；round_id = "YYYY-MM-DD/rN"，给了才跨进程记本轮失败的 URL
+                 fakeip_cidr=None, lock_dir=None, round_id=None, wall=None, site_limits=None):
+        # state = SourceHealth（逐源可疑计数、按轮次的失败 URL 与主机停止）；round_id = "YYYY-MM-DD/rN"
         self.state = state if state is not None else SourceHealth(None)
-        self.round_id = round_id
-        self.round_failed = {}     # 本轮失败的完整 URL → 原因（本进程内）；跨进程的记录在 state.urls
+        if self.state.path and not round_id:
+            raise ConfigError("round_id required with a persistent source health state")
+        self.round_id = round_id or LOCAL_ROUND
         self.suspicious = {}       # sid（无源时为 None）→ [{"reason", "host"}]：本轮该源的可疑结果，交 record_round
-        self._robots_bad = {}      # scheme://host → 本轮 robots.txt 的可疑原因（本轮按禁止处理，不持久停用）
-        # 主机组（SEC）跨进程锁目录（私有目录）：同一时间只有一个实例在请求该组，间隔按锁文件里的时间戳控制
+        self.contacted = set()     # 本轮实际发出过请求的 sid（只有这些源记一轮；没发请求的不算正常也不算可疑）
+        self._robots_bad = {}      # scheme://host → 本轮 robots.txt 的可疑原因
+        # 跨进程锁目录（私有 state/locks）：每站限速桶 rate-site-<站点>.lock、每个 URL 的请求锁 urls/<key>.lock
         self.lock_dir = Path(lock_dir) if lock_dir else None
         interval = float(interval)
         if not math.isfinite(interval):
@@ -1136,6 +1295,7 @@ class Fetcher:
         interval = max(interval, HOST_INTERVAL)   # 每主机间隔下限 2s，不能调低
         # 地址策略强制安装，不能关闭：fakeip_cidr 缺省取环境变量（同样受 AddressPolicy 的网段限制）。
         # addr_policy 是额外策略，只能更严：两者都放行才放行。
+        self.resolver = resolver
         self._forced_policy = AddressPolicy(fakeip_cidr if fakeip_cidr is not None else os.environ.get(FAKEIP_ENV),
                                             resolver=resolver)
         self.resolver = self._forced_policy.resolver
@@ -1143,50 +1303,75 @@ class Fetcher:
         self.interval, self.timeout, self.max_bytes = interval, timeout, max_bytes
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
         self.sleep, self.clock = sleep, clock
-        self._last, self._host_interval, self._robots = {}, {}, {}
+        self.wall = wall or ((lambda: time.time()) if clock is time.monotonic else clock)   # 跨进程限速用墙钟
+        self.site_limits = dict(site_limits or {})
+        self._last, self._site_last, self._host_interval, self._robots = {}, {}, {}, {}
         self.robots_note = {}
         self.log = log or (lambda *_: None)
         self.requests = []     # (host, t) — 供测试/审计
         self.sec_ua = sec_user_agent()
         self._sink = None
-        self._group_last = {}
 
     def address_check(self, url):
         """强制策略与外部策略的合取；返回拒绝原因或 None。"""
         return AllOf(self._forced_policy, self.addr_policy)(url)
 
-    # -- 逐 URL / 逐源可疑记录
+    # -- 可疑记录：URL 冷却 + 主机本轮停止 + 源事件
     def _event(self, sid, reason, url):
         self.suspicious.setdefault(sid, []).append({"reason": reason, "host": host_of(url)})
 
-    def mark_failed(self, url, sid, reason):
-        """单次可疑响应：只让这个 URL 本轮失败（本轮内不再请求），并给 sid 记一次可疑。不停用主机或源。"""
-        self.round_failed.setdefault(url, reason)
+    def mark_failed(self, url, sid, reason, also=()):
+        """单次可疑：url（及跳转起点等 also）冷却 ≥24 小时、其主机本轮全部停止（持久，跨进程），给 sid 记一次可疑。"""
         self._event(sid, reason, url)
-        if self.state.path and self.round_id:
-            self.state.fail_url(url, self.round_id, sid, reason)
+        urls = [url] + [u for u in also if u and u != url]
+        self.state.stop(urls, self.round_id, sid, reason)
 
-    def failed_this_round(self, url):
-        return self.round_failed.get(url) or self.state.url_failed(url, self.round_id)
+    def precheck(self, url):
+        """不发请求的拦截：旧表停用主机、本轮主机已停、URL 冷却中。返回 (错误码, 原因) 或 None。都不算可疑。"""
+        host = host_of(url)
+        why = self.state.host_blocked(host)
+        if why:
+            return "host_disabled", why
+        why = self.state.host_stopped(host, self.round_id)
+        if why:
+            return "host_stopped_this_round", why
+        why = self.state.url_cooling(url)
+        if why:
+            return "url_cooldown", why
+        return None
 
-    # -- 每主机限速（所有请求都走这里）
-    def _wait(self, host, skip_group=False):
-        gap = max(self.interval, self._host_interval.get(host, 0))
-        last = self._last.get(host)
-        if last is not None:
-            w = gap - (self.clock() - last)
-            if w > 0:
-                self.sleep(w)
-        for g, ggap in RATE_GROUPS.items():      # 主机组全局限速（如 SEC 全部主机合计 ≤5 次/秒）
-            if in_group(host, g) and not skip_group:
-                gl = self._group_last.get(g)
-                if gl is not None:
-                    w = ggap - (self.clock() - gl)
-                    if w > 0:
-                        self.sleep(w)
-                self._group_last[g] = self.clock()
-        self._last[host] = self.clock()
-        self.requests.append((host, self._last[host]))
+    def _lock(self, name):
+        """跨进程排他锁（无 lock_dir 时为空操作，仅进程内）。"""
+        import contextlib
+        if not self.lock_dir:
+            return contextlib.nullcontext(None)
+
+        @contextlib.contextmanager
+        def held():
+            import fcntl
+            p = self.lock_dir / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a+") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)
+                try:
+                    yield lk
+                finally:
+                    fcntl.flock(lk, fcntl.LOCK_UN)
+        return held()
+
+    def url_lock(self, url):
+        """每个规范化 URL 一把跨进程锁：持锁后重查失败状态，请求、分类、写失败记录都在锁内完成。"""
+        return self._lock(f"urls/{url_key(url)[:40]}.lock")
+
+    # -- 每站限速（所有请求都走这里）
+    def site_gap(self, host):
+        site = site_of(host)
+        if site in self.site_limits:
+            return self.site_limits[site]
+        for g, ggap in RATE_GROUPS.items():      # SEC：公布上限 10 次/秒，这里 5 次/秒
+            if in_group(host, g):
+                return ggap
+        return SITE_INTERVAL
 
     def _raw(self, url, accept):
         host = host_of(url)
@@ -1198,40 +1383,34 @@ class Fetcher:
                 return 0, {}, b"", "not_configured", f"{SEC_UA_ENV} not set (must include contact info)"
             if not self.lock_dir:
                 return 0, {}, b"", "not_configured", "lock_dir not set (SEC requests need the cross-process rate lock)"
-        g = next((x for x in RATE_GROUPS if in_group(host, x)), None)
-        if g and self.lock_dir:
-            import fcntl
-            self.lock_dir.mkdir(parents=True, exist_ok=True)
-            with open(self.lock_dir / f"rate-{g}.lock", "a+") as lk:
-                fcntl.flock(lk, fcntl.LOCK_EX)          # 跨进程互斥：持锁直到本次请求结束
+        site = site_of(host)
+        sgap = self.site_gap(host)
+        hgap = max(self.interval, self._host_interval.get(host, 0))   # 每主机下限与 robots Crawl-delay（更严者）
+        with self._lock(f"rate-site-{site}.lock") as lk:
+            # 锁文件记 {"site": 上次站内请求时间, "hosts": {主机: 上次请求时间}}（墙钟），持锁直到本次请求结束
+            rec = {}
+            if lk is not None:
+                lk.seek(0)
                 try:
-                    # 锁文件记 {"group": 上次组内请求时间, "hosts": {主机: 上次请求时间}}（墙钟）；组间隔与单主机间隔
-                    # （含 robots Crawl-delay 更严者）都在锁内按文件里的时间执行，跨进程有效
-                    lk.seek(0)
-                    try:
-                        rec = strictjson.loads(lk.read() or "{}")
-                        if not isinstance(rec, dict):
-                            rec = {}
-                    except ValueError:
+                    rec = strictjson.loads(lk.read() or "{}")
+                    if not isinstance(rec, dict):
                         rec = {}
-                    hosts = rec.get("hosts") if isinstance(rec.get("hosts"), dict) else {}
-                    hgap = max(self.interval, self._host_interval.get(host, 0))
-                    now_ = time.time()
-                    w = max(RATE_GROUPS[g] - (now_ - float(rec.get("group") or 0)),
-                            hgap - (now_ - float(hosts.get(host) or 0)), 0)
-                    if w > 0:
-                        time.sleep(min(w, hgap))
-                    self._group_last[g] = self._last[host] = self.clock()
-                    self.requests.append((host, self._last[host]))
-                    res = self._raw_inner(url, accept, host)
-                    t = time.time()
-                    hosts[host] = t
-                    lk.seek(0); lk.truncate(); lk.write(json.dumps({"group": t, "hosts": hosts})); lk.flush()
-                    return res
-                finally:
-                    fcntl.flock(lk, fcntl.LOCK_UN)
-        self._wait(host)
-        return self._raw_inner(url, accept, host)
+                except ValueError:
+                    rec = {}
+            hosts = rec.get("hosts") if isinstance(rec.get("hosts"), dict) else {}
+            ls = [x for x in (rec.get("site"), self._site_last.get(site)) if _num(x)]
+            lh = [x for x in (hosts.get(host), self._last.get(host)) if _num(x)]
+            t0 = self.wall()
+            w = max(sgap - (t0 - max(ls)) if ls else 0, hgap - (t0 - max(lh)) if lh else 0, 0)
+            if w > 0:
+                self.sleep(w)
+            t = self.wall()
+            self._site_last[site] = self._last[host] = t
+            self.requests.append((host, t))
+            if lk is not None:
+                hosts[host] = t
+                lk.seek(0); lk.truncate(); lk.write(json.dumps({"site": t, "hosts": hosts})); lk.flush()
+            return self._raw_inner(url, accept, host)
 
     def _raw_inner(self, url, accept, host):
         ua = self.sec_ua if in_group(host, SEC_SUFFIX) and self.sec_ua else UA
@@ -1256,54 +1435,54 @@ class Fetcher:
                 pass
         if len(buf) > self.max_bytes:
             return status, headers, b"", "too_large", f">{self.max_bytes} bytes"
-        if buf and self._sink:     # 每收到一次响应（含 robots、重试中的 429/5xx）都先交给私有存档，再做任何判定
+        if buf and self._sink:     # 每收到一次响应（含 robots、3xx）都先交给私有存档，再做任何判定
             self._sink(buf, status, (headers.get("Content-Type") if headers else "") or "")
         return status, headers, buf, None, None
 
-    def _with_retry(self, url, accept, html_is_challenge=False):
-        """html_is_challenge（robots 用）：401/429/5xx 返回 HTML 视为疑似验证页，不重试，直接交回调用方（本轮按禁止）。"""
-        for attempt in range(MAX_RETRIES + 1):
+    def _fetch_once(self, url, accept):
+        """只有「没收到任何 HTTP 响应」的网络错误才重试（最多 NET_RETRIES 次、指数退避）。
+        收到任何 HTTP 状态（含 429、5xx）都不重发：429 计可疑并停止该主机本轮。"""
+        for attempt in range(NET_RETRIES + 1):
             st, h, body, ec, det = self._raw(url, accept)
-            ct = ((h or {}).get("Content-Type") or "")
-            challenged = st in (401, 403) or classify_page(ct, body, h, url) is not None
-            if html_is_challenge and suspect_status(st) and body and looks_html(h, body):
-                challenged = True     # robots 的 401/429/5xx HTML：不重试（本轮按禁止处理，不停用）
-            retryable = (ec == "network" or st == 429 or 500 <= st < 600) and not challenged
-            if not retryable or attempt == MAX_RETRIES:
-                return st, h, body, ec, det
-            wait = retry_after(h)
-            if wait is None:
-                wait = min(BACKOFF_CAP, BACKOFF_BASE * (2 ** attempt))
-            elif wait > BACKOFF_CAP:
-                return st, h, body, "retry_after_too_long", f"{int(wait)}s"
-            self.sleep(wait)
-        return st, h, body, ec, det
+            if ec != "network" or attempt == NET_RETRIES:
+                return st, h or {}, body, ec, det
+            self.sleep(min(BACKOFF_CAP, BACKOFF_BASE * (2 ** attempt)))
+        return st, h or {}, body, ec, det
 
-    # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速）
+    @staticmethod
+    def _classify(st, h, body, url, robots=False):
+        """可疑分类：401/403/429 先按状态码；再看验证页（vendor / phrase）；跳转到登录页 → login_wall。"""
+        pre = "robots_" if robots else ""
+        if st in (401, 403, 429):
+            return f"{pre}http_{st}"
+        kind = classify_page((h or {}).get("Content-Type") or "", body, h, url)
+        if kind == "vendor":
+            return f"{pre}challenge"
+        if kind == "phrase":
+            return f"{pre}suspected_challenge"
+        if st in REDIRECT_CODES and (h or {}).get("Location") and is_login_url(urljoin(url, h["Location"])):
+            return f"{pre}login_wall"
+        return None
+
+    # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速、同样受主机停止与 URL 冷却约束）
     def _disallow_all(self):
         rp = urllib.robotparser.RobotFileParser()
         rp.disallow_all = True
         return rp
 
     def robots(self, url, sid=None):
-        """robots.txt 自身的每一跳也逐跳校验（审查 r2）：scheme、t.co 拒绝、跨主机跳转一律按禁止处理
-        （不拿别处的 robots 当本站许可）。robots 返回 401/403 或验证页 → 只让 robots.txt 这个 URL 本轮失败，
-        本轮按禁止处理（不请求该站正文），给 sid 记一次可疑；不持久停用主机。"""
+        """robots.txt 自身的每一跳也逐跳校验：scheme、t.co 拒绝、跨主机跳转一律按禁止处理。
+        robots 返回 401/403/429、验证页或跳登录页 → 与正文相同：该主机本轮全部停止、robots.txt 冷却，给 sid 记一次可疑。"""
         p = urlsplit(url)
         host = (p.hostname or "").lower()
         base = f"{p.scheme}://{p.netloc}"
-        if self.state.blocked(sid) or self.state.host_blocked(host):   # 状态损坏 / 源非 ok / 旧表停用主机：不发请求
-            return self._disallow_all()
+        if self.state.blocked(sid, self.round_id) or self.precheck(base + "/robots.txt"):
+            return self._disallow_all()               # 状态损坏 / 源停用 / 旧表停用 / 本轮主机已停 / 冷却中：不发请求
         if base in self._robots:
             return self._robots[base]
         rp = urllib.robotparser.RobotFileParser()
-        cur = base + "/robots.txt"
-        prev = self.failed_this_round(cur)       # 别的进程本轮已判可疑：本轮按禁止，不再请求
-        if prev:
-            self._robots_bad[base] = prev
-            self._robots[base] = self._disallow_all()
-            return self._robots[base]
-        st, ec, body, h = 0, "too_many_redirects", b"", {}
+        start = cur = base + "/robots.txt"
+        st, ec, body, h, bad = 0, "too_many_redirects", b"", {}, None
         for hop in range(MAX_REDIRECTS + 1):
             if hop:
                 q = urlsplit(cur)
@@ -1314,18 +1493,21 @@ class Fetcher:
                     st, ec = 0, "robots_redirect_refused_host"; break
                 if qh != host:
                     st, ec = 0, "robots_cross_host_redirect"; break
-                if self.failed_this_round(cur):
-                    st, ec = 0, "robots_redirect_failed_url"; break
+                if self.precheck(cur):
+                    st, ec = 0, "robots_redirect_blocked"; break
             why = self.address_check(cur)          # 每一跳 robots 请求前都过强制策略 + 外部策略
             if why:
                 st, ec, body, h = 0, "robots_blocked_address", b"", {}; break
-            st, h, body, ec, _ = self._with_retry(cur, "text/plain,*/*", html_is_challenge=True)
-            h = h or {}
-            if st in (401, 403):
-                break                    # 先按状态码，不看正文
-            kind = classify_page(h.get("Content-Type") or "", body, h, cur)
-            if kind:
-                break                    # 再查验证页（含带验证内容的 3xx），不再跟随 Location
+            with self.url_lock(cur):
+                if self.precheck(cur):              # 持锁后重查（别的进程可能刚停了该主机）
+                    st, ec = 0, "robots_redirect_blocked"; break
+                st, h, body, ec, _ = self._fetch_once(cur, "text/plain,*/*")
+                if ec != "host_disabled" and not (ec == "not_configured"):
+                    self.contacted.add(sid)
+                bad = self._classify(st, h, body, cur, robots=True)
+                if bad:                             # 锁内写失败记录：robots.txt（及起点）冷却、主机本轮停止
+                    self.mark_failed(cur, sid, bad, also=(start,))
+                    break
             if st in REDIRECT_CODES:
                 loc = h.get("Location")
                 if not loc:
@@ -1334,18 +1516,7 @@ class Fetcher:
                 st, ec = 0, "too_many_redirects"
                 continue
             break
-        kind = classify_page(h.get("Content-Type") or "", body, h, cur)
-        bad = None
-        if st in (401, 403):            # 先按状态码（不论正文）
-            bad = f"robots_http_{st}"
-        elif kind == "vendor":
-            bad = "robots_challenge"
-        elif kind == "phrase":
-            bad = "robots_suspected_challenge"
-        if bad:                          # 只让 robots.txt 这个 URL 本轮失败；本轮按禁止；不持久停用
-            self.mark_failed(cur, sid, bad)
-            if cur != base + "/robots.txt":
-                self.round_failed.setdefault(base + "/robots.txt", bad)
+        if bad:
             self._robots_bad[base] = bad
             self.robots_note[base] = f"{bad} (HTTP {st})"
             rp.disallow_all = True
@@ -1361,7 +1532,7 @@ class Fetcher:
                 self._host_interval[host] = stricter
         elif st in (404, 410) and not ec:
             rp.allow_all = True
-        else:                     # 5xx/429/网络错误/跳转被拒 → 本轮按禁止处理
+        else:                     # 5xx/网络错误/跳转被拒 → 本轮按禁止处理
             rp.disallow_all = True
         self._robots[base] = rp
         return rp
@@ -1377,12 +1548,12 @@ class Fetcher:
             self._sink = prev
 
     def _get(self, url, sid, accept):
-        """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、源状态、本轮失败 URL、robots 与限速。
-        可疑响应（401/403、厂商验证页、只命中短语的疑似验证页）只让该 URL（及最初请求的 URL）本轮失败，记一次可疑；
-        不重试、不跟随 Location、不持久停用。Result.hops 只持有 public_url；final_url 为完整 URL，仅供内存内核对。"""
-        why = self.state.blocked(sid)
-        if why:
-            return Result(False, final_url=url, error="source_blocked", detail=why)
+        """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、旧表停用、源状态、本轮主机停止、URL 冷却、robots 与限速。
+        sid 可以是函数（按每一跳的主机给出伪源 id，如 fetch_primary 的 primary:<主机>）。
+        可疑响应（401/403/429、验证页、跳登录页）：该跳与起点 URL 冷却 ≥24 小时、该主机本轮全部停止，给该跳的 sid 记一次可疑；
+        不重试、不跟随 Location。「查失败记录—发请求—写记录」在同一把按 URL 的跨进程锁里完成。
+        Result.hops 只持有 public_url；final_url 为完整 URL，仅供内存内核对。"""
+        sid_of = sid if callable(sid) else (lambda _h, _s=sid: _s)
         hops, cur = [], url
         for _ in range(MAX_REDIRECTS + 1):
             p = urlsplit(cur)
@@ -1391,13 +1562,13 @@ class Fetcher:
                 return Result(False, final_url=cur, hops=hops, error="bad_url")
             if host in REFUSED_HOSTS:
                 return Result(False, final_url=cur, hops=hops, error="refused_host")
-            why = self.state.host_blocked(host)
-            if why:                       # 旧表导入的停用主机：不发请求，不算可疑（不参与 3 轮计数）
-                return Result(False, final_url=cur, hops=hops, error="host_disabled", detail=why)
-            prev = self.failed_this_round(cur)
-            if prev:                      # 本轮已判可疑的 URL：本轮绝不再请求
-                self._event(sid, "url_failed_this_round", cur)
-                return Result(False, final_url=cur, hops=hops, error="url_failed_this_round", detail=prev)
+            esid = sid_of(host)
+            why = self.state.blocked(esid, self.round_id)
+            if why:
+                return Result(False, final_url=cur, hops=hops, error="source_blocked", detail=why)
+            pre = self.precheck(cur)
+            if pre:                       # 旧表停用 / 本轮主机已停 / URL 冷却：不发请求，不算可疑
+                return Result(False, final_url=cur, hops=hops, error=pre[0], detail=pre[1])
             if in_group(host, SEC_SUFFIX) and not self.sec_ua:   # 未配置 SEC UA：不发请求，不算可疑
                 return Result(False, final_url=cur, hops=hops, error="not_configured",
                               detail=f"{SEC_UA_ENV} not set (must include contact info)")
@@ -1407,43 +1578,38 @@ class Fetcher:
             why = self.address_check(cur)   # 每一跳、子 sitemap 都在任何请求前检查
             if why:
                 return Result(False, final_url=cur, hops=hops, error="blocked_address", detail=why)
-            if not self.allowed(cur, sid):
-                why = self.state.blocked(sid)
-                if why:
-                    return Result(False, final_url=cur, hops=hops, error="source_blocked", detail=why)
+            if not self.allowed(cur, esid):
                 bad = self._robots_bad.get(f"{p.scheme}://{p.netloc}")
-                if bad:                   # robots.txt 本轮可疑：该站本轮按禁止，给本源记一次可疑
-                    if not any(e["reason"] == bad and e["host"] == host for e in self.suspicious.get(sid, [])):
-                        self._event(sid, bad, cur)
+                if bad:                   # robots.txt 可疑：该主机本轮已停
                     return Result(False, final_url=cur, hops=hops, error=bad, detail=self.robots_note.get(
                         f"{p.scheme}://{p.netloc}"))
+                pre = self.precheck(cur) or (("source_blocked", why) if (why := self.state.blocked(esid, self.round_id))
+                                             else None)
+                if pre:
+                    return Result(False, final_url=cur, hops=hops, error=pre[0], detail=pre[1])
                 return Result(False, final_url=cur, hops=hops, error="robots_disallow")
-            st, h, body, ec, det = self._with_retry(cur, accept)
-            ctype = (h.get("Content-Type") if h else "") or ""
-            # 原字节已在 _raw 里交给 raw_sink；每一跳先按状态码，再判正文，最后处理 Location
-            bad = None
-            if st in (401, 403):
-                bad = f"http_{st}"
-            else:
-                kind = classify_page(ctype, body, h, cur)
-                if kind == "vendor":
-                    bad = "challenge"
-                elif kind == "phrase":
-                    bad = "suspected_challenge"
-            if bad:
-                self.mark_failed(cur, sid, bad)
-                if cur != url:
-                    self.round_failed.setdefault(url, bad)
-                return Result(False, st, ctype, b"", cur, hops, bad)
+            with self.url_lock(cur):
+                pre = self.precheck(cur)  # 持锁后重查：别的进程可能刚记下该 URL 或停了该主机
+                if pre:
+                    return Result(False, final_url=cur, hops=hops, error=pre[0], detail=pre[1])
+                st, h, body, ec, det = self._fetch_once(cur, accept)
+                if ec not in ("host_disabled", "not_configured"):
+                    self.contacted.add(esid)
+                ctype = h.get("Content-Type") or ""
+                # 原字节已在 _raw 里交给 raw_sink；每一跳先按状态码，再判正文与登录跳转，最后处理 Location
+                bad = None if ec else self._classify(st, h, body, cur)
+                if bad:                   # 锁内写失败记录：该跳与起点冷却、主机本轮停止
+                    self.mark_failed(cur, esid, bad, also=(url,))
+                    return Result(False, st, ctype, b"", cur, hops, bad)
+            if ec:
+                return Result(False, st, ctype, b"", cur, hops, ec, det)
             if st in REDIRECT_CODES:
-                loc = h.get("Location") if h else None
+                loc = h.get("Location")
                 if not loc:
                     return Result(False, st, final_url=cur, hops=hops, error="redirect_without_location")
                 hops.append({"from": public_url(cur), "query_param_count": query_count(cur), "status": st})   # hops 只存脱敏 URL
                 cur = urljoin(cur, loc)
                 continue
-            if ec:
-                return Result(False, st, ctype, b"", cur, hops, ec, det)
             if st == 200:
                 return Result(True, st, ctype, body, cur, hops)
             return Result(False, st, ctype, b"", cur, hops, f"http_{st}")

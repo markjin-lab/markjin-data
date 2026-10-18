@@ -3,11 +3,12 @@
 Contract: scrape(fetch, url, date) -> list of {"title", "url", "date"} (newest first, <=50).
 `fetch(url)` is provided by capture_sources.run_scraper -> (status, ctype, body, err). Every call
 (list page, each sub-sitemap) goes through markjin.collect.Fetcher: honest UA, robots.txt and
-source state and this round's failed URLs re-checked on every request and redirect hop, per-host rate limit, t.co refused,
+source state, disabled/stopped hosts and URL cooldowns re-checked on every request and redirect hop, per-site rate limit, t.co refused,
 and the raw response bytes are archived privately (MANIFEST) before the scraper sees them.
 Scrapers never open network connections themselves. No cookies, no JS, no challenge handling: a challenge
-page is detected by the Fetcher (that URL fails for this round and counts as one suspicious result for the
-source; 3 consecutive suspicious rounds -> pending-disable, reported for review) and surfaces here as err -> ScrapeError.
+page is detected by the Fetcher (the host is stopped for this round, the URL cools down >= 24h, and it counts as one
+suspicious result for the source; 3 suspicious rounds in the last 5 -> pending-disable from the next round, reported for
+review) and surfaces here as err -> ScrapeError.
 """
 import importlib, sys
 from pathlib import Path
