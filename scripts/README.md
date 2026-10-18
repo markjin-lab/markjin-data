@@ -231,14 +231,24 @@
 
 出处：王总 10-18 13:50 决定切回正常模式、恢复 #3/#6（14:15 改为立即生效）；封锁细则由 Grok Bot 定，10-18 13:51 初版，15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。
 
-- **可疑响应**：HTTP 401/403、429、验证页（`classify_page` 返回 `vendor` 或 `phrase`）、登录墙（跳到登录页 `is_login_url`；或不跳转、含 200 的登录页 `login_page`，只看结构特征：`<title>` 含 sign in / log in / login / password、`<form>` 里有密码框、form action 指向 login / signin / auth、`<form>` 内可见文字含这些词——密码框 + 登录标题，或登录标题 + 登录 action，或密码框 + 登录 action + 表单内登录词且表单外正文很短；也认无密码（邮箱 / magic link）登录表单，以及没有表单、只有登录链接加登录提示语（please sign in to continue 等）或登录标题的短中间页；扫描整个正文，不截断；词按边界匹配，「FRED Blog Index」不算；不对全文做单词匹配，FRED 页面的 `id="signin-wrap"`、侧栏登录框、订阅邮箱框不算）、rss/api 格式校验不通过。robots.txt、每一跳重定向、正文一视同仁。收到任何 HTTP 状态都不重发（429、5xx 也不重试）；只有没收到响应的网络错误有限重试（`NET_RETRIES`）。
+- **可疑响应**：HTTP 401/403、429、验证页（`classify_page` 返回 `vendor` 或 `phrase`）、登录墙（跳到登录页 `is_login_url`；或不跳转、含 200 的登录页 `login_page`，只看结构特征：`<title>` 含 sign in / log in / login / password、`<form>` 里有密码框、form action 指向 login / signin / auth、`<form>` 内可见文字含这些词——密码框 + 登录标题，或登录标题 + 登录 action，或密码框 + 登录 action + 表单内登录词且表单外正文很短；也认无密码（邮箱 / magic link）登录表单，以及没有表单、只有登录链接加登录提示语（please sign in to continue 等）或登录标题的短中间页；扫描整个正文，不截断；词按边界匹配，「Data Blog Index」不算；不对全文做单词匹配，数据页面常见的 `id="signin-wrap"`、页眉「Sign in」链接、侧栏登录框、订阅邮箱框不算）、rss/api 格式校验不通过。robots.txt、每一跳重定向、正文一视同仁。收到任何 HTTP 状态都不重发（429、5xx 也不重试）；只有没收到响应的网络错误有限重试（`NET_RETRIES`）。
 - **门禁不可绕过**：`collect.check_gates()` 在建 Fetcher 和每次发送前核对限速、冷却、窗口、重试、跳转上限、拒绝主机、可疑分类这些常量，运行时被调松 → `ConfigError`，不发请求；自带 opener 只收 urllib `OpenerDirector` 原类且只装 `_NoRedirect`（子类、会跟随跳转的处理器、cookie 处理器、改写 `open` 一律拒绝）；任何 opener 返回的响应 URL 不是请求的 URL（自己跟随了跳转）→ `opener_redirected`，丢弃正文。入口脚本不自带 opener、不改门禁常量（有测试）。
 - **规则 1，单次即停该主机**：一次可疑 → 该主机本轮全部停止（私有 `state/source-health.json` 的 `host_stops.<轮次>.<主机>`，跨进程生效），同主机的其他 URL、其他源本轮都不再请求（`host_stopped_this_round`，列入 `skipped-<run>.json`，不另算可疑）。
 - **规则 2，URL 冷却 ≥24 小时**：被拒的 URL 记入 `urls.<轮次>`（只存规范化 URL 的 sha256：scheme、主机小写，去默认端口，空路径补 `/`，去 fragment），24 小时内任何轮次都不再请求（`url_cooldown`）。经重定向时，最初请求的 URL 和返回可疑响应的那一跳都记冷却；但本轮停止的只是返回可疑响应那一跳的主机，起点主机不停（r15 ⑤：doi.org 跳到出版商 403，同轮其他 DOI 照常）。记录按轮次分开存，补跑 r1 不会清掉 r2 的记录；只保留最近 10 轮。查记录、发请求、写记录在同一把按 URL 的跨进程文件锁内完成（`state/locks/urls/`），两个进程不会同时请求同一 URL；rss/api 格式校验也在锁内（r15 ④）。站点限速锁里等待结束后、发送之前重跑完整预检（旧表停用、源状态、本轮主机停止、URL 冷却），可疑分类与停止写入也在站点限速锁内完成，「写停止」与同站「发请求」互斥（r15 ①）。超过 25 MiB 的 401/403/429 先按状态码判可疑、停主机，再报 `too_large`（r15 ③）。
-  - **来源级扩展（Grok Bot 15:22 规则之外的扩展，待 Grok Bot 决定；不是 15:22 规则本身）**：同一来源只要还有未到期的 URL 冷却记录，**从下一轮起整个来源都不请求**（`source_blocked`，原因 `source cooldown:<代码>`），不只那个 URL；触发的那一轮不受此限（同主机已按规则 1 停止），直到最晚的冷却记录到期。口径：
-    - 主机 → 来源：`capture_sources` 按 `sources.yaml` 各源 `url` 的主机建表；请求带的来源与主机所属来源冲突 → 拒绝（`source_mismatch`，不发请求）；表里没有的主机（跳转目标、CDN）不推断。冷却记录属于记录里的来源（请求时已核对）；没有来源的记录按主机推出。`fetch_primary` 的伪来源本来就是 `primary:<主机>`。
-    - 24 小时从收到可疑响应、写下记录的时刻起算；记录在私有 `state/source-health.json`，跨运行持久。
-    - URL 规范化：scheme、主机小写，去默认端口、用户信息、fragment，并去掉 API key / token / 签名等凭据类查询参数（`collect.cooldown_identity`）；换一把 key 不能绕过冷却，状态文件里也不留 key。
+  - **来源级冷却（Grok Bot 2026-10-18 18:12 SGT 采纳）**：同一来源只要还有未到期的 URL 冷却记录，**从下一轮起整个来源都不请求**（`source_blocked`，原因 `source cooldown:<代码>`），不只那个 URL；触发的那一轮不受此限（同主机已按规则 1 停止），直到最晚的冷却记录到期。
+    - ① 来源 → 主机：代码里只有一份对照表 `collect.SOURCE_HOSTS`（只收 sources.yaml 已批准的主机，不借此新增来源）：
+
+      | 来源 | 主机 | sources.yaml 里的 id |
+      |---|---|---|
+      | `arxiv` | rss.arxiv.org | arxiv-cs-ai、arxiv-cs-lg、arxiv-gr-qc、arxiv-hep-th、arxiv-quant-ph |
+      | `federalreserve` | www.federalreserve.gov | fed-press-monetary、fed-prates |
+      | `clinicaltrials` | clinicaltrials.gov | ctgov-recent、ctgov-bci |
+      | `fda` | www.fda.gov、api.fda.gov | fda-biologics、openfda-510k |
+
+      表里一个来源的任一主机被拒 → 下一轮起该来源所有主机、落在这些主机上的所有 id 都不请求。不在表里的主机，来源就是 sources.yaml 的 id（`fetch_primary` 是 `primary:<主机>`）。另外 `capture_sources` 按各 id 的 url 主机建 `host_sources`：请求带的 id 与主机所属 id 冲突 → 拒绝（`source_mismatch`，不发请求）。
+    - ② 24 小时从判定为被拒 / 可疑、写下记录的时刻起算（收到响应并判定之后取时钟，不是发送之前；慢响应不会缩短冷却）。
+    - ③ 跨运行：记录在私有 `state/source-health.json`，新进程、下一轮都从磁盘读。
+    - ④ URL 比对：scheme、主机小写，去默认端口、用户信息、fragment，并去掉 API key / token / 签名 / session 等凭据类查询参数（`collect.cooldown_identity`）；换一把 key 不能绕过冷却，状态文件里也不留 key。
     - 多进程：在跨进程站点限速锁内、限速等待之后、发送之前从磁盘重读状态，重新核对来源冷却（与规则 2 的完整预检同一处）。
 - **规则 3，5 轮 3 轮 → pending-disable**：每轮结束，`capture_sources` 只给本轮实际发过请求的源记一轮（轮次 id `YYYY-MM-DD/rN`；同一轮重跑按「任一次可疑即可疑」合并）。最近 5 个记录轮里有 3 轮可疑（不要求连续）→ `pending-disable`，**从下一轮起**生效：触发的那一轮照常跑完，下一轮起该源不再请求（`source_blocked`），每轮报告继续列出。被主机停止、冷却、停用跳过而没发请求的源不记轮。
 - **当天汇报显眼可见**：当轮有 pending-disable 的源时写 `source-health-<run>.json`（条目带 `flag: grok-bot-review`）和 `GROK-BOT-REVIEW-<run>.md`（公开源写公开目录、internal_only 源写内部目录；列源 id、是否本轮新转入、最近 5 轮可疑轮数、触发轮、最近原因，不含 URL）；stderr 末尾打一行 `=== 待 Grok Bot 复核（pending-disable）N 个源：… ===`，最后一行 `done: … pending_disable=N`。写当天 `capture-failures.md` 时照抄，报给 Grok Bot，等人工确认。
