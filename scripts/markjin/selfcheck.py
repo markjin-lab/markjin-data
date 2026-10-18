@@ -987,7 +987,7 @@ def _neg_parity_ok(claim, loc, kind=None):
        - 普通文本（r5，审查 r4 HIGH）：在原文里找同时含这些数字、代号和对象词的最小连续分句窗口；
          窗口不唯一或找不到 → 错配（不再退回整段，避免把 A 的否定配给 B）；
        - FRED（kind == "fred"）：片段是“字段,数值”式，仍允许没有单句含全部关键项时按整个片段比较；多句都配得上 → 错配。
-       其余分句与整个片段比。
+       不含数字和代号的分句合起来，与原文去掉已配对窗口后的剩余部分比（r5，dry run 发现）。
     3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、从未、hardly、yet to 等计为否定）。
        审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed…）不计否定，出现就提示 support_hedge
        （R-SUPPORT-HEDGE）；但配对的原文窗口带审慎说法而整条断言没有，或断言分句带审慎说法而整个片段没有 → 错配；“难以置信”“无与伦比”“从未如此”“never before”等固定说法不算否定（r5，审查 r4 MEDIUM）。"""
@@ -1002,16 +1002,19 @@ def _neg_parity_ok(claim, loc, kind=None):
     if claim_hedged or loc_hedged:
         hints.add("support_hedge")
     lclauses = numnorm.clauses(loc) or [loc]
+    rest_claim, rest_loc = [], loc
     for cc in numnorm.clauses(claim) or [claim]:
         keys_n = numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(cc)[0]))
         keys_t = [t.lower() for t in claim_terms(cc)]
         objs = [w for w in _OBJ_RE.findall(cc) if _has_word(w, loc)]
+        if not (keys_n or keys_t):
+            rest_claim.append(cc)          # 不含数字和代号的分句：放到最后与原文剩余部分一起比
+            continue
+
         def has_all(seg):
             return (keys_n <= numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(seg)[0]))
                     and all(t in seg.lower() for t in keys_t) and all(_has_word(w, seg) for w in objs))
-        if not (keys_n or keys_t):
-            target = loc
-        elif kind == "fred":
+        if kind == "fred":
             cands = [lc for lc in lclauses if has_all(lc)]
             if len(cands) > 1:
                 return False, hints          # 多句都配得上，分不清对象 → 错配
@@ -1021,6 +1024,7 @@ def _neg_parity_ok(claim, loc, kind=None):
             if len(wins) != 1:
                 return False, hints          # 配不上或配出多个窗口，分不清对象 → 错配
             target = wins[0]
+            rest_loc = rest_loc.replace(target, " ", 1)
         cc_main, cc_h = _neg_main(cc)
         tg_main, tg_h = _neg_main(target)
         if numnorm.neg_count(cc_main) % 2 != numnorm.neg_count(tg_main) % 2:
@@ -1028,6 +1032,16 @@ def _neg_parity_ok(claim, loc, kind=None):
         # 审慎说法不计否定，但不能凭空丢掉或加上：配对的原文窗口带审慎说法而整条断言没有（“尚待验证”写成“已经验证”），
         # 或断言分句带审慎说法而整个片段没有 → 错配
         if tg_h and not claim_hedged or cc_h and not loc_hedged:
+            return False, hints
+    # r5（dry run 发现）：不含数字和代号的分句合在一起，与原文去掉已配对窗口后的剩余部分比否定奇偶。
+    # 以前是每个这样的分句各自与整个片段比，原文别处有一个否定（如 “but they had no cause to intervene”）
+    # 就会把断言里不含否定的分句全判错配。
+    if rest_claim:
+        rc, rc_h = _neg_main("，".join(rest_claim))
+        rl, rl_h = _neg_main(rest_loc)
+        if numnorm.neg_count(rc) % 2 != numnorm.neg_count(rl) % 2:
+            return False, hints
+        if rc_h and not loc_hedged or rl_h and not claim_hedged:
             return False, hints
     return True, hints
 

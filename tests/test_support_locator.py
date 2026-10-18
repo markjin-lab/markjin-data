@@ -451,3 +451,15 @@ class WithoutScopeHint(Base):
         r = run(T + arxiv_line("模型无需微调即在 MMLU 上达到 90% 准确率。", locator=self.LOC), repo=custom_repo(self.LOC))
         self.expect(r, "PASS", absent=("R-SUPPORT-SCOPE",))
 
+
+class KeylessClauseR5(Base):
+    """#32 r5（dry run 发现）：不含数字和代号的分句合起来与原文剩余部分比否定，不再各自与整个片段比。"""
+    def test_both_sides_negated_passes(self):
+        loc = "Researchers could watch the run on a live dashboard and pause or stop it at any time, but they had no cause to intervene."
+        r = run(T + arxiv_line("Researchers could pause or stop the run at any time from a live dashboard, but had no cause to intervene.", locator=loc), repo=custom_repo(loc))
+        self.expect(r, "PASS", absent=("E-SUPPORT-LOCATOR-MISMATCH",))
+
+    def test_negation_only_in_claim_blocks(self):
+        loc = "Researchers could watch the run on a live dashboard and pause or stop it at any time, and they did intervene."
+        r = run(T + arxiv_line("Researchers could pause or stop the run at any time, but had no cause to intervene.", locator=loc), repo=custom_repo(loc))
+        self.expect(r, "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
