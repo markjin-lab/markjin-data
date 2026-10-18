@@ -6,7 +6,7 @@ from . import check_body
 
 def scrape(fetch, url, date):
     st, ct, body, err = fetch(url)
-    s = check_body(st, body, err).decode("utf-8", "replace")
+    s = check_body(st, body, err, ct).decode("utf-8", "replace")
     out = []
     for blk in re.findall(r"<url>(.*?)</url>", s, re.S):
         loc = re.search(r"<loc>([^<]+)</loc>", blk)

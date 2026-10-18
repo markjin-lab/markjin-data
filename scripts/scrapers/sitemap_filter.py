@@ -34,7 +34,7 @@ def _parse(body):
 
 def _entries(fetch, url, depth=0):
     st, ct, body, err = fetch(url)
-    root = _parse(check_body(st, body, err))
+    root = _parse(check_body(st, body, err, ct))
     if root.tag == INDEX:
         if depth >= MAX_DEPTH:              # 嵌套超限：报错，不当成 0 条
             raise ScrapeError(f"sitemap index nested deeper than {MAX_DEPTH}")

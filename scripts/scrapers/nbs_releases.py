@@ -7,7 +7,7 @@ from . import check_body, ScrapeError
 
 def scrape(fetch, url, date):
     st, ct, body, err = fetch(url)
-    s = check_body(st, body, err).decode("utf-8", "replace")
+    s = check_body(st, body, err, ct).decode("utf-8", "replace")
     seen, out = set(), []
     for href, _, title in re.findall(r'<a[^>]+href="(\./\d{6}/t(\d{8})_\d+\.html)"[^>]*title=\'([^\']+)\'', s):
         u = urljoin(url, href)

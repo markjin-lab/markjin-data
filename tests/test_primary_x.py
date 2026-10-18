@@ -1373,7 +1373,8 @@ class BlockRule1522Primary(unittest.TestCase):
         self.assertIn(self.RSS, calls)
         rc, err, calls = self.fp("2026-10-12", 2, routes, now=self.T0 + 3600)   # 但被拒文章 24 小时内仍冷却
         self.assertNotIn(self.ART, calls)
-        self.assertEqual(self.last_index("2026-10-12")[0]["fetch_status"], "url_cooldown")
+        # 来源级冷却（补充口径）：primary 的伪源按主机（primary:<主机>），该主机 24 小时内整源不请求
+        self.assertEqual(self.last_index("2026-10-12")[0]["fetch_status"], "source_blocked")
         rc, err, calls = self.fp("2026-10-13", 1, routes, now=self.T0 + self.DAY)   # 24 小时后才可再请求一次
         self.assertEqual(calls.count(self.ART), 1)
 
@@ -1550,6 +1551,36 @@ class R15Primary(Primary):
         self.assertEqual(idx[0]["stored"], None)                                    # 登录页不当文章存成功
         self.assertTrue(collect.SourceHealth(self.base / "st.json").data["sources"]["primary:pub.org"]["rounds"][
             "2026-10-12/r1"]["suspicious"])
+
+    FRED_LIKE = (b'<html><head><title>Federal Funds Effective Rate (FEDFUNDS) | FRED</title></head><body>'
+                 b'<div id="signin-wrap" class="signin"><a href="/login">Sign In</a></div>'
+                 b'<form action="/searchresults"><input name="st"></form><h1>Federal Funds Effective Rate</h1><p>'
+                 + b"Observation data. " * 80 + b'</p></body></html>')
+    LOGIN_ACTION = (b'<html><head><title>Example Research</title></head><body><form action="/users/sign_in" method="post">'
+                    b'<h2>Log in to continue</h2><input name="u"><input type="password" name="p"></form></body></html>')
+
+    # ---- 补充：fetch_primary 不只看状态码：200 登录墙（结构特征）停主机、冷却 URL；FRED 式页面不误伤
+    def test_r15_fetch_primary_structural_login_wall_and_fred_negative(self):
+        st = collect.SourceHealth(self.base / "st.json")
+        items, idx, f = self.run_fp([{"id": "1", "expanded_url": "https://pub.org/a"},
+                                     {"id": "2", "expanded_url": "https://fred.org/series/X"}],
+                                    {"https://pub.org/a": Resp(200, self.LOGIN_ACTION, self.HTML),
+                                     "https://fred.org/series/X": Resp(200, self.FRED_LIKE, self.HTML)}, state=st)
+        self.assertEqual([x["fetch_status"] for x in items], ["login_wall", "fetched"])
+        h = collect.SourceHealth(self.base / "st.json")
+        self.assertEqual(set(h.data["host_stops"]["2026-10-12/r1"]), {"pub.org"})
+        self.assertTrue(h.url_cooling("https://pub.org/a", h.clock()))
+
+    # ---- 补充：scrapers.check_body 也认 200 登录墙（第二道检查），不误伤 FRED 式页面
+    def test_r15_scrapers_check_body_login_wall(self):
+        import scrapers
+        for body in (self.LOGIN, self.LOGIN_ZH, self.LOGIN_ACTION):
+            with self.assertRaisesRegex(scrapers.ScrapeError, "login wall"):
+                scrapers.check_body(200, body, None, "text/html")
+            with self.assertRaisesRegex(scrapers.ScrapeError, "login wall"):
+                scrapers.check_body(200, body, None)                       # 没有 Content-Type 也按 HTML 形态判
+        for body in (self.FRED_LIKE, self.ARTICLE, b"<urlset><url><loc>https://a.org/x</loc></url></urlset>"):
+            self.assertEqual(scrapers.check_body(200, body, None, "text/html"), body)
 
     # ---- MEDIUM：健康状态更新失败 → 返回非 0
     def test_r15_fetch_primary_health_update_failure_nonzero(self):

@@ -14,7 +14,7 @@ import importlib, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from markjin.collect import CHALLENGE, is_challenge  # noqa: E402,F401  验证页识别只维护 collect 里这一份
+from markjin.collect import CHALLENGE, is_challenge, login_page  # noqa: E402,F401  验证页 / 登录墙识别只维护 collect 里这一份
 
 
 class ScrapeError(Exception):
@@ -23,11 +23,14 @@ class ScrapeError(Exception):
 
 
 
-def check_body(st, body, err):
+def check_body(st, body, err, ctype=""):
+    """第二道检查（Fetcher 已在锁内分类并停主机）：非 200、验证页、不跳转的 200 登录页（结构特征，collect.login_page）都抛错。"""
     if err or st != 200:
         raise ScrapeError(err or f"HTTP {st}")
-    if is_challenge(body):
+    if is_challenge(body, ctype):
         raise ScrapeError("bot-challenge/interstitial page (not bypassed)")
+    if login_page(ctype or "", body):
+        raise ScrapeError("login wall (not bypassed)")
     return body
 
 
