@@ -565,3 +565,35 @@ class KeylessPairingR7(Base):
         for claim in ("The new method does not improve recall on long documents.", "The baseline improves recall."):
             with self.subTest(claim=claim):
                 self.expect(run(T + arxiv_line(claim, locator=self.LOC), repo=custom_repo(self.LOC)), "PASS")
+
+
+class KeylessPairingR8(Base):
+    """r8 审查 HIGH：剩余分句状态不一时，异名/复数对象、屈折不同的谓语词、只靠共享词的断言不能借用另一对象的否定。"""
+    LOC = "The new method does not improve recall on long documents; the baseline improves recall."
+
+    def test_alias_inflection_and_shared_words_cannot_borrow_negation(self):
+        alias = "The baseline does not improve recall on long documents; the replacement improves recall."
+        sub = "The substitute does not improve recall on long documents."
+        cases = (
+            (alias, sub),
+            (alias.replace("; the", ", whereas the"), sub),
+            (alias.replace("; the", ", but the"), sub),
+            (alias.replace("; the", "，the"), sub),
+            (alias[:-1] + "; the replacement also improves precision.", sub),
+            ("The legacy systems do not improve recall on long documents; the new model improves recall.",
+             "新模型 does not improve recall on long documents."),
+            ("The method does not improve recall; the method improves recall.", "The method does not improve recall."),
+            (self.LOC, "The baselines do not improve recall."),
+            (self.LOC, "The base model does not improve recall."),
+            ("Method one does not improve recall; method two improves recall.", "The approach does not improve recall."),
+        )
+        for loc, claim in cases:
+            with self.subTest(claim=claim, loc=loc):
+                self.expect(run(T + arxiv_line(claim, locator=loc), repo=custom_repo(loc)),
+                            "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_same_object_inflected_still_passes(self):
+        for claim in ("The new methods do not improve recall on long documents.", "The baseline improves recall.",
+                      "The baseline improve recall."):
+            with self.subTest(claim=claim):
+                self.expect(run(T + arxiv_line(claim, locator=self.LOC), repo=custom_repo(self.LOC)), "PASS")
