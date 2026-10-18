@@ -2268,6 +2268,26 @@ class R15Fixes(unittest.TestCase):
         self.assertEqual(sorted(hs.data["hosts"]), ["a.org", "b.org", "c.org", "d.org", "f.org"])
         self.assertTrue(hs.blocked("feedx"))
 
+    # ---- HIGH ③：超过大小上限的 401/403/429 先判可疑、停主机，再判大小
+    def test_r15_3_oversized_401_403_429_suspicious_before_size(self):
+        big = b"x" * 100
+        for st in (401, 403, 429):
+            for robots in (False, True):
+                d = self.tmpdir()
+                routes = {"https://a.org/x": Resp(st, big), "https://a.org/y": Resp(200, b"ok"),
+                          "https://a.org/robots.txt": Resp(st, big) if robots else Resp(404)}
+                f = self.fetcher(d, routes, max_bytes=16)
+                r = f.get("https://a.org/x", sid="s")
+                self.assertEqual(r.error, f"{'robots_' if robots else ''}http_{st}", (st, robots))
+                self.assertTrue(collect.is_suspicious(r.error))
+                self.assertEqual(f.get("https://a.org/y", sid="t").error, "host_stopped_this_round", (st, robots))
+                self.assertIn("a.org", collect.SourceHealth(d / "st.json").data["host_stops"][ROUND])
+                self.assertEqual([e["reason"] for e in f.suspicious["s"]], [r.error])
+        d = self.tmpdir()
+        f = self.fetcher(d, {"https://a.org/x": Resp(200, big), "https://a.org/y": Resp(200, b"ok")}, max_bytes=16)
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "too_large")     # 200 超大：仍只是 too_large，不算可疑
+        self.assertTrue(f.get("https://a.org/y", sid="s").ok)
+
 
 if __name__ == "__main__":
     unittest.main()

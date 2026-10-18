@@ -1445,7 +1445,7 @@ class Fetcher:
                 r.close()
             except Exception:
                 pass
-        if len(buf) > self.max_bytes:
+        if len(buf) > self.max_bytes:          # 正文丢弃；调用方仍先按状态码判可疑（401/403/429 → 停主机），再报 too_large
             return status, headers, b"", "too_large", f">{self.max_bytes} bytes"
         if buf and self._sink:     # 每收到一次响应（含 robots、3xx）都先交给私有存档，再做任何判定
             self._sink(buf, status, (headers.get("Content-Type") if headers else "") or "")
@@ -1609,7 +1609,8 @@ class Fetcher:
                     return Result(False, final_url=cur, hops=hops, error=pre[0], detail=pre[1])
                 def judge(st, h, body, ec, det, _cur=cur, _esid=esid):
                     # 站点限速锁内（与同站发请求互斥）：每一跳先按状态码，再判正文与登录跳转；命中即写停止
-                    b = None if ec else self._classify(st, h, body, _cur)
+                    # r15 ③：超过大小上限（too_large，正文已丢弃）也先按状态码 / 响应头判可疑，再报 too_large
+                    b = self._classify(st, h, body, _cur) if ec in (None, "too_large") else None
                     if b:                 # 该跳与起点冷却、该跳主机本轮停止
                         self.mark_failed(_cur, _esid, b, also=(url,))
                     return b
