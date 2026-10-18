@@ -417,6 +417,21 @@ def _login_features(text, base=None):
             "E": p.email, "L": p.link, "Q": bool(_LOGIN_PROMPT.search(" ".join(" ".join(p.text).split())))}
 
 
+def _header(h, name):
+    """大小写不敏感地取响应头（dict 或 email.message.Message 都行）。"""
+    if not h:
+        return None
+    try:
+        v = h.get(name)
+    except Exception:
+        v = None
+    if v is None and hasattr(h, "items"):
+        for k, x in h.items():
+            if str(k).lower() == name.lower():
+                return x
+    return v
+
+
 def login_page(ctype, body, url=None):
     """不跳转的登录页（结构特征，见上）。只判 HTML 形态。"""
     if not body or not htmlish(ctype, body):
@@ -1139,18 +1154,19 @@ class SourceHealth:
           （没有 sid 的记录再按 host_sources 由主机推出）。两边有交集即同一来源。
         - 24 小时从判定为被拒 / 可疑、写下记录的时刻起算（stop 在判定之后取时钟，不是发送之前）。
         - 只看持久状态（私有 state/source-health.json，跨运行生效）；URL 比对用 cooldown_identity（去掉 key / token）。
-        触发的那一轮不受此限（同主机已按规则 1 停止）；没有轮次上下文时保守拒绝。返回固定代码或 None。"""
+        触发的那一轮不受此限（同主机已按规则 1 停止）——登录墙除外：识别为登录墙即停源，本轮起整个来源都不再请求
+        （#60 r15 HIGH）。没有轮次上下文时保守拒绝。返回固定代码或 None。"""
         want = {x for x in (sid, cooldown_source(host, None)) if x}
         if not want:
             return None
         t = self.clock() if now is None else now
         hs_map = getattr(self, "host_sources", {})
         for r in sorted(self.data["urls"], reverse=True):
-            if r == rid:
-                continue
             for u in self.data["urls"][r].values():
                 if u["until"] <= t:
                     continue
+                if r == rid and not str(u.get("reason") or "").endswith("login_wall"):
+                    continue           # 触发轮不受来源冷却约束；但登录墙按停源处理：本轮起整个来源就停
                 uh = (u.get("host") or "").lower()
                 have = {x for x in (u.get("sid"), cooldown_source(uh, None)) if x}
                 if not u.get("sid"):
@@ -1782,6 +1798,8 @@ class Fetcher:
             return f"{pre}login_wall"
         if st not in REDIRECT_CODES and login_page((h or {}).get("Content-Type") or "", body, url):
             return f"{pre}login_wall"          # 不跳转的登录页（含 200）：结构特征命中同样是登录墙
+        if st != 401 and _header(h, "WWW-Authenticate"):
+            return f"{pre}login_wall"          # 响应头要求认证（不论状态码，含 200）：登录墙
         return None
 
     # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速、同样受主机停止与 URL 冷却约束）
