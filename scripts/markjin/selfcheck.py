@@ -1010,6 +1010,16 @@ def _pair_canon(ws):
     return out
 
 
+# #79 r9（审查 HIGH）：原文分句的主语（跳过 however/and/but/while/whereas/而/但 等连接词和冠词后的首个词；
+# “Model A”这类带单字母代号的连写取整体），用于在完整原文上核对断言对象的否定状态
+_PAIR_SUBJECT_RE = re.compile(
+    r"\s*(?:(?:(?:however|meanwhile|therefore|by contrast|in contrast|and|but|while|whereas)"
+    r"\b[ ,]*)|(?:而|但|然而|不过)\s*)*(?:(?:the|a|an)\s+)?"
+    r"([A-Za-z][A-Za-z-]{2,}(?:\s+[A-Z]\b)?|[\u4e00-\u9fff]+)",
+    re.I,
+)
+
+
 def _neg_state(seg):
     """(否定奇偶, 是否带审慎说法)。"""
     m, h = _neg_main(seg)
@@ -1017,7 +1027,7 @@ def _neg_state(seg):
 
 
 def _neg_parity_ok(claim, loc):
-    """#32 r4–r8：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
+    """#32 r4–r9：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
     1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
        原文有、断言没写同样的短语 → 提示 support_scope（R-SUPPORT-SCOPE，人工必查：断言是否写成了相反前提，
        如原文 without fine-tuning、断言“经过微调”）。
@@ -1031,6 +1041,7 @@ def _neg_parity_ok(claim, loc):
        只在这些分句里配对。r8（审查 HIGH）：配对词先去掉复数/三单屈折（improves → improve），屈折差异不算区分词；
        剩余分句状态不一时，断言分句有原文剩余分句里没有的配对词（异名对象，如 substitute 对 replacement）、
        断言带中文而剩余原文没有中文、或一个区分词都没命中 → 分不清对象，判错配。
+       r9（审查 HIGH）：最后在完整原文上按原文分句主语核对：原文分句状态不一时，断言分句提到某原文分句的主语而状态不同 → 错配。
     3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、从未、hardly、yet to 等计为否定）。
        审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed…）不计否定，出现就提示 support_hedge
        （R-SUPPORT-HEDGE）；但配对的原文窗口带审慎说法而整条断言没有，或断言分句带审慎说法而整个片段没有 → 错配；“难以置信”“无与伦比”“从未如此”“never before”等固定说法不算否定（r5，审查 r4 MEDIUM）。"""
@@ -1109,6 +1120,17 @@ def _neg_parity_ok(claim, loc):
                     return False, hints
             else:
                 return False, hints                            # 配不上且剩余分句状态不一 → 分不清对象
+        # r9（审查 HIGH）：在完整原文（不挖已配对窗口）上核对：原文分句否定/审慎状态不一时，断言分句提到某个原文分句的主语、
+        # 而该原文分句的状态与断言分句不同 → 错配。不依赖谓语屈折（improved、is improving、ran、faster）或剩余分句的
+        # 状态，也覆盖把相反分句放进数字窗口被挖走、原文别处已有中文的情况
+        source_clauses = numnorm.clauses(loc) or [loc]
+        if len({_neg_state(lc) for lc in source_clauses}) > 1:
+            for cc in rest_claim:
+                for lc in source_clauses:
+                    m = _PAIR_SUBJECT_RE.match(lc)
+                    if (m and _neg_state(lc) != _neg_state(cc)
+                            and re.search(r"(?<![A-Za-z0-9])" + re.escape(m.group(1)) + r"(?![A-Za-z0-9])", cc, re.I)):
+                        return False, hints
     return True, hints
 
 

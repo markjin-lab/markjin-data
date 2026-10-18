@@ -2302,6 +2302,15 @@ class FinalR5(FinalR1):
         sc, d = self._route_daily_src(TITLE + line + DISC, loc)
         self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
 
+    def test_keyless_tense_variant_with_x_still_x_only_via_route_pr(self):
+        # #32 r9 审查 HIGH：谓语过去式（improved）不能让 replacement 的断言借用 baseline 分句的否定、解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "The baseline does not improve recall on long documents for the replacement; the replacement improved recall."
+        claim = "The replacement does not improve recall on long documents."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
     def test_x_plus_supporting_nonx_publishable_via_route_pr(self):
         # 对照：X + 经原文支持位置核对确实支撑的非 X 来源 → 可发布
         from helpers import x_line, ARXIV_LOC, ARXIV_ID
