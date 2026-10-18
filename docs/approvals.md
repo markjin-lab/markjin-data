@@ -374,7 +374,7 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
 
 ### 数字核对范围
 
-- FRED（历史口径：FRED 已于 2026-10-18 停用，改从原始机构取数，原始文件已按 `raw/2026-10-11/RETRACTIONS.md` 撤回）：断言写明观测日期（YYYY-MM-DD 或 YYYY-MM）时，只用该日期的观测值核对；同时带 `realtime_start`/`realtime_end` 的存档，断言写了 vintage 日期则只用该 vintage 内的观测。没写日期 → 不算“来源支持”（`R-SUPPORT-UNVERIFIED`）。
+- FRED（历史口径：FRED 已于 2026-10-18 停用，改从原始机构取数，FRED 原始文件及两份含 FRED 数值的年度对账表已由 data PR #87 撤回；登记见 raw/2026-10-10/ 至 raw/2026-10-18/ 各日期的 RETRACTIONS.md）：断言写明观测日期（YYYY-MM-DD 或 YYYY-MM）时，只用该日期的观测值核对；同时带 `realtime_start`/`realtime_end` 的存档，断言写了 vintage 日期则只用该 vintage 内的观测。没写日期 → 不算“来源支持”（`R-SUPPORT-UNVERIFIED`）。
 - 其他来源入口（带来源段落、非结构化行）调用 `check_pair` 时一律带上断言原文。
 
 ## 整体验收 r15 修复（审查与治理 bot 定的技术方案）

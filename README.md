@@ -11,4 +11,4 @@ markjin 工作流的数据仓库。站点：https://markjin-lab.github.io
 
 信源标签：`source-arxiv`、`source-x`。
 
-FRED 已于 2026-10-18 停用，改从原始机构取数；`source-fred` 不再用于新内容。FRED 原始文件已按 `raw/2026-10-11/RETRACTIONS.md` 撤回（data PR #87），raw/ 等历史档案中的 FRED 记录按只追加规则保留原样。
+FRED 已于 2026-10-18 停用，改从原始机构取数；FRED 原始文件及两份含 FRED 数值的年度对账表已由 data PR #87 撤回；登记见 raw/2026-10-10/ 至 raw/2026-10-18/ 各日期的 RETRACTIONS.md。raw/ 中未撤回的历史说明与日志按只追加规则保留原样。
