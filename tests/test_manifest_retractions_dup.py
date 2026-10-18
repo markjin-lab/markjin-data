@@ -66,14 +66,24 @@ class SelfcheckManifestRetractionsDup(unittest.TestCase):
             f"{'3' * 64}  ./round2/MANIFEST.sha256\n{sha(new)}  ./RETRACTIONS.md\n" + extra, encoding="utf-8")
         return d
 
-    def run_check(self, d):
+    LOC = "The model reaches 90% accuracy on MMLU."   # 存档摘要原文，作为结构化断言的〔原文：…〕位置
+
+    def run_check(self, d, locator=None):
         from markjin.selfcheck import check_text
-        txt = f"- 模型在 MMLU 上达到 90% 准确率。 — `raw/{self.DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/2610.00001v1\n"
+        txt = f"- 模型在 MMLU 上达到 90% 准确率。 — `raw/{self.DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/2610.00001v1"
+        txt += (f" 〔原文：{locator}〕" if locator else "") + "\n"
         return check_text(txt, repo=d, date=self.DATE, card_type="daily", link_checker=lambda u: True, internal_terms="load")
 
     def test_draft_citing_2026_10_12_no_manifest_parse_error(self):
-        out = self.run_check(self.repo())
+        # #79：结构化断言必须带〔原文：…〕位置，故此处带位置；意图不变：引用 10-12 不报 MANIFEST 解析错误、结果不是 FAIL
+        out = self.run_check(self.repo(), locator=self.LOC)
         self.assertNotIn("E-MANIFEST-PARSE", out["error_codes"]); self.assertNotEqual(out["status"], "FAIL", out["error_codes"])
+
+    def test_draft_citing_2026_10_12_without_locator_is_locator_missing(self):
+        # #79 与 #87 的规则交界：同一断言去掉〔原文：…〕→ E-SUPPORT-LOCATOR-MISSING（不是 MANIFEST 解析错误）
+        out = self.run_check(self.repo())
+        self.assertNotIn("E-MANIFEST-PARSE", out["error_codes"])
+        self.assertIn("E-SUPPORT-LOCATOR-MISSING", out["error_codes"]); self.assertEqual(out["status"], "FAIL")
 
     def test_other_dup_still_manifest_parse_error(self):
         out = self.run_check(self.repo(extra=f"{sha(self.XML.encode())}  ./arxiv/cs.AI.xml\n"))
