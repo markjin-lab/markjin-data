@@ -368,3 +368,86 @@ class PureCitation(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ObjectWindowR5(Base):
+    """#32 r5（审查 r4 HIGH）：普通文本不再退回整段比否定。用含对象和指标的最小连续分句窗口配对，配不唯一 → 错配。"""
+    LOC = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
+
+    def test_b1_b_negative_blocked(self):
+        self.expect(run(T + arxiv_line("Model B 在 MMLU 上未能达到 90%。", locator=self.LOC), repo=custom_repo(self.LOC)),
+                    "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_b2_b_positive_passes(self):
+        self.expect(run(T + arxiv_line("Model B 在 MMLU 上达到 90%。", locator=self.LOC), repo=custom_repo(self.LOC)),
+                    "PASS", absent=("E-SUPPORT-LOCATOR-MISMATCH",))
+
+    def test_no_object_word(self):
+        loc = "The baseline did not reach 90%, while on MMLU the model reaches 90%."
+        repo = custom_repo(loc)
+        self.expect(run(T + arxiv_line("模型在 MMLU 上达到 90%。", locator=loc), repo=repo), "PASS")
+        self.expect(run(T + arxiv_line("模型在 MMLU 上未能达到 90%。", locator=loc), repo=repo), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_two_windows_ambiguous(self):
+        loc = "Model A reaches 90% on MMLU; Model B reaches 90% on GSM8K."
+        self.expect(run(T + arxiv_line("模型达到 90%。", locator=loc), repo=custom_repo(loc)), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_fred_keeps_whole_fallback(self):
+        # FRED 片段“字段,数值”被逗号切开，仍按整个片段比较
+        self.expect(run(T + fred_line()), "PASS", absent=("E-SUPPORT-LOCATOR-MISMATCH",))
+        self.expect(run(T + fred_line("UNRATE 未能达到 4.2%。")), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class ImplicitNegationR5(Base):
+    """#32 r5（审查 r4 MEDIUM）：固定说法不算否定；审慎/待定说法不计否定、给 R-SUPPORT-HEDGE；真否定仍硬拦。"""
+    def _ok(self, loc, claim, *hints):
+        r = run(T + arxiv_line(claim, locator=loc), repo=custom_repo(loc))
+        self.expect(r, "PASS", *hints, absent=("E-SUPPORT-LOCATOR-MISMATCH",))
+
+    def _bad(self, loc, claim):
+        self.expect(run(T + arxiv_line(claim, locator=loc), repo=custom_repo(loc)), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    INF = "Inflation is at its highest level in 40 years, never before seen at 9.1%."
+
+    def test_h1_congwei_ruci(self):
+        self._ok(self.INF, "通胀率达到 9.1%，为 40 年来最高，此前从未如此之高。")
+
+    def test_h2_never_before(self):
+        self._ok(self.INF, "通胀率达到 9.1%，为 40 年来最高。")
+
+    def test_h3_youdai_hedge(self):
+        self._ok("The figure is subject to revision at 4.2%.", "该数据为 4.2%，有待修订。", "R-SUPPORT-HEDGE")
+
+    def test_h4_h5_yet_to_be_reviewed(self):
+        loc = "Results have yet to be peer reviewed, with 90% accuracy on MMLU."
+        self._ok(loc, "模型在 MMLU 上达到 90% 准确率。", "R-SUPPORT-HEDGE")
+        self._ok(loc, "模型在 MMLU 上达到 90% 准确率，结果尚未经同行评审。", "R-SUPPORT-HEDGE")
+
+    def test_h6_h7_idioms(self):
+        self._ok(ARXIV_LOC, "模型在 MMLU 上达到令人难以置信的 90% 准确率。")
+        self._ok(ARXIV_LOC, "模型在 MMLU 上达到无与伦比的 90% 准确率。")
+
+    def test_real_negation_still_blocks(self):
+        self._bad(ARXIV_LOC, "模型在 MMLU 上从未达到 90% 准确率。")
+        self._bad(ARXIV_LOC, "模型在 MMLU 上难以达到 90% 准确率。")
+        self._bad(ARXIV_LOC, "模型在 MMLU 上的准确率有待达到 90%。")
+        self._bad("The model has yet to reach 90% accuracy on MMLU.", "模型在 MMLU 上达到 90% 准确率。")
+        self._bad("Inflation never reached 9.1% in 40 years.", "通胀率达到 9.1%。")
+
+    def test_hedge_dropped_or_added_blocks(self):
+        self._bad("Whether the model reaches 90% on MMLU remains to be verified.", "模型在 MMLU 上达到 90% 已经验证。")
+        self._bad(ARXIV_LOC, "模型在 MMLU 上达到 90% 准确率，有待核实。")
+
+
+class WithoutScopeHint(Base):
+    """#32 r5（审查 r4 MEDIUM W1）：原文 without X、断言没写同样的短语 → R-SUPPORT-SCOPE（人工必查）。"""
+    LOC = "The model reaches 90% accuracy on MMLU without any fine-tuning."
+
+    def test_w1_opposite_premise_flagged(self):
+        r = run(T + arxiv_line("模型在 MMLU 上经过微调达到 90% 准确率。", locator=self.LOC), repo=custom_repo(self.LOC))
+        self.expect(r, "PASS", "R-SUPPORT-SCOPE", "R-SUPPORT-REVIEW")
+
+    def test_w2_same_scope_no_flag(self):
+        r = run(T + arxiv_line("模型无需微调即在 MMLU 上达到 90% 准确率。", locator=self.LOC), repo=custom_repo(self.LOC))
+        self.expect(r, "PASS", absent=("R-SUPPORT-SCOPE",))
+

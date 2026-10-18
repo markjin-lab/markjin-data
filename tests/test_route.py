@@ -2241,6 +2241,36 @@ class FinalR5(FinalR1):
         sc, d = self._go([NOW, NOW, NOW])["daily/" + self.draft.name]
         self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"])
 
+    def _route_daily_src(self, t, summary):
+        # r5：替换存档 arXiv 摘要（同步改 MANIFEST），再走发布路由
+        from helpers import ARXIV_ID, FILES, write_manifest
+        files = dict(FILES)
+        files["arxiv/cs.AI.xml"] = f"<feed><entry><id>http://arxiv.org/abs/{ARXIV_ID}v1</id><summary>{summary}</summary></entry></feed>"
+        day = self.repo / "raw" / DATE
+        (day / "arxiv" / "cs.AI.xml").write_text(files["arxiv/cs.AI.xml"], encoding="utf-8")
+        write_manifest(day, files)
+        self.commit("raw-b")
+        return self._route_daily(t)
+
+    def test_b1_wrong_object_negation_not_publishable_via_route_pr(self):
+        # #32 r5（审查 r4 HIGH B1）：原文 A 未达到、B 达到；断言“B 未能达到”→ 有效 Codex APPROVED 也不可发布
+        loc = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
+        sc, d = self._route_daily_src(TITLE + arxiv_line("Model B 在 MMLU 上未能达到 90%。", locator=loc) + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"])
+
+    def test_b2_right_object_publishable_via_route_pr(self):
+        loc = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
+        sc, d = self._route_daily_src(TITLE + arxiv_line("Model B 在 MMLU 上达到 90%。", locator=loc) + DISC, loc)
+        self.assertNotIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"]); self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
+
+    def test_b1_with_x_still_x_only_via_route_pr(self):
+        # B1 的错误非 X 支持不能解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
+        line = x_line("Model B 在 MMLU 上未能达到 90%。") + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
     def test_x_plus_supporting_nonx_publishable_via_route_pr(self):
         # 对照：X + 经原文支持位置核对确实支撑的非 X 来源 → 可发布
         from helpers import x_line, ARXIV_LOC, ARXIV_ID
