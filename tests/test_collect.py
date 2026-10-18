@@ -2413,6 +2413,21 @@ class R15Fixes(unittest.TestCase):
         self.assertIn("FREETEXT-LEGACY-HOST", (st / "source-health.json").read_text())   # 原文留在私有状态
         self.assertEqual(collect.public_code("weird free text"), "other")
 
+    # ---- LOW ⑧：固定五轮窗口（WINDOW_ROUNDS 改 4 或 6 都要被抓到）
+    def test_r15_8_window_is_exactly_five_rounds(self):
+        rounds = [f"2026-10-{12 + i // 2}/r{i % 2 + 1}" for i in range(6)]
+        S, O = ["http_403"], []
+        for pat, pending_at in (([S, O, O, S, S], 4),          # 第 5 轮：5 轮窗口里 3 轮可疑 → pending（4 轮窗口只有 2 轮）
+                                ([S, O, O, O, S, S], None)):   # 第 6 轮：第 1 轮已出窗口，只有 2 轮 → 不 pending（6 轮窗口有 3 轮）
+            hs = collect.SourceHealth(self.tmpdir() / "st.json")
+            for i, r in enumerate(pat):
+                ch = hs.record_round(rounds[i], {"s": r})
+                self.assertEqual(ch["s"], i == pending_at, (pat, i))
+            rec = hs.data["sources"]["s"]
+            self.assertEqual(rec["status"], "ok" if pending_at is None else "pending-disable", pat)
+            self.assertEqual(hs.report()[0]["window"], 5)
+            self.assertEqual(len(hs.report()[0]["recent"]), min(5, len(pat)))
+
 
 if __name__ == "__main__":
     unittest.main()
