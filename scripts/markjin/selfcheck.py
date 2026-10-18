@@ -57,6 +57,15 @@ URL_KINDS = {
     "x": re.compile(r"^https://(?:x|twitter)\.com/(?:i|[A-Za-z0-9_]{1,15})/status/(\d{5,25})$"),
     "fred": re.compile(r"^https://fred\.stlouisfed\.org/series/([A-Z0-9]{2,30})$"),
 }
+# —— 路线图 v1.12（FRED 撤回，王总 2026-10-18 18:13 SGT 决定；data PR #87）：不得新增 FRED 链接或数据（E-FRED-CITED）
+# 链接与 raw/ 下 fred/ 目录里的文件：稿件日期或 front matter corrected_at 不早于 FRED_LINK_CUTOFF 即拦（含更正稿新加的内容）；
+# 文字提到 FRED（FRED、ALFRED、FRED-MD 等写法，或 Federal Reserve Economic Data、圣路易斯联储经济数据）：稿件日期不早于 FRED_WORD_CUTOFF 即拦，
+# 逐字核对的原文直引行除外（引的是论文原文，不是本项目取数）。10-18 及以前的稿件文字已发布，不回溯。
+FRED_LINK_CUTOFF = "2026-10-18"
+FRED_WORD_CUTOFF = "2026-10-19"
+FRED_LINK_RE = re.compile(r"(?:(?:al)?fred|api)\.stlouisfed\.org|stlouisfed\.org/fred|raw/[^\s`]*/fred/[^\s`/]", re.I)
+FRED_WORD_CASE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:AL)?FRED(?![A-Za-z0-9_])")   # 英文简称只认全大写（Fred 等人名不算）
+
 MANIFEST_LINE = re.compile(r"^([0-9a-f]{64})  (?:\./)?([^\s].*)$")
 
 # 宏观算术白名单要求的算式：形如 “算式：(334.131/323.291-1)×100=3.35%”
@@ -144,7 +153,8 @@ DISCLAIMERS = (DISCLAIMER, DISCLAIMER_EN)   # 整体验收 r2（王总定）：�
 
 def disclaimer_line(s):
     return s.strip() in DISCLAIMERS
-ALLOWED_HEADINGS = {"", "日报", "ai日报", "论文", "arxiv", "模型发布", "daily", "digest"}
+ALLOWED_HEADINGS = {"", "日报", "ai日报", "论文", "arxiv", "模型发布", "daily", "digest",
+                    "产业与经济数据", "industryandeconomicdata"}   # 路线图 v1.12 15.2/15.5：新小节“产业与经济数据 / Industry and economic data”
 
 # —— 词表：公开 JSON（lexicon.json，与生产 bot 共用）。读取或结构失败 → 抛 LexiconError（调用方 FAIL）
 LEXICON_PATH = Path(__file__).with_name("lexicon.json")
@@ -617,6 +627,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     tongyi_fm = isinstance(fm_parsed, dict) and isinstance(fm_parsed.get("type"), str) \
         and fm_parsed["type"].strip().lower() == TONGYI_TYPE
     tongyi_path = is_tongyi_path(rel)
+    _check_fred(lines, date, fm_end, fm_parsed, err)
     long_form = False
     if tongyi_fm or tongyi_path:
         if tongyi_fm and tongyi_path:
@@ -953,6 +964,34 @@ def _fm_value(s, fm_parsed=None, raw=None):
     if LEX and k in LEX["fm_date_keys"] and _FM_DATE_RE.match(v) and _real_datetime(v):
         return ""
     return v
+
+
+def _fred_word(s):
+    """文字提到 FRED：全大写简称（含 ALFRED、FRED-MD 等），或英文全称、中文名（不分大小写）。"""
+    if FRED_WORD_CASE_RE.search(s):
+        return True
+    return bool(re.search(r"federal\s*reserve\s*economic\s*data|圣路易斯联储经济数据|圣路易斯联邦储备经济数据", s, re.I))
+
+
+def _check_fred(lines, date, fm_end, fm_parsed, err):
+    """路线图 v1.12（FRED 撤回）：不得新增 FRED 链接或数据 → E-FRED-CITED（硬拦）。lines 为规范化后的行（含 front matter）。
+    更正稿：front matter 有 corrected_at 时按其日期判断链接；front matter 存在但解析不出时从严按已过截止日处理。"""
+    corrected = None
+    if fm_end:
+        if isinstance(fm_parsed, dict):
+            v = _iso(fm_parsed.get("corrected_at"))
+            corrected = v[:10] if isinstance(v, str) else None
+        else:
+            corrected = FRED_LINK_CUTOFF        # 解析不出 front matter：从严
+    link_ban = date >= FRED_LINK_CUTOFF or (corrected is not None and corrected >= FRED_LINK_CUTOFF)
+    word_ban = date >= FRED_WORD_CUTOFF
+    if not (link_ban or word_ban):
+        return
+    for i, s in enumerate(lines, 1):
+        if link_ban and FRED_LINK_RE.search(s):
+            err("E-FRED-CITED", i)
+        elif word_ban and not QUOTE_LINE_RE.match(s) and _fred_word(s):
+            err("E-FRED-CITED", i)
 
 
 def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):

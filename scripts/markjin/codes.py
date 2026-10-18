@@ -27,6 +27,7 @@ ERROR_CODES = {
     "E-X-ONLY": "日报中的断言（原文直引、结构化断言、带来源的行）只有 X 来源支撑；X 只作线索，硬拦",
     "E-BLOCK-INTERNAL": "命中仅供内部研究的主题（细节只记本机内部目录）",
     "E-INTERNAL-LIST-MISSING": "本机内部主题清单缺失、不可读或结构不完整，无法完成内部主题检查",
+    "E-FRED-CITED": "稿件新增 FRED 链接、raw/ 下 fred/ 目录的文件或文字提到 FRED（路线图 v1.12：FRED 已撤回，不再经 FRED 取数；链接按稿件日期或 corrected_at 不早于 2026-10-18 判，文字按稿件日期不早于 2026-10-19 判，原文直引行的文字除外）",
     "E-SELFCHECK-INPUT": "稿件为空",
     "E-DEP-PYYAML": "缺少运行依赖 PyYAML（requirements.txt）：无法解析 front matter，结构化判失败 / HOLD，不直接崩溃（整体验收 r10）",
     "E-TONGYI-MISMATCH": "front matter type 为 tongyi 与稿件路径（tongyi/<name>.md 或 content/posts/tongyi/<name>.md）不一致：fail-closed，不给长文豁免（整体验收 r15，审查 bot 定）",
