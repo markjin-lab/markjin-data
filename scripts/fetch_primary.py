@@ -161,7 +161,7 @@ def main(argv=None, fetcher=None):
         try:     # 只认 sources.yaml 里写明公布限额和依据的站点；其余每站每分钟 1 次
             cfg_p = Path(a.out_root) / "improve" / "sources.yaml"
             site_limits = collect.load_site_limits(
-                (yaml.safe_load(cfg_p.read_text(encoding="utf-8")) or {}).get("site_rate_limits")) if cfg_p.exists() else {}
+                (yaml.safe_load(cfg_p.read_text(encoding="utf-8")) or {}).get("site_rate_limits")) if cfg_p.exists() else collect.load_site_limits(None)
         except (collect.ConfigError, yaml.YAMLError, AttributeError) as e:
             print(f"config: site_rate_limits: {e}", file=sys.stderr); return 2
     f = fetcher or collect.Fetcher(st0,

@@ -31,7 +31,7 @@ class ScraperCapture(unittest.TestCase):
         op = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = op; k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS); orig(s, *a, **k)
+            k["opener"] = collect._TestTransport(op); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS); orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -513,7 +513,7 @@ class R3Scraper(unittest.TestCase):
         op = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = op; k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+            k["opener"] = collect._TestTransport(op); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -693,7 +693,7 @@ class R4Scraper(unittest.TestCase):
         orig = collect.Fetcher.__init__
 
         def init(s, *a, **k):
-            k["opener"] = FakeOpener(routes); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+            k["opener"] = collect._TestTransport(FakeOpener(routes)); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -758,7 +758,7 @@ class R5Scraper(unittest.TestCase):
         op = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = op; k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
+            k["opener"] = collect._TestTransport(op); k["sleep"] = lambda x: None; k["resolver"] = PUBLIC_DNS; orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         try:
             rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1", "--out-root", str(out),
@@ -1323,7 +1323,7 @@ class BlockRule1522Primary(unittest.TestCase):
         opener = FakeOpener(routes)
 
         def init(s, *a, **k):
-            k["opener"] = opener; k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS)
+            k["opener"] = collect._TestTransport(opener); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS)
             orig(s, *a, **k)
         collect.Fetcher.__init__ = init
         err = io.StringIO()
@@ -1352,6 +1352,19 @@ class BlockRule1522Primary(unittest.TestCase):
     def health(self):
         return collect.SourceHealth(self.priv / "state" / "source-health.json")
 
+    def approve_pending(self, tag):
+        """冷却到期后的人工批准门禁（Grok Bot 2026-10-18 20:51 SGT）：把待批准重测的来源各用一个新引用批准一次。"""
+        import contextlib, io
+        import source_health as SH
+        keys = [k for k, e in self.health().data["retest"].items() if e["status"] == "pending-approval"]
+        self.assertTrue(keys)
+        for k in keys:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(SH.main(["approve-retest", "--source", k, "--approved-by", "grok-bot",
+                                          "--quote-ref", f"grok-bot:test-{tag}-{k}", "--private-root", str(self.priv),
+                                          "--out-root", str(self.out)]), 0)
+        return keys
+
     def last_index(self, date):
         idx = sorted((self.out / f"raw/{date}/primary").glob("index-*.json"), key=lambda p: p.stat().st_mtime_ns)
         return json.loads(idx[-1].read_text())
@@ -1375,7 +1388,11 @@ class BlockRule1522Primary(unittest.TestCase):
         self.assertNotIn(self.ART, calls)
         # 来源级冷却（补充口径）：primary 的伪源按主机（primary:<主机>），该主机 24 小时内整源不请求
         self.assertEqual(self.last_index("2026-10-12")[0]["fetch_status"], "source_blocked")
-        rc, err, calls = self.fp("2026-10-13", 1, routes, now=self.T0 + self.DAY)   # 24 小时后才可再请求一次
+        rc, err, calls = self.fp("2026-10-13", 1, routes, now=self.T0 + self.DAY)   # 24 小时后：到期只标待批准重测，不请求
+        self.assertEqual(calls, [])
+        self.assertEqual(self.health().data["retest"]["primary:openai.com"]["status"], "pending-approval")
+        self.assertEqual(self.approve_pending("a403"), ["primary:openai.com"])
+        rc, err, calls = self.fp("2026-10-13", 1, routes, now=self.T0 + self.DAY + 60)   # 书面批准后只重测一次
         self.assertEqual(calls.count(self.ART), 1)
 
     def test_r14_10_primary_sid_counts_host_of_suspicious_hop(self):
@@ -1395,6 +1412,11 @@ class BlockRule1522Primary(unittest.TestCase):
         rounds = [("2026-10-12", 1), ("2026-10-13", 1), ("2026-10-14", 1), ("2026-10-15", 1)]
         for i, ((date, rnd), resp) in enumerate(zip(rounds, plan)):
             now = self.T0 + i * self.DAY
+            if i and plan[i - 1] is self.CF403:            # 上一轮被拒、冷却已到期：先只标待批准重测，批准后才重测
+                rc, err, calls = self.fp(date, rnd, {self.ART: resp}, now=now)
+                self.assertEqual(calls, [])
+                self.approve_pending(f"r{i}")
+                now += 60
             rc, err, calls = self.fp(date, rnd, {self.ART: resp}, now=now)
             self.assertEqual(calls.count(self.ART), 1)
             self.assertEqual("=== 待 Grok Bot 复核（pending-disable）1 个源：primary:openai.com" in err, i == 3)
@@ -1428,12 +1450,24 @@ class BlockRule1522Primary(unittest.TestCase):
                                                     "license": "url+hash-only"}]}), encoding="utf-8")
         args = lambda d, r: ["--sources", str(src), "--date", d, "--round", str(r), "--out-root", str(self.out),
                              "--private-root", str(self.priv)]
-        for i, d in enumerate(("2026-10-12", "2026-10-13", "2026-10-14")):
-            rc, err, calls = self._patched(routes, lambda: CS.main(args(d, 1)), now=self.T0 + i * self.DAY)
+        # 冷却到期后的人工批准门禁：被拒的下一轮先只标待批准重测、不发请求；批准后的重测只放行一次正文请求
+        # （robots.txt 不占），所以重测轮只取到索引，子 sitemap 本轮不再请求；重测不可疑 → 再下一轮照常。
+        s1 = "https://s.org/s1.xml"
+        for i, d in enumerate(("2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16")):
+            now = self.T0 + i * self.DAY
+            rc, err, calls = self._patched(routes, lambda: CS.main(args(d, 1)), now=now)
+            if i % 2:                                                        # 重测轮
+                self.assertEqual(calls, [])
+                self.assertEqual(self.approve_pending(f"s{i}"), ["s-news"])
+                rc, err, calls = self._patched(routes, lambda: CS.main(args(d, 1)), now=now + 60)
+                self.assertEqual(calls, ["https://s.org/robots.txt", "https://s.org/sitemap.xml"])
+                self.assertIn("ERR s-news", err)                              # 子 sitemap 被门禁拦下：本轮该源报错，不另发请求
+            else:
+                self.assertEqual(calls.count(s1), 1)
             self.assertEqual(rc, 1)
-            self.assertEqual(calls.count("https://s.org/s1.xml"), 1)
-        self.assertEqual(self.health().data["sources"]["s-news"]["status"], "pending-disable")
-        rc, err, calls = self._patched(routes, lambda: CS.main(args("2026-10-15", 1)), now=self.T0 + 3 * self.DAY)
+            self.assertEqual(self.health().data["sources"]["s-news"]["status"],
+                             "pending-disable" if i == 4 else "ok")          # 5 轮里第 0、2、4 轮可疑 → 第 5 轮转入
+        rc, err, calls = self._patched(routes, lambda: CS.main(args("2026-10-17", 1)), now=self.T0 + 5 * self.DAY)
         self.assertEqual(calls, [])                                          # 下一轮起不再请求
         self.assertIn("SKIP s-news source_blocked", err)
 
@@ -1623,6 +1657,40 @@ class R15Primary(Primary):
         import scrapers
         with self.assertRaisesRegex(scrapers.ScrapeError, "login wall"):
             scrapers.check_body(200, self.SIGNIN_200, None, "text/html")
+
+    # ---- #53 r16 的登录墙规则（证据只在同一个 <form> 内组合）经 collect.login_page 同样作用于 fetch_primary 和 scrapers
+    R16_PW_SHORT = (b'<html><head><title>Account</title></head><body><form action="/do" method="post">'
+                    b'<input name="u"><input type="password" name="p"><button>Continue</button></form></body></html>')
+    R16_EMAIL_SESSIONS = (b'<html><head><title>Portal</title></head><body><form action="/sessions" method="post">'
+                          b'<input type="email" name="e"><button>Next</button></form></body></html>')
+    R16_PW_ARTICLE = (b'<html><head><title>How to choose a strong Password</title></head><body><article><p>'
+                      + b"Use a long passphrase and a manager. " * 50 + b'</p></article>'
+                      b'<form action="/newsletter"><input type="email" name="email"><button>Subscribe</button></form></body></html>')
+    R16_SPLIT = (b'<html><head><title>Password policy news</title></head><body><p>' + b"Policy text. " * 80 + b'</p>'
+                 b'<form action="/subscribe"><input type="email" name="email"><button>Subscribe</button></form>'
+                 b'<form action="/search"><input name="q"><button>Log in help search</button></form></body></html>')
+
+    def test_r16_per_form_login_rule_shared_by_fetch_primary_and_scrapers(self):
+        import scrapers
+        for body in (self.R16_PW_SHORT, self.R16_EMAIL_SESSIONS):            # 标题不写登录的短登录表单：判登录墙
+            with self.assertRaisesRegex(scrapers.ScrapeError, "login wall"):
+                scrapers.check_body(200, body, None, "text/html")
+        for body in (self.R16_PW_ARTICLE, self.R16_SPLIT):                    # 长文章的订阅框、跨表单拼凑：不误判
+            self.assertEqual(scrapers.check_body(200, body, None, "text/html"), body)
+        st = collect.SourceHealth(self.base / "st.json")
+        items, idx, f = self.run_fp([{"id": "1", "expanded_url": "https://pub.org/a"},
+                                     {"id": "2", "expanded_url": "https://pub.org/b"},
+                                     {"id": "3", "expanded_url": "https://news.org/x"},
+                                     {"id": "4", "expanded_url": "https://auth.org/y"}],
+                                    {"https://pub.org/a": Resp(200, self.R16_PW_SHORT, self.HTML),
+                                     "https://pub.org/b": Resp(200, self.CONTENT_200, self.HTML),
+                                     "https://news.org/x": Resp(200, self.R16_PW_ARTICLE, self.HTML),
+                                     "https://auth.org/y": Resp(200, self.CONTENT_200,
+                                                                dict(self.HTML, **{"WWW-Authenticate": "Basic"}))}, state=st)
+        self.assertEqual([x["fetch_status"] for x in items], ["login_wall", "source_blocked", "fetched", "login_wall"])
+        calls = [u for u, _ in f.opener.calls]
+        self.assertNotIn("https://pub.org/b", calls)                         # 登录墙按停源处理：同来源本轮不再请求
+        self.assertIn("https://news.org/x", calls)
 
     def test_r15_60_high_fetch_primary_ordinary_content_page_ok(self):
         st = collect.SourceHealth(self.base / "st.json")
