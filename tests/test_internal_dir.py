@@ -1,4 +1,4 @@
-"""内部目录不再写死本机默认路径（王总 2026-10-18 经 Grok Bot 定）：只认 $MARKJIN_INTERNAL_DIR，未设置时用仓库根的同级相对目录。"""
+"""内部目录不再写死本机默认路径（Grok Bot 10-18 15:02 安排的清理）：只认 $MARKJIN_INTERNAL_DIR，未设置时用仓库根的同级相对目录。"""
 import os, subprocess, unittest
 from pathlib import Path
 from unittest import mock
