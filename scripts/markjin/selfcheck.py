@@ -1006,9 +1006,8 @@ def _neg_parity_ok(claim, loc, kind=None):
        原文有、断言没写同样的短语 → 提示 support_scope（R-SUPPORT-SCOPE，人工必查：断言是否写成了相反前提，
        如原文 without fine-tuning、断言“经过微调”）。
     2. 断言每个含数字或代号的分句，先找窗口，并在窗口内核对对象词：
-       - 普通文本（r5，审查 r4 HIGH）：在原文里找同时含这些数字、代号和对象词的最小连续分句窗口；
-         窗口不唯一或找不到 → 错配（不再退回整段，避免把 A 的否定配给 B）；
-       - FRED（kind == "fred"）：片段是“字段,数值”式，仍允许没有单句含全部关键项时按整个片段比较；多句都配得上 → 错配。
+       所有来源（r8，含原先走整段兜底的 FRED）一律在原文里找同时含这些数字、代号和对象词的最小连续分句窗口；
+       窗口不唯一或找不到 → 错配（不退回整段，避免把 A 的否定配给 B）。
        不含数字和代号的分句逐句配对（r6，审查 r5 HIGH）：在原文去掉已配对窗口后的剩余分句里按普通词与对象词
        （不含否定词、审慎说法）重合度找最高分候选；最高分候选的否定/审慎状态都相同才可比，否则判错配；
        剩余分句状态不一时，只重合 1 个词不算配上。
@@ -1025,7 +1024,6 @@ def _neg_parity_ok(claim, loc, kind=None):
     claim_hedged, loc_hedged = numnorm.strip_hedges(claim)[1] > 0, numnorm.strip_hedges(loc)[1] > 0
     if claim_hedged or loc_hedged:
         hints.add("support_hedge")
-    lclauses = numnorm.clauses(loc) or [loc]
     rest_claim, rest_loc = [], loc
     for cc in numnorm.clauses(claim) or [claim]:
         keys_n = numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(cc)[0]))
@@ -1038,17 +1036,11 @@ def _neg_parity_ok(claim, loc, kind=None):
         def has_all(seg):
             return (keys_n <= numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(seg)[0]))
                     and all(t in seg.lower() for t in keys_t) and all(_has_word(w, seg) for w in objs))
-        if kind == "fred":
-            cands = [lc for lc in lclauses if has_all(lc)]
-            if len(cands) > 1:
-                return False, hints          # 多句都配得上，分不清对象 → 错配
-            target = cands[0] if cands else loc
-        else:
-            wins = _min_windows(loc, has_all)
-            if len(wins) != 1:
-                return False, hints          # 配不上或配出多个窗口，分不清对象 → 错配
-            target = wins[0]
-            rest_loc = rest_loc.replace(target, " ", 1)
+        wins = _min_windows(loc, has_all)
+        if len(wins) != 1:
+            return False, hints              # 配不上或配出多个窗口，分不清对象 → 错配
+        target = wins[0]
+        rest_loc = rest_loc.replace(target, " ", 1)
         cc_main, cc_h = _neg_main(cc)
         tg_main, tg_h = _neg_main(target)
         if numnorm.neg_count(cc_main) % 2 != numnorm.neg_count(tg_main) % 2:

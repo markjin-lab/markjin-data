@@ -317,8 +317,11 @@ class MacroArithmetic(T):
                   "UNRATE 同比 +0.2（由原始数据计算，算式：4.2 - 4.0 = 0.2）",
                   "UNRATE 环比 5%（按原始数据计算；算式：(4.2/4.0-1)×100=5%）"):
             r = run(TITLE + "- " + t + self.SRC)
-            self.expect(r, "PASS", False, "R-MACRO")
-            self.assertNotIn("E-BLOCK-MACRO-OPINION", r["error_codes"])
+            # 纯算术不算宏观观点、算式验算通过；#79 r8 去掉 FRED 整段兜底后，推导值（4.0、0.2、5）不在支持位置的最小窗口里，
+            # 与其他来源一样判 E-SUPPORT-LOCATOR-MISMATCH（原先只靠 FRED 兜底放行）
+            self.expect(r, "FAIL", False, "E-SUPPORT-LOCATOR-MISMATCH")
+            self.assertIn("R-MACRO", r["error_codes"])
+            self.assertNotIn("E-BLOCK-MACRO-OPINION", r["error_codes"]); self.assertNotIn("E-FORMULA-MISMATCH", r["error_codes"])
 
     def test_missing_formula_blocked(self):
         r = run(TITLE + "- UNRATE 同比 +0.2（推断：由原始数据计算）" + self.SRC)
@@ -516,7 +519,9 @@ class FormulaVerify(unittest.TestCase):
         self.expect(run(TITLE + fred_line("UNRATE 同比 4.2%（由原始数据计算；算式：4.2+4.2=4.2）。")),
                     "FAIL", False, "E-FORMULA-MISMATCH")
         ok = run(TITLE + fred_line("UNRATE 同比 4.2%（由原始数据计算；算式：(4.2-0)=4.2）。"))
-        self.assertNotIn("E-FORMULA-MISMATCH", ok["error_codes"]); self.assertEqual(ok["status"], "PASS"); self.assertFalse(ok["low_risk"])
+        # #79 r8：算式验算通过；推导值 0 不在支持位置的最小窗口里，去掉 FRED 整段兜底后与其他来源一样判 E-SUPPORT-LOCATOR-MISMATCH
+        self.assertNotIn("E-FORMULA-MISMATCH", ok["error_codes"]); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", ok["error_codes"])
+        self.assertEqual(ok["status"], "FAIL"); self.assertFalse(ok["low_risk"])
 
 
 from helpers import XPOST_ID  # noqa: E402
@@ -638,7 +643,9 @@ class R6Fixes(T):
         self.expect(run(TITLE + fred_line("UNRATE 比上期高 4.2%。")), "FAIL", False, "E-BLOCK-MACRO-OPINION")
         self.expect(run(TITLE + fred_line("UNRATE 较上月下降 0.1。")), "FAIL", False, "E-BLOCK-MACRO-OPINION")
         ok = run(TITLE + fred_line("UNRATE 比上期高 0.1（由原始数据计算；算式：4.2-4.1=0.1）。"))
-        self.assertEqual(ok["status"], "PASS", ok["error_codes"])
+        # #79 r8：比较句带验算通过的算式，不算宏观观点；推导值不在最小窗口里，去掉 FRED 整段兜底后判 E-SUPPORT-LOCATOR-MISMATCH
+        self.assertNotIn("E-BLOCK-MACRO-OPINION", ok["error_codes"]); self.assertNotIn("E-FORMULA-MISMATCH", ok["error_codes"])
+        self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", ok["error_codes"]); self.assertEqual(ok["status"], "FAIL", ok["error_codes"])
         self.expect(run(TITLE + fred_line("UNRATE 比上期高 0.2（由原始数据计算；算式：4.2-4.1=0.2）。")), "FAIL", False, "E-FORMULA-MISMATCH")
 
     def test_macro_opinion_more(self):

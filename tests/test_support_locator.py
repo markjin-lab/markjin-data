@@ -371,7 +371,7 @@ if __name__ == "__main__":
 
 
 class ObjectWindowR5(Base):
-    """#32 r5（审查 r4 HIGH）：普通文本不再退回整段比否定。用含对象和指标的最小连续分句窗口配对，配不唯一 → 错配。"""
+    """#32 r5（审查 r4 HIGH）：不再退回整段比否定（r8 起 FRED 也不例外）。用含对象和指标的最小连续分句窗口配对，配不唯一 → 错配。"""
     LOC = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
 
     def test_b1_b_negative_blocked(self):
@@ -392,10 +392,20 @@ class ObjectWindowR5(Base):
         loc = "Model A reaches 90% on MMLU; Model B reaches 90% on GSM8K."
         self.expect(run(T + arxiv_line("模型达到 90%。", locator=loc), repo=custom_repo(loc)), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
 
-    def test_fred_keeps_whole_fallback(self):
-        # FRED 片段“字段,数值”被逗号切开，仍按整个片段比较
+    def test_fred_no_special_case(self):
+        # r8（王总 2026-10-18 定不再经 FRED）：FRED 不再有整段兜底，与其他来源一样走最小连续分句窗口
         self.expect(run(T + fred_line()), "PASS", absent=("E-SUPPORT-LOCATOR-MISMATCH",))
         self.expect(run(T + fred_line("UNRATE 未能达到 4.2%。")), "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        from markjin import selfcheck as sc
+        claim = sc.norm("UNRATE 为 4.2%。")
+        # 两个窗口都配得上：原先 FRED 退回整段放行，现在与其他来源一样判错配
+        two = sc.norm('"series_id": "UNRATE", "value": "4.2", "series_id": "UNRATE", "value": "4.2"')
+        # 否定在配对窗口之外：原先 FRED 拿整段比否定而拦下，现在只看配对窗口
+        outside = sc.norm('"series_id": "UNRATE", "value": "4.2", "comment": "not seasonally adjusted"')
+        for loc, ok in ((two, False), (outside, True)):
+            with self.subTest(loc=loc):
+                self.assertEqual(sc._neg_parity_ok(claim, loc, "fred"), sc._neg_parity_ok(claim, loc, "arxiv"))
+                self.assertEqual(sc._neg_parity_ok(claim, loc, "fred")[0], ok)
 
 
 class ImplicitNegationR5(Base):
