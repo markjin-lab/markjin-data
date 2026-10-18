@@ -578,6 +578,34 @@ class FredRetractionsIndex(unittest.TestCase):
         self.assertIn("E-FRED-CITED", r["error_codes"])
         self.assertEqual(self.unreadable(r), [])
 
+    def test_escaped_pipes_follow_gfm(self):
+        # #93 r2 MEDIUM：| 前连续反斜杠为奇数才算转义；偶数时分列（列数不符即报）
+        a, b = (f"raw/{NEW}/bea/{x}.csv" for x in "ab")
+        for row_b in (f"| {b} | x | h | t | r\\\\|extra |", f"| {b} | x\\\\|y | h | t | r |",
+                      f"| {b} | x | h | t | r\\\\\\\\|extra |"):
+            doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", a, extra=row_b + "\n"))
+            r = self.codes(repo_with(doc), a)
+            line = doc.split("\n").index(row_b) + 1
+            self.assertEqual(self.unreadable(r), [(f"raw/{NEW}/RETRACTIONS.md", line)], row_b)
+            self.assertEqual(r["status"], "FAIL")
+        for row_b in (f"| {b} | x | h | t | r\\|extra |", f"| {b} | x\\|y | h | t | r |",
+                      f"| {b} | x | h | t | r\\\\\\|extra |", f"| {b} | x | h | t | r\\\\ |",
+                      f"{b} | x | h | t | r\\\\|"):              # 行尾 \\\\| 的竖线不转义，按行尾竖线去掉，仍为五列
+            doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", a, extra=row_b + "\n"))
+            r = self.codes(repo_with(doc), b)
+            self.assertEqual(self.unreadable(r), [], row_b)
+            self.assertIn("E-FRED-CITED", r["error_codes"], row_b)
+
+    def test_registered_path_normalized_like_drafts(self):
+        # 登记的路径与稿件同样按 norm()（NFKC、HTML 实体、Cf 字符）规范化后比对
+        for reg, cited in ((f"raw/{NEW}/bea/ａ.csv", f"raw/{NEW}/bea/a.csv"), (f"raw/{NEW}/bea/a.csv", f"raw/{NEW}/bea/ａ.csv"),
+                           (f"raw/{NEW}/bea/a&amp;b.csv", f"raw/{NEW}/bea/a&b.csv"),
+                           (f"raw/{NEW}/bea/a\u200b.csv", f"raw/{NEW}/bea/a.csv"),
+                           (f"raw/{NEW}/bea/a.csv", f"raw/{NEW}/bea/a\u200b.csv")):
+            r = self.codes(repo_with(retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", reg))), cited)
+            self.assertIn("E-FRED-CITED", r["error_codes"], (reg, cited))
+            self.assertEqual(self.unreadable(r), [], reg)
+
     def test_bad_rows_outside_fred_section_ignored(self):
         doc = retractions_doc(section("其他撤回", OTHERP, extra="| `坏行` |\n"), section(f"{NEW} FRED 撤回（王总决定）", NEWP))
         r = run(f"# 日报 {NEW}\n" + arx(NEW), NEW, repo_with(doc))

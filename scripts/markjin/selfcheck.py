@@ -166,12 +166,13 @@ _PATH_END = r"(?=$|[" + _PATH_SEP + r"]|\.+(?:$|[" + _PATH_SEP + r"]))"
 
 
 def retracted_path_re(paths):
-    """撤回路径集合 → 按完整路径段匹配的正则（不区分大小写）。"""
-    alts = "|".join(re.escape(x) for x in sorted(set(paths), key=lambda x: (-len(x), x)))
+    """撤回路径集合 → 按完整路径段匹配的正则（不区分大小写）。稿件行先经 norm()（NFKC、HTML 实体还原、去 Cf 字符）再匹配，
+    登记的路径也按同样方式规范化后一并加入，两边写法不同（全角、实体、不可见字符）也能对上。"""
+    forms = set(paths) | {_IGNORABLE_RE.sub("", norm(x)) for x in paths}
+    alts = "|".join(re.escape(x) for x in sorted({x for x in forms if x}, key=lambda x: (-len(x), x)))
     return re.compile(_PATH_START + "(?:" + alts + ")" + _PATH_END, re.I)
 
 
-FRED_RETRACTED_RE = retracted_path_re(FRED_RETRACTED_BASELINE)
 _FRED_SECTION_RE = re.compile(r"FRED\s*撤回", re.I)
 _RETRACTION_SEP_CELL_RE = re.compile(r"^:?-+:?$")
 _RETRACTION_PATH_RE = re.compile(r"^raw/(\d{4}-\d{2}-\d{2})/(?:[^\s|/\\`]+/)*[^\s|/\\`]+$")
@@ -179,13 +180,23 @@ _RETRACTION_PATHLIKE_RE = re.compile(r"(?<![A-Za-z0-9_.\-/])raw/\d{4}-\d{2}-\d{2
 
 
 def _table_cells(ln):
-    """GFM 表格行分列：首尾竖线可省略，\\| 不算分隔。返回去掉首尾空白的格子列表。"""
+    """GFM 表格行分列：逐字符扫描，| 前连续反斜杠为奇数时才算转义（\\| 不分列，\\\\| 分列；#93 r2 MEDIUM）；
+    首尾不转义的竖线可省略。返回去掉首尾空白的格子列表。"""
     t = ln.strip()
-    if t.startswith("|"):
-        t = t[1:]
-    if t.endswith("|") and not t.endswith("\\|"):
-        t = t[:-1]
-    return [c.strip() for c in re.split(r"(?<!\\)\|", t)]
+    cells, cur, bs, last_pipe = [], [], 0, False
+    for ch in t:
+        if ch == "|" and bs % 2 == 0:
+            cells.append("".join(cur)); cur, bs, last_pipe = [], 0, True
+            continue
+        cur.append(ch)
+        bs = bs + 1 if ch == "\\" else 0
+        last_pipe = False
+    cells.append("".join(cur))
+    if t.startswith("|") and len(cells) > 1:
+        cells = cells[1:]                        # 行首竖线
+    if last_pipe and len(cells) > 1:
+        cells = cells[:-1]                       # 行尾不转义的竖线
+    return [c.strip() for c in cells]
 
 
 def _is_delimiter_row(ln):
@@ -300,6 +311,7 @@ FRED_WORD_CASE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:AL)?FRED(?![A-Za-z0-9_])") 
 FRED_NAME_RE = re.compile(r"federal\s*reserve\s*economic\s*data|圣\s*路\s*易\s*斯\s*联\s*(?:邦\s*)?储\s*(?:备\s*)?经\s*济\s*数\s*据", re.I)
 # 默认不可见字符（Unicode Default_Ignorable_Code_Point 中 norm() 未去掉的部分：组合用字形连接符、韩文填充符、蒙古文变体选择符、变体选择符等）
 _IGNORABLE_RE = re.compile("[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\U000e0100-\U000e01ef]")
+FRED_RETRACTED_RE = retracted_path_re(FRED_RETRACTED_BASELINE)
 
 MANIFEST_LINE = re.compile(r"^([0-9a-f]{64})  (?:\./)?([^\s].*)$")
 
