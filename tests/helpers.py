@@ -80,3 +80,60 @@ def evaluate_for_tests(sc, draft, state, records, now, pair=None, correction=Non
             d.state_change = draft_change(draft, "archived", next(c for c in d.codes if c.startswith("A-")), now)
     d.publishable = d.state == "APPROVED"
     return d
+
+
+class ApprovalRepo:
+    """r18（collect 批准门禁）：只给测试用的临时 git 仓库，模拟 origin/main 上的批准记录。
+    grant() 在 review/ 下追加一行 COLLECT-APPROVAL 记录并提交，再把 refs/remotes/origin/main 指到新提交；返回提交号。
+    install() 把 collect.APPROVALS_REPO 指向它（返回旧值，测试结束时放回）。"""
+
+    def __init__(self):
+        import subprocess
+        self.path = Path(tempfile.mkdtemp(prefix="appr-"))
+        self._run = lambda *a: subprocess.run(["git", "-C", str(self.path), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                                               "-c", "commit.gpgsign=false", *a], check=True, capture_output=True, text=True).stdout
+        self._run("init", "-q", "-b", "main")
+        (self.path / "review").mkdir()
+        (self.path / "review" / "collect.md").write_text("# collect approvals\n", encoding="utf-8")
+        self._run("add", "-A")
+        self._run("commit", "-q", "-m", "init")
+        self._run("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.n = 0
+
+    def commit(self, line, path="review/collect.md", on_main=True):
+        p = self.path / path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        self._run("add", "-A")
+        self.n += 1
+        self._run("commit", "-q", "-m", f"rec {self.n}")
+        sha = self._run("rev-parse", "HEAD").strip()
+        if on_main:
+            self._run("update-ref", "refs/remotes/origin/main", sha)
+        else:                                  # 不在 origin/main 上：提交留着（按提交号可查），分支退回去
+            self._run("reset", "-q", "--hard", "HEAD~1")
+        return sha
+
+    def grant(self, action, target, by="grok-bot", ref=None, url=None, decision="APPROVED", on_main=True):
+        line = f"- `COLLECT-APPROVAL action={action} target={target}" + (f" url={url}" if url else "") + \
+               f" by={by} decision={decision}" + (f" ref={ref}" if ref else "") + "`"
+        return self.commit(line, on_main=on_main)
+
+    def wang(self, quote_ref, draft_id):
+        import json as _j
+        rec = {"schema_version": 2, "content_sha256": "0" * 64, "draft_id": draft_id, "recorded_at": "2026-10-19T03:00:00+08:00",
+               "channel": "via-grok-bot", "quote": "同意", "quote_ref": quote_ref}
+        name = hashlib.sha256(draft_id.encode()).hexdigest()
+        p = self.path / "approvals" / "wang" / f"{name}.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_j.dumps(rec), encoding="utf-8")
+        self._run("add", "-A")
+        self._run("commit", "-q", "-m", "wang")
+        self._run("update-ref", "refs/remotes/origin/main", "HEAD")
+
+    def install(self):
+        from markjin import collect
+        old = getattr(collect, "APPROVALS_REPO", None)
+        collect.APPROVALS_REPO = self.path
+        return old

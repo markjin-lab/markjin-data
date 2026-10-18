@@ -5,21 +5,25 @@ Usage:
   source_health.py report          --private-root DIR (或 MARKJIN_PRIVATE_DIR) [--out-root REPO_ROOT]
   source_health.py migrate         ...                           # 迁移 PRIVATE/state/collector-hosts.json（幂等）
   source_health.py confirm-disable --id SID --reason TEXT ...   # 人工确认停用（通常针对 pending-disable 的源，立即生效）
-  source_health.py enable          --id SID [--reason TEXT] ...  # 人工恢复：状态改回 ok，可疑轮次清空
+  source_health.py enable          --id SID [--reason TEXT] --approved-by grok-bot|review-bot (--quote-ref REF | --review-commit SHA) ...
+                                                                 # 人工恢复：状态改回 ok，可疑轮次清空（须书面批准，r18）
   source_health.py enable          --host HOST --reason TEXT --approved-by grok-bot|review-bot (--quote-ref REF | --review-commit SHA) ...
                                                                  # 人工恢复旧表迁移来的停用主机（须书面批准，引用只能用一次）
-  source_health.py approve-retest  --source KEY --approved-by grok-bot|review-bot (--quote-ref REF | --review-commit SHA) ...
-                                                                 # 批准一次重测（冷却到期、标为待批准重测的来源；只放行一次请求）
+  source_health.py approve-retest  --source KEY --url-key SHA256 --approved-by grok-bot|review-bot (--quote-ref REF | --review-commit SHA) ...
+                                                                 # 批准对一个到期 URL 的一次重测（URL 的 sha256 见 report 的 retest 一节）
 
 旧 collector-hosts.json 存在且未迁移时，采集脚本和本工具的其他命令都拒绝运行（退出码 2）。migrate 把其中每个主机 / 源
 迁移为「已停用（等人工复核）」：不请求、不自动恢复、不参与可疑计数。因机器人验证（bot_check）或登录（login）停用的标
 unrecoverable：永不恢复（enable 一律拒绝，没有放行开关），只能改 sources.yaml 并重新审批。原因写法含糊或未知的同样不可恢复。
 
 人工批准门禁（Grok Bot 2026-10-18 20:51 SGT）：URL / 来源冷却到期后，采集脚本不自动再请求，只把来源标成「待批准重测」
-（report 的 retest 一节，status=pending-approval）。enable --host 与 approve-retest 都必须带 Grok Bot 或审查 bot 的书面批准：
---approved-by 写批准方，--quote-ref（批准消息的引用，格式同 docs/approvals.md 的 quote_ref）或 --review-commit（审查记录的
-提交号）至少一个。每个引用只能用一次；批准的重测只放行一次正文请求（robots.txt 按规则先取、不占这一次），之后本轮该来源不再请求；
-收到不可疑的响应 → 下一轮起照常，可疑 → 重新冷却 24 小时，没收到响应 → 重新待批准。
+（report 的 retest 一节，status=pending-approval，pending_url_keys 列出到期 URL 的 sha256）。enable --id、enable --host 与
+approve-retest 都必须带 Grok Bot 或审查 bot 的书面批准：--approved-by 写批准方，--quote-ref 或 --review-commit 至少一个；
+批准必须在 origin/main 上有真实记录（r18，见 collect.py「人工批准门禁」：review/*.md 的 COLLECT-APPROVAL 行，或
+approvals/wang 记录；审查提交号须是 origin/main 的祖先并新增了 decision=APPROVED 的记录），批准方、动作、目标、URL 都要对上。
+每个引用只能用一次。批准的重测绑定一个 URL：只放行对这个 URL 的一次正文请求，robots.txt 另计、最多 1 次（24 小时内有本地缓存
+就不请求），robots 不允许、出错或超时 → 不发正文、批准作废回到待批准；之后本轮该来源不再请求。收到不可疑的响应 → 只清这个 URL
+的到期记录（同来源其他到期 URL 仍待批准），可疑 → 重新冷却 24 小时，没收到响应 → 重新待批准。
 
 只改私有状态文件 PRIVATE/state/source-health.json，不发任何网络请求。report 输出 JSON（源 id、状态、轮次与原因，
 以及旧表停用主机；不含 URL 或本机路径），只打到终端，不写进公开目录：其中 status_reason_private 与旧表 reason 是自由文本
@@ -49,6 +53,7 @@ def main(argv=None):
     ap.add_argument("--host")
     ap.add_argument("--reason", default="")
     ap.add_argument("--source", help="approve-retest: 来源键（见 report 的 retest 一节）")
+    ap.add_argument("--url-key", help="approve-retest: 被批准重测的到期 URL 的 sha256（见 report 的 pending_url_keys）")
     ap.add_argument("--approved-by", help="grok-bot 或 review-bot（书面批准方）")
     ap.add_argument("--quote-ref")
     ap.add_argument("--review-commit")
@@ -76,8 +81,9 @@ def main(argv=None):
         if a.cmd == "approve-retest":
             if not (a.source or "").strip():
                 print("--source required", file=sys.stderr); return 2
-            h.approve_retest(a.source.strip(), _approval(a))
-            print(json.dumps({"source": a.source.strip(), "retest": "approved"}, ensure_ascii=False))
+            h.approve_retest(a.source.strip(), _approval(a), a.url_key)
+            print(json.dumps({"source": a.source.strip(), "url_key": (a.url_key or "").strip().lower(), "retest": "approved"},
+                             ensure_ascii=False))
             return 0
         if a.cmd == "enable" and a.host:
             if a.id:
@@ -93,8 +99,8 @@ def main(argv=None):
             if not a.reason.strip():
                 print("--reason required (who confirmed, and why)", file=sys.stderr); return 2
             h.set_status(a.id, "disabled", a.reason)
-        else:
-            h.set_status(a.id, "ok", a.reason or "manually re-enabled")
+        else:                       # r18 HIGH①：enable --id 同样须书面批准（与 --host、approve-retest 共用核验）
+            h.set_status(a.id, "ok", a.reason or "manually re-enabled", _approval(a))
         print(json.dumps(h.report(sids={a.id}), ensure_ascii=False))
     except (collect.StateError, collect.ConfigError, OSError) as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr); return 2
