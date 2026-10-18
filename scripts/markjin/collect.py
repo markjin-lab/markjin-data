@@ -479,19 +479,32 @@ def host_of(u):
 
 # ---------------------------------------------------------------- 逐条目许可
 PUBLIC_LICENSES = {"CC-BY-4.0", "CC0-1.0", "US-Gov-PD"}
-EVIDENCE_FIELDS = ("url", "license", "license_url", "evidence_url", "attribution", "verified_by", "verified_at")
+EVIDENCE_FIELDS = ("url", "sha256", "license", "license_url", "evidence_url", "attribution", "verified_by",
+                   "verified_at")
 
 
-def public_fulltext_ok(evidence, url):
+def full_url_key(u):
+    """许可匹配用的完整条目身份（审查 r2：不能用脱敏 URL）：只规范 scheme/主机大小写、去片段，
+    路径与全部查询参数原样保留。仅在私有侧/内存中使用，不写公开记录。"""
+    p = urlsplit(u.strip())
+    host = (p.hostname or "").lower()
+    netloc = (f"[{host}]" if ":" in host else host) + (f":{p.port}" if p.port else "")
+    return urlunsplit((p.scheme.lower(), netloc, p.path or "/", p.query, ""))
+
+
+def public_fulltext_ok(evidence, url, sha256):
     """逐条目判断全文可否进公开目录。默认 False（url+hash-only）。
-    需要：针对该 URL 的许可证据记录，字段齐全，许可在白名单内；US-Gov-PD 另需 third_party_excluded: true。"""
+    需要：针对该*完整* URL（含全部查询参数）且绑定该响应 sha256 的许可证据，字段齐全，许可在白名单内；
+    US-Gov-PD 另需 third_party_excluded: true。原 URL 与最终 URL 须各自有证据、各自核对。"""
     if not evidence:
         return False, "no license evidence (default url+hash-only)"
     miss = [k for k in EVIDENCE_FIELDS if not str(evidence.get(k) or "").strip()]
     if miss:
         return False, "license evidence incomplete: " + ",".join(miss)
-    if public_url(evidence["url"]) != public_url(url):
+    if full_url_key(evidence["url"]) != full_url_key(url):
         return False, "license evidence is for a different URL"
+    if not sha256 or str(evidence["sha256"]).strip().lower() != sha256.lower():
+        return False, "license evidence sha256 does not match response"
     if evidence["license"] not in PUBLIC_LICENSES:
         return False, f"license {evidence['license']} not publishable"
     if evidence["license"] == "US-Gov-PD" and evidence.get("third_party_excluded") is not True:
@@ -500,7 +513,7 @@ def public_fulltext_ok(evidence, url):
 
 
 def load_license_evidence(path):
-    """JSON Lines，每行一条逐条目证据（字段见 EVIDENCE_FIELDS）。返回 {public_url: evidence}。"""
+    """JSON Lines，每行一条逐条目证据（字段见 EVIDENCE_FIELDS）。返回 {full_url_key: evidence}。"""
     out = {}
     if not path:
         return out
@@ -510,7 +523,7 @@ def load_license_evidence(path):
         e = strictjson.loads(line)
         if not isinstance(e, dict) or "url" not in e:
             raise ConfigError(f"license evidence line {n}: not an object with url")
-        out[public_url(e["url"])] = e
+        out[full_url_key(e["url"])] = e
     return out
 
 
@@ -634,11 +647,13 @@ class Archive:
         self.put(rel, body)
         return rel, sha
 
-    def put_derived(self, sub, sid, src_sha, name, data):
+    def put_derived(self, sub, sid, src_sha, name, data, sources=None):
+        """sources：参与生成的全部原件 sha256（多份 sitemap 等）；DERIVED-FROM.tsv 逐一登记（逗号分隔）。"""
         rel = f"{sub}{sid}/derived/{src_sha}.{name}"
         sha, new = self.put(rel, data, manifest="DERIVED.sha256")
         if new:
-            self._append("DERIVED-FROM.tsv", f"./{rel}\t{src_sha}")
+            srcs = list(dict.fromkeys(sources or [src_sha]))
+            self._append("DERIVED-FROM.tsv", f"./{rel}\t{','.join(srcs)}")
         return rel, sha
 
     def put_json(self, rel, obj):
@@ -970,6 +985,7 @@ class Fetcher:
         # addr_policy 是额外策略，只能更严：两者都放行才放行。
         self._forced_policy = AddressPolicy(fakeip_cidr if fakeip_cidr is not None else os.environ.get(FAKEIP_ENV),
                                             resolver=resolver)
+        self.resolver = self._forced_policy.resolver
         self.addr_policy = addr_policy
         self.interval, self.timeout, self.max_bytes = interval, timeout, max_bytes
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
