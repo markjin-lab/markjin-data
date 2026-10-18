@@ -463,3 +463,34 @@ class KeylessClauseR5(Base):
         loc = "Researchers could watch the run on a live dashboard and pause or stop it at any time, and they did intervene."
         r = run(T + arxiv_line("Researchers could pause or stop the run at any time, but had no cause to intervene.", locator=loc), repo=custom_repo(loc))
         self.expect(r, "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class KeylessPairingR5(Base):
+    """r5 审查 HIGH：无数字、无代号的分句也要按对象配对，不能互换否定或审慎说法。"""
+    LOC = "The method is accurate on long documents; however, it is not robust to adversarial prompts."
+
+    def test_keyless_objects_cannot_swap_negation(self):
+        good = "The method is accurate on long documents, but it is not robust to adversarial prompts."
+        bad = "The method is not accurate on long documents, but it is robust to adversarial prompts."
+        self.expect(run(T + arxiv_line(good, locator=self.LOC), repo=custom_repo(self.LOC)), "PASS")
+        self.expect(run(T + arxiv_line(bad, locator=self.LOC), repo=custom_repo(self.LOC)),
+                    "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_keyless_single_clause_cannot_borrow_negation(self):
+        r = run(T + arxiv_line("The method is not accurate on long documents.", locator=self.LOC), repo=custom_repo(self.LOC))
+        self.expect(r, "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_keyless_model_b_cannot_borrow_a_negation(self):
+        loc = "Model A is not reliable; Model B is reliable."
+        self.expect(run(T + arxiv_line("Model B is not reliable.", locator=loc), repo=custom_repo(loc)),
+                    "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + arxiv_line("Model B is reliable.", locator=loc), repo=custom_repo(loc)), "PASS")
+
+    def test_keyless_hedge_cannot_swap(self):
+        loc = "Model A remains to be verified; Model B is verified."
+        self.expect(run(T + arxiv_line("Model A is verified; Model B remains to be verified.", locator=loc), repo=custom_repo(loc)),
+                    "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_keyless_zh_mixed_source_blocks(self):
+        r = run(T + arxiv_line("该方法在长文档上并不准确，但对对抗性提示很稳健。", locator=self.LOC), repo=custom_repo(self.LOC))
+        self.expect(r, "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")

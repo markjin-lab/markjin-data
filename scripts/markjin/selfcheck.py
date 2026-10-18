@@ -978,6 +978,21 @@ def _neg_main(s):
     return main, nh
 
 
+_PAIR_STOP = frozenset("the a an of in on to and or but for with by from that this these those is are was were be been "
+                       "it its their they them we our as at than then also however while".split())
+
+
+def _pair_words(s):
+    """无数字、无代号分句配对用：小写普通词（3 个字母以上，去停用词）加区分大小写的对象词（Model、B、MMLU）。"""
+    return ({w.lower() for w in re.findall(r"[A-Za-z][A-Za-z\-]{2,}", s)} - _PAIR_STOP) | {"@" + w for w in _OBJ_RE.findall(s)}
+
+
+def _neg_state(seg):
+    """(否定奇偶, 是否带审慎说法)。"""
+    m, h = _neg_main(seg)
+    return numnorm.neg_count(m) % 2, h > 0
+
+
 def _neg_parity_ok(claim, loc, kind=None):
     """#32 r4/r5：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
     1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
@@ -1033,16 +1048,24 @@ def _neg_parity_ok(claim, loc, kind=None):
         # 或断言分句带审慎说法而整个片段没有 → 错配
         if tg_h and not claim_hedged or cc_h and not loc_hedged:
             return False, hints
-    # r5（dry run 发现）：不含数字和代号的分句合在一起，与原文去掉已配对窗口后的剩余部分比否定奇偶。
-    # 以前是每个这样的分句各自与整个片段比，原文别处有一个否定（如 “but they had no cause to intervene”）
-    # 就会把断言里不含否定的分句全判错配。
+    # r5：不含数字和代号的分句逐句配对：在原文去掉已配对窗口后的剩余分句里，按普通词与对象词重合度找唯一候选；
+    # 找不到唯一候选时，剩余分句否定/审慎状态全都相同才可比，否则判错配（不能只比合并奇偶，见 r5 审查 HIGH）。
     if rest_claim:
-        rc, rc_h = _neg_main("，".join(rest_claim))
-        rl, rl_h = _neg_main(rest_loc)
-        if numnorm.neg_count(rc) % 2 != numnorm.neg_count(rl) % 2:
-            return False, hints
-        if rc_h and not loc_hedged or rl_h and not claim_hedged:
-            return False, hints
+        lrest = [c for c in (numnorm.clauses(rest_loc) or []) if re.search(r"[A-Za-z0-9\u4e00-\u9fff]", c)]
+        states = {_neg_state(c) for c in lrest} or {(0, False)}
+        for cc in rest_claim:
+            cw = _pair_words(cc)
+            scored = sorted(((len(cw & _pair_words(lc)), lc) for lc in lrest), key=lambda t: -t[0])
+            cstate = _neg_state(cc)
+            if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+                if cstate != _neg_state(scored[0][1]):        # 唯一配对：否定奇偶与审慎说法都要一致
+                    return False, hints
+            elif len(states) == 1:
+                tstate = next(iter(states))
+                if cstate[0] != tstate[0] or cstate[1] and not loc_hedged or tstate[1] and not claim_hedged:
+                    return False, hints
+            else:
+                return False, hints                            # 配不上且剩余分句状态不一 → 分不清对象
     return True, hints
 
 
