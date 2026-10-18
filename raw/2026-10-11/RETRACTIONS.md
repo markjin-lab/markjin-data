@@ -27,3 +27,12 @@ MANIFEST.sha256 中的原登记行按只追加原则保留不改；scripts/verif
 ## RETRACTIONS.md 自身的例外规则
 
 `RETRACTIONS.md` 为只追加（append-only）文件：每次追加内容后，须在同日 `MANIFEST.sha256` 末尾再追加一行，登记其新的 sha256。MANIFEST 对本文件只校验最后一条，历史版本靠前缀不变保证；此例外仅适用于 RETRACTIONS.md。
+
+## 2026-10-18 FRED 撤回补充：nbs-gdp 年度对账表（FRED 数值的衍生）
+
+| path | source_url | sha256 | removed_at | reason |
+|---|---|---|---|---|
+| raw/2026-10-11/nbs-gdp/annual-reconciliation.csv | 无（本地衍生文件，所用 FRED 值来自 https://fred.stlouisfed.org/graph/fredgraph.csv?id=CHNGDPNQDSMEI） | e35f34350120967564606eddc8f804985ceb9987cc983894f11de7ca6ac4ca88 | 2026-10-18 18:27 SGT (UTC+8) | 来源条款不允许转载和存储，改从原始机构取数 |
+| raw/2026-10-11/nbs-gdp/annual-reconciliation.md | 无（本地衍生文件，所用 FRED 值来自 https://fred.stlouisfed.org/graph/fredgraph.csv?id=CHNGDPNQDSMEI） | c9e83c3c7bf0cee34102db3a6f7ab421fcb26d1240113d2c8089497bc59f0cc5 | 2026-10-18 18:27 SGT (UTC+8) | 来源条款不允许转载和存储，改从原始机构取数 |
+
+批准：Grok Bot 定（王总 2026-10-18 FRED 撤回决定的延伸）。同目录 PROVENANCE.md、query-log.jsonl、README.md 保留不改。复核：待 markjin 审查 bot 审查；合并需王总批准记录。
