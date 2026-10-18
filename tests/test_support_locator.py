@@ -537,3 +537,31 @@ class KeylessPairingR6(Base):
         self.expect(run(T + arxiv_line("Open-weight models favor the construction.", locator=loc), repo=custom_repo(loc)), "PASS")
         self.expect(run(T + arxiv_line("Open-weight models do not favor the construction.", locator=loc), repo=custom_repo(loc)),
                     "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class KeylessPairingR7(Base):
+    """r7 审查 HIGH：A 分句与断言共享的谓语词多于 B 分句时，关于 B 的断言不能配到 A、借用 A 的否定。"""
+    LOC = "The new method does not improve recall on long documents; the baseline improves recall."
+
+    def test_predicate_overlap_cannot_pull_to_other_object(self):
+        cases = (
+            (self.LOC, "The baseline does not improve recall on long documents."),
+            (self.LOC, "Recall on long documents does not improve for the baseline."),
+            (self.LOC, "baseline 在 long documents 上没有 improve recall。"),
+            ("The proposed agent does not complete the long multi-step tasks, while the simple agent completes the tasks.",
+             "The simple agent does not complete the long multi-step tasks."),
+            ("The new method improves recall on long documents; the baseline does not improve recall.",
+             "The baseline improves recall on long documents."),
+            # r7 审查：并列最高分的两个同状态候选（first/second system）不能替 replacement 作配对
+            ("The first system processes audio quickly; The second system processes audio quickly; The replacement does not process audio.",
+             "The replacement processes audio quickly."),
+        )
+        for loc, claim in cases:
+            with self.subTest(claim=claim):
+                self.expect(run(T + arxiv_line(claim, locator=loc), repo=custom_repo(loc)),
+                            "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_same_object_still_passes(self):
+        for claim in ("The new method does not improve recall on long documents.", "The baseline improves recall."):
+            with self.subTest(claim=claim):
+                self.expect(run(T + arxiv_line(claim, locator=self.LOC), repo=custom_repo(self.LOC)), "PASS")
