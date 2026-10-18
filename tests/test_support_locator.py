@@ -404,8 +404,8 @@ class ObjectWindowR5(Base):
         outside = sc.norm('"series_id": "UNRATE", "value": "4.2", "comment": "not seasonally adjusted"')
         for loc, ok in ((two, False), (outside, True)):
             with self.subTest(loc=loc):
-                self.assertEqual(sc._neg_parity_ok(claim, loc, "fred"), sc._neg_parity_ok(claim, loc, "arxiv"))
-                self.assertEqual(sc._neg_parity_ok(claim, loc, "fred")[0], ok)
+                # _neg_parity_ok 不再接收来源类型（kind），FRED 与其他来源走同一套判定
+                self.assertEqual(sc._neg_parity_ok(claim, loc)[0], ok)
 
 
 class ImplicitNegationR5(Base):
