@@ -2320,6 +2320,24 @@ class R15Fixes(unittest.TestCase):
         self.assertNotIn("https://f.org/rss3", calls)                    # 同主机本轮停止
         self.assertEqual(rc, 1)
 
+    # ---- MEDIUM ⑤：跳转起点只冷却该 URL，停的是返回可疑响应那一跳的主机
+    def test_r15_5_redirect_origin_host_not_stopped(self):
+        d = self.tmpdir()
+        routes = {"https://doi.org/10.1/a": Resp(302, headers={"Location": "https://pub.org/a"}), "https://pub.org/a": Resp(403),
+                  "https://doi.org/10.1/b": Resp(302, headers={"Location": "https://ok.org/b"}),
+                  "https://ok.org/b": Resp(200, b"ok"), "https://pub.org/c": Resp(200, b"ok")}
+        f = self.fetcher(d, routes)
+        self.assertEqual(f.get("https://doi.org/10.1/a", sid="s").error, "http_403")
+        self.assertTrue(f.get("https://doi.org/10.1/b", sid="s").ok)                       # 同轮其他 DOI 照常
+        self.assertEqual(f.get("https://pub.org/c", sid="s").error, "host_stopped_this_round")
+        st = collect.SourceHealth(d / "st.json").data
+        self.assertEqual(sorted(st["host_stops"][ROUND]), ["pub.org"])
+        self.assertIn(collect.url_key("https://doi.org/10.1/a"), st["urls"][ROUND])        # 起点 URL 仍冷却
+        f2 = collect.Fetcher(collect.SourceHealth(d / "st.json"), opener=FakeOpener(routes), sleep=lambda w: None,
+                             resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=ROUND)    # 另一进程、同一轮
+        self.assertEqual(f2.get("https://doi.org/10.1/a", sid="s").error, "url_cooldown")
+        self.assertTrue(f2.get("https://doi.org/10.1/b", sid="s").ok)
+
 
 if __name__ == "__main__":
     unittest.main()

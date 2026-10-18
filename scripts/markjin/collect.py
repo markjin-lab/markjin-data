@@ -675,6 +675,7 @@ def ext_for(ctype, body):
 # 15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。现行细则：
 #  1. 单次可疑（401/403、429、验证页、登录墙；robots.txt 同样）→ 该主机本轮全部停止（跨进程、跨源生效），429 不重试。
 #  2. 被拒的 URL（含跳转起点）至少冷却 COOLDOWN_SECONDS（24 小时）；失败记录按轮次分别保存，补跑旧轮不清新轮的记录。
+#     本轮停止的只是返回可疑响应的那一跳的主机；跳转起点只冷却该 URL，起点主机不停（r15 ⑤）。
 #  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
 #  4. 没有公布限速的站点，每站（site_of）每分钟最多 1 次（跨进程共享）；只有 sources.yaml site_rate_limits 写明
@@ -1017,8 +1018,9 @@ class SourceHealth:
                 fcntl.flock(lk, fcntl.LOCK_UN)
 
     def stop(self, urls, rid, sid, reason):
-        """单次可疑：urls（实际被拒的那一跳、跳转起点等）各记一条冷却 ≥24 小时的失败记录（记在本轮名下），
-        并把这些 URL 的主机记为本轮停止。只动本轮的条目；别的轮只清理冷却已过期的 URL 记录。"""
+        """单次可疑：urls[0] = 返回可疑响应的那一跳，其余为跳转起点等。每个 URL 各记一条冷却 ≥24 小时的失败记录（记在本轮
+        名下）；只有 urls[0] 的主机记为本轮停止（r15 ⑤：起点主机不停，如 doi.org 跳到出版商 403，同轮其他 DOI 照常）。
+        只动本轮的条目；别的轮只清理冷却已过期的 URL 记录。"""
         if not _ROUND_ID.fullmatch(rid or ""):
             raise ConfigError(f"bad round id {rid!r}")
         t = float(self.clock())
@@ -1031,9 +1033,10 @@ class SourceHealth:
             cur = d["urls"].setdefault(rid, {})
             stops = d["host_stops"].setdefault(rid, {})
             for u in urls:
-                h = host_of(u)
-                cur.setdefault(url_key(u), {"reason": reason, "sid": sid, "host": h, "at": t, "until": t + COOLDOWN_SECONDS})
-                stops.setdefault(h, {"reason": reason, "sid": sid, "at": t})
+                cur.setdefault(url_key(u), {"reason": reason, "sid": sid, "host": host_of(u), "at": t,
+                                            "until": t + COOLDOWN_SECONDS})
+            if urls:
+                stops.setdefault(host_of(urls[0]), {"reason": reason, "sid": sid, "at": t})
             for old in sorted(d["host_stops"])[:-KEEP_ROUNDS]:
                 del d["host_stops"][old]
         self._locked_update(upd)
@@ -1316,7 +1319,8 @@ class Fetcher:
         self.suspicious.setdefault(sid, []).append({"reason": reason, "host": host_of(url)})
 
     def mark_failed(self, url, sid, reason, also=()):
-        """单次可疑：url（及跳转起点等 also）冷却 ≥24 小时、其主机本轮全部停止（持久，跨进程），给 sid 记一次可疑。"""
+        """单次可疑：url（返回可疑响应的那一跳）与 also（跳转起点等）冷却 ≥24 小时；只有 url 的主机本轮全部停止
+        （持久，跨进程；起点主机不停），给 sid 记一次可疑。"""
         self._event(sid, reason, url)
         urls = [url] + [u for u in also if u and u != url]
         self.state.stop(urls, self.round_id, sid, reason)
@@ -1567,7 +1571,8 @@ class Fetcher:
     def _get(self, url, sid, accept, validate=None):
         """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、旧表停用、源状态、本轮主机停止、URL 冷却、robots 与限速。
         sid 可以是函数（按每一跳的主机给出伪源 id，如 fetch_primary 的 primary:<主机>）。
-        可疑响应（401/403/429、验证页、跳登录页）：该跳与起点 URL 冷却 ≥24 小时、该主机本轮全部停止，给该跳的 sid 记一次可疑；
+        可疑响应（401/403/429、验证页、跳登录页）：该跳与起点 URL 冷却 ≥24 小时、该跳主机本轮全部停止（起点主机不停），
+        给该跳的 sid 记一次可疑；
         不重试、不跟随 Location。「查失败记录—发请求—写记录」在同一把按 URL 的跨进程锁里完成。
         Result.hops 只持有 public_url；final_url 为完整 URL，仅供内存内核对。"""
         sid_of = sid if callable(sid) else (lambda _h, _s=sid: _s)
