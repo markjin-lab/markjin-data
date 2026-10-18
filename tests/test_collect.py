@@ -1712,7 +1712,11 @@ class BlockRule1522(unittest.TestCase):
             self.assertEqual(r.error, err)
             self.assertTrue(collect.is_suspicious(r.error), err)
             self.assertEqual(f.get("https://a.org/y", sid="s2").error, "host_stopped_this_round", err)   # 同主机别的源也停
-            self.assertTrue(f.get("https://b.org/z", sid="s").ok, err)                               # 别的主机照常
+            if err == "login_wall":                                                                  # 登录墙按停源处理
+                self.assertEqual(f.get("https://b.org/z", sid="s").error, "source_blocked", err)
+                self.assertTrue(f.get("https://b.org/z", sid="s3").ok, err)                          # 别的源、别的主机照常
+            else:
+                self.assertTrue(f.get("https://b.org/z", sid="s").ok, err)                           # 别的主机照常
             calls = [u for u, _ in f.opener.calls]
             self.assertEqual(calls.count("https://a.org/x"), 1, err)                                 # 不重试
             self.assertNotIn("https://a.org/y", calls, err)
@@ -2743,6 +2747,46 @@ class R15Fixes(unittest.TestCase):
         f = fx("2026-10-12/r2", {u2: Resp(200, b"ok")})                         # 新进程、下一轮：来源级冷却从磁盘读到
         self.assertEqual(f.get(u2, sid="openfda-510k").error, "source_blocked")
         self.assertEqual(f.opener.calls, [])
+
+    # ---- #60 r15 HIGH（审查原文：200 状态、不跳转的登录页（Sign in 标题加密码表单）被记为抓取成功，同主机继续请求）
+    SIGNIN_200 = (b'<!doctype html><html><head><title>Sign in</title></head><body><main><h1>Sign in</h1>'
+                  b'<form method="post" action="/session"><input type="email" name="email" autocomplete="username">'
+                  b'<input type="password" name="password"><button type="submit">Sign in</button></form></main></body></html>')
+    CONTENT_200 = (b'<!doctype html><html><head><title>Quarterly release: consumer prices</title></head><body>'
+                   b'<header><a href="/login">Sign in</a><form action="/search"><input name="q"></form></header>'
+                   b'<article><h1>Consumer prices rose 0.2 percent</h1><p>' + b"The index for all items increased. " * 40 +
+                   b'</p></article></body></html>')
+
+    def test_r15_60_high_200_login_page_stops_source(self):
+        d = self.tmpdir()
+        H = {"Content-Type": "text/html; charset=utf-8"}
+        f = self.fetcher(d, {"https://a.org/release": Resp(200, self.SIGNIN_200, H), "https://a.org/other": Resp(200, b"ok"),
+                             "https://b.org/feed": Resp(200, b"ok"), "https://c.org/x": Resp(200, b"ok")})
+        r = f.get("https://a.org/release", sid="s")
+        self.assertEqual((r.ok, r.error), (False, "login_wall"))                 # 不算抓取成功
+        self.assertFalse(r.body)
+        self.assertEqual(f.get("https://a.org/other", sid="t").error, "host_stopped_this_round")   # 同主机不再请求
+        r = f.get("https://b.org/feed", sid="s")                                 # 停源：同一来源别的主机本轮也停
+        self.assertEqual((r.error, r.detail), ("source_blocked", "source cooldown:login_wall"))
+        self.assertTrue(f.get("https://c.org/x", sid="t").ok)                    # 别的来源照常
+        calls = [u for u, _ in f.opener.calls]
+        self.assertEqual(calls.count("https://a.org/release"), 1)
+        self.assertNotIn("https://a.org/other", calls); self.assertNotIn("https://b.org/feed", calls)
+        self.assertEqual(f.suspicious["s"][0]["reason"], "login_wall")
+        # 响应头信号：200 但要求认证（WWW-Authenticate）→ 同样是登录墙
+        f2 = self.fetcher(self.tmpdir(), {"https://e.org/x": Resp(200, b"<html><title>x</title></html>",
+                                                                  {"Content-Type": "text/html", "WWW-Authenticate": 'Basic realm="x"'})})
+        self.assertEqual(f2.get("https://e.org/x", sid="s").error, "login_wall")
+
+    def test_r15_60_high_ordinary_content_page_not_login(self):
+        d = self.tmpdir()
+        H = {"Content-Type": "text/html; charset=utf-8"}
+        self.assertFalse(collect.login_page("text/html", self.CONTENT_200, "https://a.org/p"))
+        f = self.fetcher(d, {"https://a.org/release": Resp(200, self.CONTENT_200, H), "https://a.org/other": Resp(200, b"ok")})
+        r = f.get("https://a.org/release", sid="s")
+        self.assertTrue(r.ok); self.assertEqual(r.body, self.CONTENT_200)
+        self.assertTrue(f.get("https://a.org/other", sid="s").ok)               # 同主机、同来源照常
+        self.assertNotIn("s", f.suspicious)
 
 
 if __name__ == "__main__":
