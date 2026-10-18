@@ -69,7 +69,16 @@ FRED_LINK_RE = re.compile(r"(?:(?:al)?fred|api)\.stlouisfed\.org|stlouisfed\.org
 FRED_RETRACTED_PATHS = ("raw/2026-10-11/nbs-gdp/fred-CHNGDPNQDSMEI.csv",
                         "raw/2026-10-11/nbs-gdp/annual-reconciliation.csv",
                         "raw/2026-10-11/nbs-gdp/annual-reconciliation.md")
-FRED_RETRACTED_RE = re.compile(r"raw/[^\s`]*?2026-10-11/nbs-gdp/(?:fred-CHNGDPNQDSMEI\.csv|annual-reconciliation\.(?:csv|md))", re.I)
+# #90 r4（r3 MEDIUM）：按完整路径段匹配。raw/ 前不能紧接文件名字符（ASCII 字母数字、_ . -）；路径之后只能是字符串结尾、# 锚点、?、
+# 引号、括号、空白或常见标点（. 之后不能再接文件名字符），不能再接文件名字符（如 .csv.notes、.md.bak 不算）。
+# 各种链接写法（blob、raw.githubusercontent、github.com/…/raw/…）与相对路径（含 ../）都含 raw/2026-10-11/nbs-gdp/<文件> 这一段。
+_PATH_END = r"""(?=$|[#?"'`()\[\]{}<>\s,;:!|*~，。；：！？、（）「」『』“”‘’【】《》〈〉…—–]|\.(?![A-Za-z0-9_.\-]))"""
+FRED_RETRACTED_RE = re.compile(r"(?<![A-Za-z0-9_.\-])raw/2026-10-11/nbs-gdp/(?:fred-CHNGDPNQDSMEI\.csv|annual-reconciliation\.(?:csv|md))"
+                               + _PATH_END, re.I)
+# #90 r4：更正节里逐字等于这条固定写法的撤回说明行不报 E-FRED-CITED（<日期> 只允许 YYYY-MM-DD 真实日期；有任何不同照常报）
+FRED_RETRACTION_NOTE_RE = re.compile(
+    r"\*补充说明（2026-10-18）：原 FRED raw 文件已撤回（见 raw/(\d{4}-\d{2}-\d{2})/RETRACTIONS\.md，data PR #87）；"
+    r"上文采集范围描述的是撤回前的历史，本期未选用 FRED 数据。\*")
 FRED_WORD_CASE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:AL)?FRED(?![A-Za-z0-9_])")   # 英文简称只认全大写（Fred 等人名不算）
 FRED_NAME_RE = re.compile(r"federal\s*reserve\s*economic\s*data|圣\s*路\s*易\s*斯\s*联\s*(?:邦\s*)?储\s*(?:备\s*)?经\s*济\s*数\s*据", re.I)
 # 默认不可见字符（Unicode Default_Ignorable_Code_Point 中 norm() 未去掉的部分：组合用字形连接符、韩文填充符、蒙古文变体选择符、变体选择符等）
@@ -515,10 +524,11 @@ def _claim_of(s):
     return URL_RE.sub(" ", RAW_RE.sub(" ", s))
 
 
-def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
+def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None, base_text=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
-    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。"""
+    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。
+    base_text：base（main）上同一文件的内容，只用于 E-FRED-CITED 只查新增或改动的行（#90 r4）；None = 全部行都查。"""
     errors = []
     flags = {k: False for k in FLAG_KEYS}
     counts = {k: 0 for k in COUNT_KEYS}
@@ -636,7 +646,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     tongyi_fm = isinstance(fm_parsed, dict) and isinstance(fm_parsed.get("type"), str) \
         and fm_parsed["type"].strip().lower() == TONGYI_TYPE
     tongyi_path = is_tongyi_path(rel)
-    _check_fred(lines, date, fm_end, fm_parsed, err, text)
+    _check_fred(lines, date, fm_end, fm_parsed, err, text, raw_lines, base_text)
     long_form = False
     if tongyi_fm or tongyi_path:
         if tongyi_fm and tongyi_path:
@@ -975,16 +985,61 @@ def _fm_value(s, fm_parsed=None, raw=None):
     return v
 
 
+_FRED_RES = (FRED_LINK_RE, FRED_RETRACTED_RE, FRED_WORD_CASE_RE, FRED_NAME_RE)
+
+
 def _fred_hit(s):
     """一段文字里是否有 FRED 链接、raw/…/fred/ 文件、#87 撤回的三个 nbs-gdp 文件或文字提到 FRED（先去掉默认不可见字符）。"""
     s = _IGNORABLE_RE.sub("", s)
-    return bool(FRED_LINK_RE.search(s) or FRED_RETRACTED_RE.search(s) or FRED_WORD_CASE_RE.search(s) or FRED_NAME_RE.search(s))
+    return any(r.search(s) for r in _FRED_RES)
 
 
-def _check_fred(lines, date, fm_end, fm_parsed, err, text=""):
+def correction_section_lines(raw_lines):
+    """更正节所在的行号集合（1 起）。沿用 route.py 的更正标题识别：新格式二级标题「## 更正」/「## Corrections」，
+    或旧格式「## 更正 YYYY-MM-DD…」/「## Correction(s) YYYY-MM-DD…」；从标题下一行起，到下一个 ATX 或 Setext 标题为止。"""
+    from .route import (CORRECTION_HEADING, _HEADING_LINE_RE, _HEADING_PARTS_RE, _OLD_DATED_HEADING_RE,
+                        _heading_shown, _setext_title)   # route 导入本模块，此处延迟导入
+    names = set(CORRECTION_HEADING.values())
+    out, inside = set(), False
+    for i, ln in enumerate(raw_lines):
+        if _setext_title(raw_lines, i) or (i and _setext_title(raw_lines, i - 1)):
+            inside = False
+            continue
+        if _HEADING_LINE_RE.match(ln):
+            shown = _heading_shown(ln)
+            m = _HEADING_PARTS_RE.match(shown)
+            inside = bool((m and len(m.group(1)) == 2 and m.group(2) in names) or _OLD_DATED_HEADING_RE.match(shown))
+            continue
+        if inside:
+            out.add(i + 1)
+    return out
+
+
+def fred_note_exempt(raw_line):
+    """逐字等于固定写法的撤回说明行（<日期> 为 YYYY-MM-DD 真实日期）→ True。不去空白、不规范化。"""
+    m = FRED_RETRACTION_NOTE_RE.fullmatch(raw_line)
+    return bool(m and valid_date(m.group(1)))
+
+
+def changed_lines(raw_lines, base_text):
+    """和 base 上同一文件逐行比对，返回新增或改动行的行号集合（1 起）。base_text 为 None（取不到 base）→ 全部行。"""
+    if not isinstance(base_text, str):
+        return set(range(1, len(raw_lines) + 1))
+    import difflib
+    sm = difflib.SequenceMatcher(None, base_text.splitlines(), raw_lines, autojunk=False)
+    out = set()
+    for tag, _i1, _i2, j1, j2 in sm.get_opcodes():
+        if tag in ("replace", "insert"):
+            out.update(range(j1 + 1, j2 + 1))
+    return out
+
+
+def _check_fred(lines, date, fm_end, fm_parsed, err, text="", raw_lines=None, base_text=None):
     """路线图 v1.12（FRED 撤回）：不得新增 FRED 链接或数据 → E-FRED-CITED（硬拦）。lines 为规范化后的行（含 front matter）。
     更正稿（front matter 有 corrects / corrected_at 键，或原文出现这两个键行）不论稿件日期与 corrected_at 填什么都检查；
-    front matter 存在但解析不出时从严检查。"""
+    front matter 存在但解析不出时从严检查。
+    #90 r4：只查和 base 相比新增或改动的行（base_text 为 None 时全部行都查）；更正节里逐字等于固定写法的撤回说明行不查。
+    跨行写法：整篇拼接后的命中只要落在（或跨入）要查的行就报。"""
     correction = bool(re.search(r"(?m)^\s*(?:corrects|corrected_at)\s*:", text or ""))
     if fm_end:
         if isinstance(fm_parsed, dict):
@@ -993,12 +1048,30 @@ def _check_fred(lines, date, fm_end, fm_parsed, err, text=""):
             correction = True                   # 解析不出 front matter：从严
     if not (date >= FRED_CUTOFF or correction):
         return
+    if raw_lines is None or len(raw_lines) != len(lines):
+        raw_lines, base_text = lines, None      # 行对不上：从严，全部行都查
+    check = changed_lines(raw_lines, base_text)
+    corr = correction_section_lines(raw_lines)
+    check -= {i for i in check if i in corr and fred_note_exempt(raw_lines[i - 1])}
     hit = False
     for i, s in enumerate(lines, 1):
-        if _fred_hit(s):
+        if i in check and _fred_hit(s):
             err("E-FRED-CITED", i); hit = True
-    if not hit and _fred_hit(" ".join(lines)):
-        err("E-FRED-CITED", 0)                  # 跨行写法（如 YAML 折叠值）
+    if hit or not check:
+        return
+    # 跨行写法（如 YAML 折叠值）：整篇拼接，命中区间与要查的行有重叠才报
+    parts = [_IGNORABLE_RE.sub("", s) for s in lines]
+    spans, pos = [], 0
+    for i, s in enumerate(parts, 1):
+        if i in check:
+            spans.append((pos, pos + len(s) + 1))
+        pos += len(s) + 1
+    joined = " ".join(parts)
+    for r in _FRED_RES:
+        for m in r.finditer(joined):
+            if any(m.start() < b and a < m.end() for a, b in spans):
+                err("E-FRED-CITED", 0)
+                return
 
 
 def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):
@@ -1398,8 +1471,29 @@ def http_link_checker(url, timeout=10):
     return False
 
 
-def check_file(path, repo, date, card_type, **kw):
-    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。"""
+def git_base_text(repo, base_ref, rel):
+    """base_ref 上 rel 文件的内容（UTF-8 文本）；不在仓库内、ref 不存在、base 上无此文件或读取失败 → None（调用方从严，全部行都查）。"""
+    import subprocess
+    if not rel or not isinstance(base_ref, str) or not base_ref or base_ref.startswith("-"):
+        return None
+    try:
+        sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", base_ref + "^{commit}"],
+                             capture_output=True, timeout=30)
+        if sha.returncode != 0:
+            return None
+        blob = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", sha.stdout.decode().strip() + ":" + rel],
+                              capture_output=True, timeout=30)
+        if blob.returncode != 0:
+            return None
+        return blob.stdout.decode("utf-8")
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+        return None
+
+
+def check_file(path, repo, date, card_type, base_ref=None, **kw):
+    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。
+    base_ref（#90 r4）：给出时从 repo 的 git 读取该提交上同一路径的文件作为 base_text（E-FRED-CITED 只查新增或改动的行）；
+    取不到按全部行都查。"""
     try:
         text = Path(path).read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError, TypeError):
@@ -1413,4 +1507,6 @@ def check_file(path, repo, date, card_type, **kw):
             kw["rel"] = Path(path).resolve().relative_to(Path(repo).resolve()).as_posix()
         except (ValueError, OSError, TypeError):
             kw["rel"] = None                         # 不在仓库内 → 无法证明是 tongyi 路径
+    if base_ref is not None and "base_text" not in kw:
+        kw["base_text"] = git_base_text(repo, base_ref, kw["rel"])
     return check_text(text, repo, date, card_type, **kw)
