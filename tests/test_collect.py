@@ -3412,6 +3412,39 @@ class R18Review(unittest.TestCase):
         self.assertTrue(collect.login_page("text/html", fn, "https://a.org/a"))
         self.assertEqual(collect.Fetcher._classify(200, {"Content-Type": "text/html"}, fn, "https://a.org/a"), "login_wall")
 
+    def test_r18_m3_footer_div_and_inline_main_form(self):
+        """采集 bot 自加：页脚用 div class="site-footer" 写、超过 600 字符也不算主体；长文章正文里夹一个提交到 /login 的
+        密码框（如「登录后评论」）不按登录墙算（主体很长、标题不是登录）。"""
+        fn = (b'<html><head><title>Example</title></head><body><div id="content"><h1>Welcome</h1>'
+              b'<form method="post" action="/session"><input name="u"><input type="password" name="p"><button>Go</button></form>'
+              b'</div><div class="site-footer"><p>' + b"Company address, privacy, terms, careers, press, contact. " * 15
+              + b'</p></div></body></html>')
+        self.assertTrue(collect.login_page("text/html", fn, "https://a.org/"))
+        art = (b'<html><head><title>Payrolls rose in September</title></head><body><main><article><p>'
+               + b"Employment rose in most sectors this quarter. " * 60 + b'</p><form action="/login" method="post">'
+               b'<input name="u"><input type="password" name="p"><button>Log in to comment</button></form></article></main>'
+               b'</body></html>')
+        self.assertFalse(collect.login_page("text/html", art, "https://a.org/a"))
+
+    def test_r18_m4_runtime_tampering_refused_before_send(self):
+        import urllib.request as ur
+        for tamper in (lambda f: setattr(f, "site_limits", {"a.org": 0.0001}),
+                       lambda f: setattr(f, "opener", ur.build_opener())):
+            f, _ = mk({"https://a.org/x": Resp(200, b"ok")})
+            tamper(f)
+            with self.assertRaises(collect.ConfigError):
+                f.get("https://a.org/x")
+            self.assertEqual(f.requests, [])
+        f, _ = mk({"https://a.org/x": Resp(200, b"ok")})
+        with mock.patch.dict(collect.RATE_GROUPS, {"a.org": 0.0001}):
+            with self.assertRaises(collect.ConfigError):
+                f.get("https://a.org/x")
+        real = collect.Fetcher(resolver=PUBLIC_DNS)
+        real.sleep = lambda w: None
+        with self.assertRaises(collect.ConfigError):
+            real._raw("https://a.org/x", "*/*")
+        self.assertEqual(real.requests, [])
+
     # ---- MEDIUM4：限速与传输校验在 Fetcher 内强制
     def test_r18_m4_sitelimits_subclass_and_raw_test_transport_refused(self):
         with self.assertRaises(TypeError):

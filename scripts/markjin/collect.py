@@ -331,10 +331,11 @@ def classify_page(ctype, body, headers=None, url=None):
 #   L  有链接（<a href>）指向登录路径；Q  可见文字里有登录提示语（sign in to continue、please log in、登录后查看…）
 # r18 MEDIUM3：按页面区域区分（登录证据须和页面主体关联）：
 #   侧栏 side = <aside>/<nav>、role=complementary|navigation|search、class/id 含 sidebar；页眉 <header>/role=banner 也算 side；
-#   页脚 foot = <footer>/role=contentinfo；<main>/<article>/role=main 里的 header/footer 仍算主体；其余都是主体 main。
+#   页脚 foot = <footer>/role=contentinfo、class/id 为 footer / site-footer；<main>/<article>/role=main 里的 header/footer
+#   仍算主体；其余都是主体 main。
 #   S  主体区表单外可见文字很短（≤ LOGIN_OUTSIDE_MAX；侧栏、页眉、页脚的文字不计入）
 # 判定（任一表单满足即可，见 _login_form）：
-#   主体区表单：P 且 A（不论页面长短、标题如何）；P 且 (S 或 TS)；A 且 (P 或 E) 且 (S 或 TS)；E 且 (F 或 TS) 且 S；
+#   主体区表单：P 且 (S 或 TS)；A 且 (P 或 E) 且 (S 或 TS)；E 且 (F 或 TS) 且 S（S 只数主体，页脚、侧栏再长也不影响）；
 #   侧栏 / 页脚表单：只在主体很短（S）时算（P，或 A 且 E，或 E 且 F），标题不和它们搭配；
 #   无表单的登录提示 / 中间页：L 且 Q 且 S，或 T 且 L 且 S。
 # 标题含 Password 的长文章页加邮箱订阅框不算（只有邮箱框的表单在长页面上一律不算，password 标题不算登录标题）。
@@ -350,6 +351,7 @@ LOGIN_OUTSIDE_MAX = 600
 _VOID_TAGS = frozenset("area base br col embed hr img input link meta param source track wbr".split())
 _SIDE_ROLES = frozenset({"complementary", "navigation", "search", "banner"})
 _SIDEBAR_ATTR = re.compile(r"(?<![a-z0-9])side[-_]?bar(?![a-z0-9])", re.I)
+_FOOTER_ATTR = re.compile(r"(?<![a-z0-9])(?:site[-_]?)?footer(?![a-z0-9])", re.I)
 
 
 def _login_features(text, base=None):
@@ -383,6 +385,8 @@ def _login_features(text, base=None):
                 r = "side"
             elif tag == "footer" or role == "contentinfo":
                 r = None if explicit and tag == "footer" and not role else "foot"
+            elif _FOOTER_ATTR.search(a.get("class", "") + " " + a.get("id", "")):
+                r = None if explicit else "foot"
             elif tag == "header":
                 r = None if explicit else "side"
             self.stack.append((tag, r))
@@ -473,15 +477,13 @@ def _login_features(text, base=None):
 
 def _login_form(f, title_signin, short):
     """r16 ③：单个表单内组合证据（证据不跨表单拼凑）。r18 MEDIUM3：证据须和页面主体关联。
-    - 主体区表单：密码框且提交到登录路径（/login、/session 等）→ 不论页面长短、标题如何都算（标题不是登录、页脚很长的登录页）；
-      密码框且（主体很短或标题写明登录）；提交到登录路径且有密码框或邮箱框且（主体很短或标题写明登录）；
+    - 主体区表单：密码框且（主体很短或标题写明登录）——「很短」只数主体区表单外的文字，所以标题不是登录、主表单向 /session
+      提交密码、页脚很长的登录页同样命中；提交到登录路径且有密码框或邮箱框且（主体很短或标题写明登录）；
       只有邮箱框：主体很短，且本表单内有登录词或标题写明登录（长文章页的订阅框不算）；
     - 侧栏 / 页眉 / 页脚的表单：只在主体很短时算（密码框，或登录路径加邮箱框，或邮箱框加登录词），标题不和它们搭配——
       所以标题写 Sign in、主体很长、侧栏有密码框的文章页不算。只含 password 的标题（讲密码的文章）不算登录标题。"""
     if f.get("R", "main") != "main":
         return short and (f["P"] or (f["A"] and f["E"]) or (f["E"] and f["F"]))
-    if f["P"] and f["A"]:
-        return True
     if f["P"] and (short or title_signin):
         return True
     if f["A"] and (f["P"] or f["E"]) and (short or title_signin):
@@ -2078,6 +2080,7 @@ def check_gates():
             and dict(_HOST_SOURCE) == {h: n for n, hs in SOURCE_HOSTS.items() for h in hs}): bad.append("SOURCE_HOSTS")
     if not (isinstance(APPROVERS, tuple) and set(APPROVERS) == {"grok-bot", "review-bot"}): bad.append("APPROVERS")
     if APPROVALS_REF != "refs/remotes/origin/main": bad.append("APPROVALS_REF")
+    if not (type(RATE_GROUPS) is dict and RATE_GROUPS == {SEC_SUFFIX: 0.2}): bad.append("RATE_GROUPS")
     if not (_num(ROBOTS_CACHE_SECONDS) and 0 < ROBOTS_CACHE_SECONDS <= 86400): bad.append("ROBOTS_CACHE_SECONDS")
     if not (isinstance(REDIRECT_CODES, frozenset) and {301, 302, 303, 307, 308} <= REDIRECT_CODES): bad.append("REDIRECT_CODES")
     if not (isinstance(SUSPICIOUS_ERRORS, frozenset) and SUSPICIOUS_ERRORS >= {
@@ -2195,8 +2198,10 @@ class Fetcher:
             if sleep is not time.sleep or clock is not time.monotonic or wall is not None:
                 raise ConfigError("custom sleep/clock/wall only allowed with a test transport")
             self.opener = urllib.request.build_opener(_NoRedirect)
+            self._real = True
         elif type(opener) is _TestTransport and getattr(opener, "_seal", None) is _TT_SEAL:
             self.opener = check_opener(opener.inner)
+            self._real = False
         else:
             raise ConfigError("custom opener not allowed; tests must use collect.test_transport / Fetcher.with_test_transport")
         # 主机 → 来源（capture_sources 按 sources.yaml 的 url 建表）：请求带的 sid 与该主机所属来源冲突 → 拒绝（source_mismatch）
@@ -2217,6 +2222,16 @@ class Fetcher:
         self.requests = []     # (host, t) — 供测试/审计
         self.sec_ua = sec_user_agent()
         self._sink = None
+
+    def _check_runtime(self):
+        """每次发送前在 Fetcher 内再核一遍（r18 MEDIUM4）：限额必须仍是 SiteLimits 原类、传输仍过 check_opener、
+        真实网络时等待 / 时钟没被换掉。否则 ConfigError，不发请求。"""
+        if type(self.site_limits) is not SiteLimits:
+            raise ConfigError("site_limits replaced after construction; refusing requests")
+        check_opener(self.opener)
+        if self._real and (type(self.opener) is not urllib.request.OpenerDirector or self.sleep is not time.sleep
+                           or self.clock is not time.monotonic):
+            raise ConfigError("real-network fetcher: opener/sleep/clock replaced; refusing requests")
 
     @classmethod
     def with_test_transport(cls, *args, opener, **kw):
@@ -2302,6 +2317,7 @@ class Fetcher:
         获批重测只放行 1 次 robots 请求（claim_retest_robots，锁内记账），跳转、网络重试都不再放行。"""
         host = host_of(url)
         check_gates()                          # 门禁常量被改小 / 打开了 → 拒绝运行（ConfigError）
+        self._check_runtime()                  # r18 MEDIUM4：构造后被改掉的限额、传输、等待同样拒绝
         why = self.state.host_blocked(host)
         if why:                                # 所有出站入口的最后一道门：旧表停用主机一律不发请求
             return 0, {}, b"", "host_disabled", why, None
@@ -2395,7 +2411,8 @@ class Fetcher:
             if isinstance(got, str) and got and cooldown_identity(got) != cooldown_identity(url):
                 # opener 自己跟随了跳转（子类、替身、自定义 handler）：中间各跳没过门禁 → 丢弃正文、拒绝
                 return 0, {}, b"", "opener_redirected", "opener followed a redirect on its own; refusing"
-            buf = r.read(self.max_bytes + 1) or b""
+            cap = min(self.max_bytes, MAX_BYTES) if isinstance(self.max_bytes, int) and self.max_bytes > 0 else MAX_BYTES
+            buf = r.read(cap + 1) or b""
         except Exception as e:
             return 0, {}, b"", "network", type(e).__name__
         finally:
@@ -2403,8 +2420,8 @@ class Fetcher:
                 r.close()
             except Exception:
                 pass
-        if len(buf) > self.max_bytes:          # 正文丢弃；调用方仍先按状态码判可疑（401/403/429 → 停主机），再报 too_large
-            return status, headers, b"", "too_large", f">{self.max_bytes} bytes"
+        if len(buf) > cap:                     # 正文丢弃；调用方仍先按状态码判可疑（401/403/429 → 停主机），再报 too_large
+            return status, headers, b"", "too_large", f">{cap} bytes"
         if buf and self._sink:     # 每收到一次响应（含 robots、3xx）都先交给私有存档，再做任何判定
             self._sink(buf, status, (headers.get("Content-Type") if headers else "") or "")
         return status, headers, buf, None, None
