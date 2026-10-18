@@ -69,6 +69,10 @@ ERROR_CODES = {
     "E-ROUTE-CORRECTION-DATE": "corrected_at 不是 YYYY-MM-DD，或早于原稿日期、晚于实际发布当天（SGT）",
     "E-ROUTE-CORRECTION-NOTE": "更正稿的标题行（渲染后可见文字，链接目标、图片、HTML 属性不算）没有注明 corrected_at 更正日期",
     "E-ROUTE-CORRECTION": "更正稿被拦住（如 codex_in_production 为真），不归档原稿",
+    # —— 站点 PR 页面检查（scripts/check-site-corrections.py，Grok Bot 2026-10-18）
+    "E-SITE-CORRECTION-MISSING": "站点 PR 改动了 base 上已发布的 content/posts 或 content/cards 页面，但 front matter 没有 corrects / corrected_at（改已发布页面一律按更正处理）",
+    "E-SITE-PAGE-DELETED": "站点 PR 删除或改名了 base 上已发布的 content/posts 或 content/cards 页面",
+    "E-SITE-INPUT": "站点页面检查的输入无效：站点仓库 remote 不对、取不到 PR 或 base/head 提交、git 失败",
     "I-CORRECTION": "更正稿：不受 06:55 / 07:00 与顺延限制，其余检查照常",
     "E-ROUTE-RECORD-INVALID": "approvals/ 记录文件解析失败或有行不符合严格 schema（整份文件不采信）",
     "E-ROUTE-RECORD-MISMATCH": "批准记录与稿件不符：draft_id 不一致，或渠道不符合要求（信号卡、tongyi 只接受 direct）",

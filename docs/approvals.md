@@ -384,3 +384,20 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
   - 豁免只看 `type` 与路径，两者必须一致；只有一方是 tongyi → `E-TONGYI-MISMATCH`（fail-closed，照常跑日报检查）。
   - 理由：长文由 Codex 加王总逐篇把关，日报句式检查对长文只产生误报。
 - 测试使用合成样本：自检无 E 类错误；经 route_pr 缺王总记录 → 不可发布（`E-ROUTE-NO-WANG`），有 v2 direct 记录 → 可发布；日报把 type 写成 tongyi 而路径不对 → `E-TONGYI-MISMATCH` 失败。
+
+## 站点 PR 页面检查（Grok Bot 2026-10-18）
+
+`route_pr` 只看数据仓库顶层的 `daily/`、`digest/` 等稿件；站点 PR 直接改 `content/posts/`（或 `content/cards/`）页面时，更正规则原先没人检查。`scripts/check-site-corrections.py` 补上这一处，判断复用 route.py 的同一份逻辑（front matter 解析、日期解析、`correction_heading_ok` 标题行可见文字）。只读，不写文件。
+
+- 用法：`python3 scripts/check-site-corrections.py --site-repo <站点克隆> --pr <编号>`（origin 须为 `markjin-lab/markjin-lab.github.io`，fetch main 与 `refs/pull/N/head`），或 `--head <ref> [--base <ref>]`（默认 base `origin/main`）。输出 JSON，退出码 0 通过、1 不通过或输入无效（`E-SITE-INPUT`）。
+- 范围：`merge-base(base, head)..head` 中改动的 `content/posts/<section>/<name>[.en].md` 与 `content/cards/<name>[.en].md`；列表页（`_index.md`）、模板、配置、静态文件不查。改名按删除 + 新增处理。
+- 新增页面（base 上没有）且不带更正字段：不查，新稿走日报流程。
+- 删除或改名 base 上已有的页面 → `E-SITE-PAGE-DELETED`。
+- 改动 base 上已有的页面（包括只改 front matter）：front matter 必须有 `corrects` 和 `corrected_at`，否则 `E-SITE-CORRECTION-MISSING`。
+- 带更正字段的页面，规则与 route 的更正稿相同：
+  - 缺一项、为空或不是字符串 → `E-ROUTE-CORRECTION-INVALID`；
+  - `corrects` 必须等于由路径推出的 draft_id（`<section>-<name>[-en]`，卡片为 `cards-<name>[-en]`），页面在 base 上已存在，且 base 版有合法 `date`，否则 → `E-ROUTE-CORRECTION-TARGET`；
+  - `corrected_at` 不是 YYYY-MM-DD、早于页面日期、晚于今天（SGT）、早于 base 版已有的 `corrected_at`，或者 head 版 `date` 与 base 版不同 → `E-ROUTE-CORRECTION-DATE`；
+  - `corrected_at` 必须出现在某个标题行渲染后可见的文字里（链接目标、图片、注释、代码块、隐藏元素里的不算），否则 → `E-ROUTE-CORRECTION-NOTE`。
+- 再次更正同一页面时，`corrected_at` 要改成本次日期，并为本次加一个写有该日期的标题行；只保留旧日期的标题会判 `E-ROUTE-CORRECTION-NOTE`。脚本不判断 `corrected_at` 有没有更新：沿用旧日期不会被拦，由审查确认。
+- 这个脚本不接 CI，也不替代 `route_pr`、Codex 审查或站点 smoke；审查站点 PR 时与 smoke、pytest 一起运行。

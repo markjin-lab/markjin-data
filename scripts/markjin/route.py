@@ -565,6 +565,13 @@ def _heading_shown(ln):
     return t
 
 
+def correction_heading_ok(body, corrected_at):
+    """整体验收 r2/r3/r6：corrected_at 须出现在某个标题行（# … 行）渲染后可见的文字里。
+    route_pr（数据仓库稿件）与 sitecheck（站点 PR 的 content/ 页面）共用这一份判断。"""
+    return any(re.match(r"^[ ]{0,3}#{1,6}[ \t]", ln) and corrected_at in _heading_shown(ln)
+               for ln in visible_text(body).splitlines())
+
+
 def _correction(rel, text, did, date, now, site_repo):
     """None = 不是更正稿；str = 错误码；dict = 校验通过的更正信息。
     r15：原稿是否已发布、原稿日期与类别，只看站点仓库 SITE_REF 上那一版的路径与 front matter；不用发布状态，不重跑自检。"""
@@ -608,8 +615,7 @@ def _correction(rel, text, did, date, now, site_repo):
         return "E-ROUTE-CORRECTION-DATE"             # 不早于原稿日期，不晚于实际发布当天（SGT）
     if orig == text:
         return "E-ROUTE-CORRECTION-TARGET"
-    if not any(re.match(r"^[ ]{0,3}#{1,6}[ \t]", ln) and fm["corrected_at"] in _heading_shown(ln)
-               for ln in visible_text(body).splitlines()):
+    if not correction_heading_ok(body, fm["corrected_at"]):
         return "E-ROUTE-CORRECTION-NOTE"             # 整体验收 r2（王总定）：更正日期须出现在标题行（# … 行）里
     sec = did.split("-", 1)[0]
     return {"corrected_at": ca, "wang": _orig_needs_wang(sec, ofm)}
