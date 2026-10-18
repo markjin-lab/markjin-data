@@ -1231,6 +1231,11 @@ def looks_html(headers, body, xml_ok=False):
     return bool(_TAG_START.match(head)) or b"<html" in head or b"<body" in head or b"<script" in head
 
 
+_NO_SID = object()      # _raw 未给源（直接调用）：不重查源状态
+# 没发请求的结果（不算本轮联系过该源，也不算可疑）
+NO_CONTACT = frozenset({"host_disabled", "not_configured", "source_blocked", "host_stopped_this_round", "url_cooldown"})
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
@@ -1357,21 +1362,25 @@ class Fetcher:
                 return ggap
         return SITE_INTERVAL
 
-    def _raw(self, url, accept):
+    def _raw(self, url, accept, sid=_NO_SID, judge=None):
+        """所有出站请求的唯一入口。持站点限速锁（跨进程）完成：等待 → 等待后重跑完整预检（旧表停用、源状态、本轮主机停止、
+        URL 冷却；r15 ①）→ 发请求 → judge（可疑分类与停止写入）。所以「写停止」与同站「发请求」互斥：别的进程在等待期间
+        停掉的主机不会再被请求，本进程判定可疑并写下停止之前，同站其他请求也发不出去。
+        judge(st, headers, body, ec, det) 在锁内调用，返回值原样交给调用方（第 6 个返回值）。"""
         host = host_of(url)
         why = self.state.host_blocked(host)
         if why:                                # 所有出站入口的最后一道门：旧表停用主机一律不发请求
-            return 0, {}, b"", "host_disabled", why
+            return 0, {}, b"", "host_disabled", why, None
         if in_group(host, SEC_SUFFIX):     # 所有出站入口（get、robots、直接调用）统一门禁：缺 UA 或跨进程锁 → 不发请求
             if not self.sec_ua:
-                return 0, {}, b"", "not_configured", f"{SEC_UA_ENV} not set (must include contact info)"
+                return 0, {}, b"", "not_configured", f"{SEC_UA_ENV} not set (must include contact info)", None
             if not self.lock_dir:
-                return 0, {}, b"", "not_configured", "lock_dir not set (SEC requests need the cross-process rate lock)"
+                return 0, {}, b"", "not_configured", "lock_dir not set (SEC requests need the cross-process rate lock)", None
         site = site_of(host)
         sgap = self.site_gap(host)
         hgap = max(self.interval, self._host_interval.get(host, 0))   # 每主机下限与 robots Crawl-delay（更严者）
         with self._lock(f"rate-site-{site}.lock") as lk:
-            # 锁文件记 {"site": 上次站内请求时间, "hosts": {主机: 上次请求时间}}（墙钟），持锁直到本次请求结束
+            # 锁文件记 {"site": 上次站内请求时间, "hosts": {主机: 上次请求时间}}（墙钟），持锁直到本次请求与判定结束
             rec = {}
             if lk is not None:
                 lk.seek(0)
@@ -1388,13 +1397,26 @@ class Fetcher:
             w = max(sgap - (t0 - max(ls)) if ls else 0, hgap - (t0 - max(lh)) if lh else 0, 0)
             if w > 0:
                 self.sleep(w)
+            # r15 ①：等待期间别的进程可能已停掉该主机、记下该 URL 或停用该源 → 同一把锁里重跑完整预检
+            why = self.state.host_blocked(host)
+            if why:
+                return 0, {}, b"", "host_disabled", why, None
+            if sid is not _NO_SID:
+                why = self.state.blocked(sid, self.round_id)
+                if why:
+                    return 0, {}, b"", "source_blocked", why, None
+            pre = self.precheck(url)
+            if pre:
+                return 0, {}, b"", pre[0], pre[1], None
             t = self.wall()
             self._site_last[site] = self._last[host] = t
             self.requests.append((host, t))
             if lk is not None:
                 hosts[host] = t
                 lk.seek(0); lk.truncate(); lk.write(json.dumps({"site": t, "hosts": hosts})); lk.flush()
-            return self._raw_inner(url, accept, host)
+            st, h, body, ec, det = self._raw_inner(url, accept, host)
+            verdict = judge(st, h or {}, body, ec, det) if judge else None
+            return st, h, body, ec, det, verdict
 
     def _raw_inner(self, url, accept, host):
         ua = self.sec_ua if in_group(host, SEC_SUFFIX) and self.sec_ua else UA
@@ -1423,15 +1445,15 @@ class Fetcher:
             self._sink(buf, status, (headers.get("Content-Type") if headers else "") or "")
         return status, headers, buf, None, None
 
-    def _fetch_once(self, url, accept):
+    def _fetch_once(self, url, accept, sid=_NO_SID, judge=None):
         """只有「没收到任何 HTTP 响应」的网络错误才重试（最多 NET_RETRIES 次、指数退避）。
-        收到任何 HTTP 状态（含 429、5xx）都不重发：429 计可疑并停止该主机本轮。"""
+        收到任何 HTTP 状态（含 429、5xx）都不重发：429 计可疑并停止该主机本轮。每次尝试都走 _raw（锁内重跑预检）。"""
         for attempt in range(NET_RETRIES + 1):
-            st, h, body, ec, det = self._raw(url, accept)
+            st, h, body, ec, det, v = self._raw(url, accept, sid=sid, judge=judge)
             if ec != "network" or attempt == NET_RETRIES:
-                return st, h or {}, body, ec, det
+                return st, h or {}, body, ec, det, v
             self.sleep(min(BACKOFF_CAP, BACKOFF_BASE * (2 ** attempt)))
-        return st, h or {}, body, ec, det
+        return st, h or {}, body, ec, det, v
 
     @staticmethod
     def _classify(st, h, body, url, robots=False):
@@ -1485,12 +1507,15 @@ class Fetcher:
             with self.url_lock(cur):
                 if self.precheck(cur):              # 持锁后重查（别的进程可能刚停了该主机）
                     st, ec = 0, "robots_redirect_blocked"; break
-                st, h, body, ec, _ = self._fetch_once(cur, "text/plain,*/*")
-                if ec != "host_disabled" and not (ec == "not_configured"):
+                def judge(st, h, body, ec, det, _cur=cur):   # 站点限速锁内：分类并写停止（与同站发请求互斥）
+                    b = self._classify(st, h, body, _cur, robots=True)
+                    if b:                           # robots.txt（及起点）冷却、主机本轮停止
+                        self.mark_failed(_cur, sid, b, also=(start,))
+                    return b
+                st, h, body, ec, _, bad = self._fetch_once(cur, "text/plain,*/*", sid=sid, judge=judge)
+                if ec not in NO_CONTACT:
                     self.contacted.add(sid)
-                bad = self._classify(st, h, body, cur, robots=True)
-                if bad:                             # 锁内写失败记录：robots.txt（及起点）冷却、主机本轮停止
-                    self.mark_failed(cur, sid, bad, also=(start,))
+                if bad:
                     break
             if st in REDIRECT_CODES:
                 loc = h.get("Location")
@@ -1576,14 +1601,18 @@ class Fetcher:
                 pre = self.precheck(cur)  # 持锁后重查：别的进程可能刚记下该 URL 或停了该主机
                 if pre:
                     return Result(False, final_url=cur, hops=hops, error=pre[0], detail=pre[1])
-                st, h, body, ec, det = self._fetch_once(cur, accept)
-                if ec not in ("host_disabled", "not_configured"):
+                def judge(st, h, body, ec, det, _cur=cur, _esid=esid):
+                    # 站点限速锁内（与同站发请求互斥）：每一跳先按状态码，再判正文与登录跳转；命中即写停止
+                    b = None if ec else self._classify(st, h, body, _cur)
+                    if b:                 # 该跳与起点冷却、该跳主机本轮停止
+                        self.mark_failed(_cur, _esid, b, also=(url,))
+                    return b
+                st, h, body, ec, det, bad = self._fetch_once(cur, accept, sid=esid, judge=judge)
+                if ec not in NO_CONTACT:
                     self.contacted.add(esid)
                 ctype = h.get("Content-Type") or ""
-                # 原字节已在 _raw 里交给 raw_sink；每一跳先按状态码，再判正文与登录跳转，最后处理 Location
-                bad = None if ec else self._classify(st, h, body, cur)
-                if bad:                   # 锁内写失败记录：该跳与起点冷却、主机本轮停止
-                    self.mark_failed(cur, esid, bad, also=(url,))
+                # 原字节已在 _raw 里交给 raw_sink；分类与停止写入已在锁内完成，最后处理 Location
+                if bad:
                     return Result(False, st, ctype, b"", cur, hops, bad)
             if ec:
                 return Result(False, st, ctype, b"", cur, hops, ec, det)

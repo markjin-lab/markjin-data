@@ -2185,5 +2185,66 @@ class LegacyHosts(unittest.TestCase):
 
 
 
+class R15Fixes(unittest.TestCase):
+    """审查 r15（#53 评论）逐条：全部离线（假 opener），状态与锁都在临时目录，不碰真实私有目录。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup); return Path(d.name)
+
+    def fetcher(self, d, routes, sleep=None, state=None, **kw):
+        t = [1000.0]
+
+        def _sleep(w):
+            t[0] += w
+            if sleep:
+                sleep(w)
+        f = collect.Fetcher(state or collect.SourceHealth(d / "st.json"), opener=FakeOpener(routes), sleep=_sleep,
+                            clock=lambda: t[0], resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=ROUND, **kw)
+        return f
+
+    # ---- HIGH ①：站点限速锁里等待之后重跑完整预检
+    def test_r15_1_wait_then_recheck_full_precheck(self):
+        cases = {
+            "host_stop": (lambda p: collect.SourceHealth(p).stop(["https://a.org/other"], ROUND, "t", "http_403"),
+                          "host_stopped_this_round"),
+            "url_cooldown": (lambda p: collect.SourceHealth(p).stop(["https://a.org/x"], "2026-10-11/r2", "t", "http_403"),
+                             "url_cooldown"),
+            "source_disabled": (lambda p: collect.SourceHealth(p).set_status("s", "disabled", "x"), "source_blocked"),
+        }
+        for name, (other_process, err) in cases.items():
+            d = self.tmpdir()
+            done = []
+
+            def sleep(w, _o=other_process, _p=d / "st.json"):
+                if not done:                    # 等待期间「另一个进程」写下停止 / 冷却 / 停用
+                    done.append(1); _o(_p)
+            f = self.fetcher(d, {"https://a.org/x": Resp(200, b"ok")}, sleep=sleep)
+            r = f.get("https://a.org/x", sid="s")
+            self.assertEqual(done, [1], name)
+            self.assertEqual(r.error, err, name)
+            self.assertEqual([u for u, _ in f.opener.calls], ["https://a.org/robots.txt"], name)   # 等待后不再发出
+
+    def test_r15_1_stop_written_while_site_lock_held(self):
+        import fcntl
+        for robots in (False, True):
+            d = self.tmpdir()
+            hs = collect.SourceHealth(d / "st.json")
+            held, orig = [], hs.stop
+
+            def stop(*a, _orig=orig, **k):
+                with open(d / "locks" / "rate-site-a.org.lock", "a+") as fh:
+                    try:
+                        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        fcntl.flock(fh, fcntl.LOCK_UN); held.append(False)
+                    except BlockingIOError:
+                        held.append(True)
+                return _orig(*a, **k)
+            hs.stop = stop
+            routes = {"https://a.org/robots.txt": Resp(403 if robots else 404), "https://a.org/x": Resp(403)}
+            f = self.fetcher(d, routes, state=hs)
+            self.assertIn(f.get("https://a.org/x", sid="s").error, ("http_403", "robots_http_403"))
+            self.assertEqual(held, [True], robots)          # 写停止时仍持有站点限速锁：与同站发请求互斥
+
+
 if __name__ == "__main__":
     unittest.main()
