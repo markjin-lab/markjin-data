@@ -2288,6 +2288,38 @@ class R15Fixes(unittest.TestCase):
         self.assertEqual(f.get("https://a.org/x", sid="s").error, "too_large")     # 200 超大：仍只是 too_large，不算可疑
         self.assertTrue(f.get("https://a.org/y", sid="s").ok)
 
+    # ---- HIGH ④：capture_sources 的 rss/api 格式可疑校验与停止写入在 URL 锁内
+    def test_r15_4_capture_format_check_and_stop_inside_url_lock(self):
+        import fcntl
+        from unittest import mock
+        base = self.tmpdir()
+        B = BlockRule1522()
+        bad = Resp(200, b"<html><body>hello</body></html>", {"Content-Type": "text/html"})
+        lockf = base / "priv" / "state" / "locks" / "urls" / f"{collect.url_key('https://f.org/rss')[:40]}.lock"
+        seen = {"check": [], "stop": []}
+
+        def held():
+            with open(lockf, "a+") as fh:
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB); fcntl.flock(fh, fcntl.LOCK_UN); return False
+                except BlockingIOError:
+                    return True
+        orig_cs, orig_stop = collect.content_suspect, collect.SourceHealth.stop
+
+        def cs(*a, **k):
+            seen["check"].append(held()); return orig_cs(*a, **k)
+
+        def stop(self_, *a, **k):
+            seen["stop"].append(held()); return orig_stop(self_, *a, **k)
+        with mock.patch.object(collect, "content_suspect", cs), mock.patch.object(collect.SourceHealth, "stop", stop):
+            rc, err, calls = B.run_round(base, "2026-10-12", 1, {"https://f.org/rss": bad, "https://f.org/rss3": B.RSS},
+                                         sources=[B.S, B.S3])
+        self.assertIn("suspected_challenge:html", err)
+        self.assertEqual(seen["check"], [True])
+        self.assertEqual(seen["stop"], [True])
+        self.assertNotIn("https://f.org/rss3", calls)                    # 同主机本轮停止
+        self.assertEqual(rc, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

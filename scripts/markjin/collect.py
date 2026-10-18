@@ -1555,14 +1555,16 @@ class Fetcher:
     def allowed(self, url, sid=None):
         return self.robots(url, sid).can_fetch(UA_TOKEN, url)
 
-    def get(self, url, sid=None, accept="*/*", raw_sink=None):
+    def get(self, url, sid=None, accept="*/*", raw_sink=None, validate=None):
+        """validate(ctype, body) → 格式可疑原因或 None：对最终 200 响应做内容校验（如 rss/api 格式），在 URL 锁与站点限速锁内
+        完成，命中即按 suspected_challenge:<原因> 处理（该主机本轮停止、URL 冷却），与状态码 / 验证页判定同一处写停止。"""
         prev, self._sink = self._sink, raw_sink
         try:
-            return self._get(url, sid, accept)
+            return self._get(url, sid, accept, validate)
         finally:
             self._sink = prev
 
-    def _get(self, url, sid, accept):
+    def _get(self, url, sid, accept, validate=None):
         """抓一个 URL。不自动重定向：每一跳都重新检查拒绝主机、旧表停用、源状态、本轮主机停止、URL 冷却、robots 与限速。
         sid 可以是函数（按每一跳的主机给出伪源 id，如 fetch_primary 的 primary:<主机>）。
         可疑响应（401/403/429、验证页、跳登录页）：该跳与起点 URL 冷却 ≥24 小时、该主机本轮全部停止，给该跳的 sid 记一次可疑；
@@ -1611,6 +1613,10 @@ class Fetcher:
                     # 站点限速锁内（与同站发请求互斥）：每一跳先按状态码，再判正文与登录跳转；命中即写停止
                     # r15 ③：超过大小上限（too_large，正文已丢弃）也先按状态码 / 响应头判可疑，再报 too_large
                     b = self._classify(st, h, body, _cur) if ec in (None, "too_large") else None
+                    if not b and not ec and st == 200 and validate:   # r15 ④：格式校验也在锁内，命中即写停止
+                        v = validate(h.get("Content-Type") or "", body)
+                        if v:
+                            b = f"suspected_challenge:{v}"
                     if b:                 # 该跳与起点冷却、该跳主机本轮停止
                         self.mark_failed(_cur, _esid, b, also=(url,))
                     return b
