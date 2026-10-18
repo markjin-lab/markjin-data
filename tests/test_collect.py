@@ -2468,6 +2468,52 @@ class R15Fixes(unittest.TestCase):
         rc, err, calls = B.run_round(base, "2026-10-13", 2, {"https://h.org/rss": B.RSS}, sources=moved)   # 31 小时后
         self.assertIn("https://h.org/rss", calls)
 
+    # ---- 补充：200 登录墙用结构特征判定（title / 密码框 / form action / 表单内文字），不做全文单词匹配
+    LOGIN = (b'<html><head><title>Sign in - Example</title></head><body><form method="post" action="/session">'
+             b'<label>Email</label><input name="u"><input type="password" name="p"><button>Continue</button></form></body></html>')
+    LOGIN_NO_TITLE = (b'<html><head><title>Example</title></head><body><form action="/users/sign_in" method="post">'
+                      b'<h2>Log in to continue</h2><input name="u"><input type="password" name="p">'
+                      b'<input type="submit" value="Log in"></form></body></html>')
+    SSO_STEP1 = (b'<html><head><title>Login | Portal</title></head><body><form action="https://accounts.example.com/sso">'
+                 b'<input name="email"><button>Next</button></form></body></html>')
+    FRED_LIKE = (b'<html><head><title>Federal Funds Effective Rate (FEDFUNDS) | FRED</title></head><body>'
+                 b'<div id="signin-wrap" class="signin"><a href="/login">Sign In</a> <a href="/register">Register</a></div>'
+                 b'<form action="/searchresults"><input name="st" placeholder="Search"></form>'
+                 b'<h1>Federal Funds Effective Rate</h1><p>' + b"Observation data and notes. " * 80 + b'</p></body></html>')
+    ARTICLE_SIDEBAR = (b'<html><head><title>Quarterly report on payrolls</title></head><body><article><p>'
+                       + b"Employment rose in most sectors this quarter. " * 60 + b'</p></article><aside>'
+                       b'<form action="/login"><label>Log in</label><input name="u"><input type="password" name="p">'
+                       b'<button>Sign in</button></form></aside></body></html>')
+    PASSWORD_ARTICLE = (b'<html><head><title>How to choose a strong password</title></head><body><p>'
+                        + b"Use a long passphrase. " * 50 + b'</p></body></html>')
+
+    def test_r15_login_wall_structural_features(self):
+        H = "text/html"
+        for name in ("LOGIN", "LOGIN_NO_TITLE", "SSO_STEP1"):
+            self.assertTrue(collect.login_page(H, getattr(self, name), "https://a.org/p"), name)
+        for name in ("FRED_LIKE", "ARTICLE_SIDEBAR", "PASSWORD_ARTICLE"):
+            self.assertFalse(collect.login_page(H, getattr(self, name), "https://a.org/p"), name)
+        self.assertFalse(collect.login_page("application/json", b'{"title":"Sign in","password":1}'))
+        self.assertFalse(collect.login_page(H, b"<title>Sign in</title><p>no form here</p>"))      # 没有 form 不算
+        for st in (200, 404, 500):
+            self.assertEqual(collect.Fetcher._classify(st, {"Content-Type": H}, self.LOGIN, "https://a.org/p"), "login_wall", st)
+        self.assertIsNone(collect.Fetcher._classify(200, {"Content-Type": H}, self.FRED_LIKE, "https://a.org/p"))
+
+    def test_r15_200_login_wall_stops_host_and_cools_url(self):
+        d = self.tmpdir()
+        st = collect.SourceHealth(d / "st.json")
+        f = self.fetcher(d, {"https://a.org/data": Resp(200, self.LOGIN, {"Content-Type": "text/html"}),
+                             "https://a.org/other": Resp(200, b"ok"),
+                             "https://b.org/fred": Resp(200, self.FRED_LIKE, {"Content-Type": "text/html"})}, state=st)
+        r = f.get("https://a.org/data", sid="s")
+        self.assertEqual(r.error, "login_wall")
+        self.assertFalse(r.body)                                             # 登录页正文不交给调用方
+        stops = collect.SourceHealth(d / "st.json").data["host_stops"][ROUND]
+        self.assertEqual({h: v["reason"] for h, v in stops.items()}, {"a.org": "login_wall"})   # 主机本轮停止（持久）
+        self.assertEqual(f.get("https://a.org/other", sid="t").error, "host_stopped_this_round")
+        self.assertTrue(collect.SourceHealth(d / "st.json").url_cooling("https://a.org/data", time.time() + 23 * 3600))
+        self.assertTrue(f.get("https://b.org/fred", sid="t").ok)             # FRED 式页面（id="signin-wrap"）不误伤
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -319,6 +319,95 @@ def classify_page(ctype, body, headers=None, url=None):
     return "phrase" if (v == "suspect" or phrase_hit(body)) else None
 
 
+# 不跳转的登录墙（任何非 3xx 状态，含 200）：只看结构特征，不对全文做单词匹配（FRED 等正常页面有 id="signin-wrap"
+# 之类的属性或页眉「Sign in」链接，不能误伤）。特征：
+#   T  <title> 含 sign in / log in / login / password（或 登录 / 登入）
+#   P  <form> 里有密码输入框 <input type=password>
+#   A  某个 <form> 的 action 指向登录路径（is_login_url：/login、/signin、/auth、/sso… 或 login./accounts. 主机）
+#   F  <form> 内可见文字（含 label、button、submit 的 value）含上述登录词
+# 判定：P 且 T；或 T 且 A；或 P 且 A 且 F 且表单外可见文字很短（≤ LOGIN_OUTSIDE_MAX，整页基本就是登录表单）。
+# 侧栏 / 页眉里带登录框的普通文章（标题不是登录、正文很长）不算。
+_LOGIN_WORDS = re.compile(r"(?<![a-z])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on|password)(?![a-z])|登录|登入|ログイン", re.I)
+LOGIN_OUTSIDE_MAX = 600
+
+
+def _login_features(text, base=None):
+    from html.parser import HTMLParser
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.title, self.in_title, self.skip, self.form = [], False, 0, 0
+            self.pw = self.action = self.has_form = False
+            self.form_text, self.outside = [], 0
+
+        def handle_starttag(self, tag, attrs):
+            a = {}
+            for k, v in attrs:
+                a.setdefault(k, v or "")
+            if tag == "title":
+                self.in_title = True
+            elif tag in ("script", "style", "noscript", "template"):
+                self.skip += 1
+            elif tag == "form":
+                self.form += 1; self.has_form = True
+                act = a.get("action", "").strip()
+                if act:
+                    try:
+                        full = urljoin(base, act) if base else act
+                        self.action = self.action or is_login_url(full if urlsplit(full).scheme else "https://x" + (
+                            full if full.startswith("/") else "/" + full))
+                    except ValueError:
+                        pass
+            elif tag == "input" and self.form:
+                typ = a.get("type", "").strip().lower()
+                if typ == "password":
+                    self.pw = True
+                if typ in ("submit", "button") and a.get("value"):
+                    self.form_text.append(a["value"])
+
+        def handle_startendtag(self, tag, attrs):
+            self.handle_starttag(tag, attrs)
+
+        def handle_endtag(self, tag):
+            if tag == "title":
+                self.in_title = False
+            elif tag in ("script", "style", "noscript", "template") and self.skip:
+                self.skip -= 1
+            elif tag == "form" and self.form:
+                self.form -= 1
+
+        def handle_data(self, d):
+            if self.in_title:
+                self.title.append(d)
+            elif self.skip:
+                return
+            elif self.form:
+                self.form_text.append(d)
+            else:
+                self.outside += len(" ".join(d.split()))
+    p = P()
+    try:
+        p.feed(text); p.close()
+    except Exception:
+        pass
+    title = " ".join("".join(p.title).split())
+    return {"T": bool(title) and len(title) <= 160 and bool(_LOGIN_WORDS.search(title)), "P": p.pw, "A": p.action,
+            "F": bool(_LOGIN_WORDS.search(" ".join(p.form_text))), "form": p.has_form, "outside": p.outside}
+
+
+def login_page(ctype, body, url=None):
+    """不跳转的登录页（结构特征，见上）。只判 HTML 形态。"""
+    if not body or not htmlish(ctype, body):
+        return False
+    t = body[:200000].decode("utf-8", "replace") if isinstance(body, bytes) else body[:200000]
+    f = _login_features(t, url)
+    if not f["form"]:
+        return False
+    return (f["P"] and f["T"]) or (f["T"] and f["A"]) or \
+        (f["P"] and f["A"] and f["F"] and f["outside"] <= LOGIN_OUTSIDE_MAX)
+
+
 def is_challenge(body, ctype="", headers=None, url=None):
     """高置信验证页（厂商标记）——scrapers.check_body 等用；只命中短语不算。"""
     return classify_page(ctype, body, headers, url) == "vendor"
@@ -1532,7 +1621,8 @@ class Fetcher:
 
     @staticmethod
     def _classify(st, h, body, url, robots=False):
-        """可疑分类：401/403/429 先按状态码；再看验证页（vendor / phrase）；跳转到登录页 → login_wall。"""
+        """可疑分类：401/403/429 先按状态码；再看验证页（vendor / phrase，任何状态含 200）；跳转到登录页，或不跳转的
+        登录页（结构特征，见 login_page，含 200）→ login_wall。"""
         pre = "robots_" if robots else ""
         if st in (401, 403, 429):
             return f"{pre}http_{st}"
@@ -1543,6 +1633,8 @@ class Fetcher:
             return f"{pre}suspected_challenge"
         if st in REDIRECT_CODES and (h or {}).get("Location") and is_login_url(urljoin(url, h["Location"])):
             return f"{pre}login_wall"
+        if st not in REDIRECT_CODES and login_page((h or {}).get("Content-Type") or "", body, url):
+            return f"{pre}login_wall"          # 不跳转的登录页（含 200）：结构特征命中同样是登录墙
         return None
 
     # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速、同样受主机停止与 URL 冷却约束）
