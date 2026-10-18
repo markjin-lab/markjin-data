@@ -1582,6 +1582,27 @@ class R15Primary(Primary):
         for body in (self.FRED_LIKE, self.ARTICLE, b"<urlset><url><loc>https://a.org/x</loc></url></urlset>"):
             self.assertEqual(scrapers.check_body(200, body, None, "text/html"), body)
 
+    PROMPT = (b'<html><head><title>Research note</title></head><body><p>Please sign in to continue reading.</p>'
+              b'<a href="/account/login?next=/n/1">Sign in</a></body></html>')
+    MAGIC = (b'<html><head><title>Example</title></head><body><form action="/magic" method="post">'
+             b'<p>Log in with your email</p><input type="email" name="e"><button>Send link</button></form></body></html>')
+
+    # ---- r3 补充：fetch_primary / scrapers 认登录提示中间页与无密码登录表单；下一轮整个伪来源停（stop-source）
+    def test_r15_fetch_primary_interstitial_and_passwordless_stop_source(self):
+        st = collect.SourceHealth(self.base / "st.json")
+        items, idx, f = self.run_fp([{"id": "1", "expanded_url": "https://pub.org/n/1"},
+                                     {"id": "2", "expanded_url": "https://mag.org/a"}],
+                                    {"https://pub.org/n/1": Resp(200, self.PROMPT, self.HTML),
+                                     "https://mag.org/a": Resp(200, self.MAGIC, self.HTML)}, state=st)
+        self.assertEqual([x["fetch_status"] for x in items], ["login_wall", "login_wall"])
+        h = collect.SourceHealth(self.base / "st.json")
+        self.assertEqual(set(h.data["host_stops"]["2026-10-12/r1"]), {"pub.org", "mag.org"})
+        self.assertEqual(h.blocked("primary:pub.org", "2026-10-12/r2"), "source cooldown:login_wall")
+        import scrapers
+        for body in (self.PROMPT, self.MAGIC):
+            with self.assertRaisesRegex(scrapers.ScrapeError, "login wall"):
+                scrapers.check_body(200, body, None, "text/html")
+
     # ---- MEDIUM：健康状态更新失败 → 返回非 0
     def test_r15_fetch_primary_health_update_failure_nonzero(self):
         import contextlib, io
