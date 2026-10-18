@@ -60,29 +60,44 @@ sources:
 - id: anthropic-news
   theme: ai
   priority: P0
-  method: web
-  url: https://www.anthropic.com/news
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:31+08:00'
-  enabled: false
+  method: scraper
+  url: https://www.anthropic.com/sitemap.xml
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  checked_at: '2026-10-12T07:00:00+08:00'
+  enabled: true
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.4
   license: url+hash-only
   internal_only: false
-  notes: webpage only; no official RSS/API
+  notes: no official RSS; robots allows all; official sitemap.xml filtered to /news/ and /research/
+  scraper: anthropic_sitemap
 - id: qwen-research
   theme: ai
   priority: P0
   method: web
   url: https://qwen.ai/research
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:31+08:00'
+  check_status: 200 but JS-rendered SPA (no links in HTML)
+  checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心1.5
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: qwen.ai/research needs JS; see qwen-blog-rss
+- id: qwen-blog-rss
+  theme: ai
+  method: rss
+  url: https://qwenlm.github.io/blog/index.xml
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  enabled: false
+  approval_status: pending
+  approval_basis: ''
+  approval_note: '审查 r2 BLOCKER：报告列的是 qwen.ai/research，本源是另一站点的 Qwen blog RSS（且最新条目停在 2025-09）；同组织/同主域不自动继承报告条目号，待对该具体替代来源单独确认后再启用'
+  notes: official Qwen blog RSS; WARNING latest item 2025-09-23 (stale, low yield)
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:00:00+08:00'
 - id: nbs-data
   theme: macro
   priority: P0
@@ -96,19 +111,34 @@ sources:
   license: url+hash-only
   internal_only: false
   notes: no reliable login-free API
+- id: nbs-releases
+  theme: macro
+  method: scraper
+  scraper: nbs_releases
+  url: https://www.stats.gov.cn/sj/zxfb/
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  enabled: true
+  approval_status: approved
+  approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.1
+  approval_note: '2026-10-12 按用户裁定恢复启用（r3 审查确认不计问题）'
+  notes: 国家统计局 最新发布 static list page; robots.txt 404 (no restrictions)
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:00:00+08:00'
 - id: pbc-stats
   theme: macro
   priority: P0
   method: web
   url: https://www.pbc.gov.cn/diaochatongjisi/116219/index.html
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:34+08:00'
+  check_status: '200 but robots.txt Disallow: / for User-agent * (only Baiduspider allowed)'
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心2.2
   license: url+hash-only
   internal_only: false
-  notes: webpage + attachments
+  notes: 'abandoned: robots.txt allows only Baiduspider; PBOC data via FRED or official republication'
 - id: fed-press-monetary
   theme: macro
   priority: P0
@@ -217,29 +247,29 @@ sources:
 - id: cern-news
   theme: physics
   priority: P0
-  method: web
-  url: https://home.cern/news/
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:07:39+08:00'
-  enabled: false
+  method: rss
+  url: https://home.cern/feed/
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  checked_at: '2026-10-12T07:00:00+08:00'
+  enabled: true
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.2
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: WordPress RSS (home.cern/feed/); REST API requires auth -> not used
 - id: gwosc-events
   theme: physics
   priority: P0
   method: api
   url: https://gwosc.org/api/v2/events?format=json
-  check_status: '000 curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading'
-  checked_at: '2026-10-12T00:07:49+08:00'
+  check_status: TLS unexpected EOF from box egress network; endpoint itself OK via external fetch
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心3.3
   license: url+hash-only
   internal_only: false
-  notes: open data, attribution per gwosc.org/acknowledgement
+  notes: 'disabled: box egress network resets TLS; site OK externally; no network change for now'
   license_note: research note said full-text-ok; not a permission - per-item license evidence required
 - id: scoap3-records
   theme: physics
@@ -285,14 +315,14 @@ sources:
   priority: P0
   method: web
   url: https://www.bse.cn/static/statisticdata.html
-  check_status: '302 curl: (47) Maximum (50) redirects followed (web-only; not auto-collected)'
-  checked_at: '2026-10-12T00:08:12+08:00'
+  check_status: 302 self-redirect sets C3VK cookie (300s); with cookie jar -> 200 HTML shell, data loaded by JS (marketData/daily.min.js)
+  checked_at: '2026-10-12T07:00:00+08:00'
   enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.核心6.3
   license: market-data-restricted
   internal_only: false
-  notes: no redistribution right
+  notes: 'not enabled: data needs JS/XHR; market data restricted anyway'
 - id: cninfo
   theme: stock
   priority: P0
@@ -431,14 +461,26 @@ sources:
   priority: P0
   method: web
   url: https://pris.iaea.org/PRIS/
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:08:24+08:00'
+  check_status: 302 -> pris-stats.iaea.org (stats web app)
+  checked_at: '2026-10-12T06:50:00+08:00'
   enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明3.2
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: no feed; index only manually
+- id: iaea-news
+  theme: energy
+  method: rss
+  url: https://www.iaea.org/feeds/topnews
+  check_status: 200 (tested 2026-10-12 06:5x SGT via capture_sources)
+  enabled: false
+  approval_status: pending
+  notes: 'not in source-research report: pending approval; official IAEA top-news RSS'
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:00:00+08:00'
 - id: iter-news
   theme: energy
   priority: P0
@@ -554,27 +596,66 @@ sources:
   priority: P0
   method: web
   url: https://investor.tsmc.com/english/quarterly-results
-  check_status: 200 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:08:31+08:00'
+  check_status: Cloudflare challenge page on investor.tsmc.com (not bypassed)
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.2
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: blocked by bot challenge (no bypass); use sec-edgar-tsmc for filings
+- id: tsmc-pr
+  theme: semis
+  method: scraper
+  scraper: tsmc_pr_sitemap
+  url: https://pr.tsmc.com/english/sitemap.xml
+  check_status: 403 Cloudflare challenge for urllib client (curl got 200 intermittently)
+  enabled: false
+  approval_status: pending
+  notes: official news sitemap; Cloudflare challenge (no bypass); no official PR RSS without challenge; use sec-edgar-tsmc
+  priority: P0
+  license: url+hash-only
+  internal_only: false
+  checked_at: '2026-10-12T07:04:05+08:00'
 - id: asml-quarterly
   theme: semis
   priority: P0
   method: web
   url: https://investor.asml.com/quarterly-results
-  check_status: 403 (web-only; not auto-collected)
-  checked_at: '2026-10-12T00:08:31+08:00'
+  check_status: 403 Akamai Access Denied (investor.asml.com, incl. robots.txt)
+  checked_at: '2026-10-12T07:04:05+08:00'
   enabled: false
   approval_status: approved
   approval_basis: 王总 2026-10-11 整体确认，报告条目号 三.文明5.3
   license: url+hash-only
   internal_only: false
-  notes: webpage only
+  notes: blocked at CDN (no bypass); no official press RSS without challenge; use sec-edgar-asml
+- id: sec-edgar-tsmc
+  theme: semis
+  priority: P0
+  method: api
+  url: https://data.sec.gov/submissions/CIK0001046179.json
+  check_status: '200'
+  checked_at: '2026-10-12T07:04:05+08:00'
+  enabled: true
+  approval_status: approved
+  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
+  license: url+hash-only
+  internal_only: false
+  notes: 'SEC fair-access: needs declared UA with contact; TSMC CIK 0001046179; filer content not PD; atom also OK'
+- id: sec-edgar-asml
+  theme: semis
+  priority: P0
+  method: api
+  url: https://data.sec.gov/submissions/CIK0000937966.json
+  check_status: '200'
+  checked_at: '2026-10-12T07:04:05+08:00'
+  enabled: true
+  approval_status: approved
+  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
+  license: url+hash-only
+  internal_only: false
+  notes: 'SEC fair-access: needs declared UA with contact; ASML CIK 0000937966; filer content not PD; atom also OK'
 - id: mlcommons-inference
   theme: semis
   priority: P0
