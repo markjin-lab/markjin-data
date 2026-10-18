@@ -231,7 +231,7 @@
 
 出处：王总 10-18 13:50 决定切回正常模式、恢复 #3/#6（14:15 改为立即生效）；封锁细则由 Grok Bot 定，10-18 13:51 初版，15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。
 
-- **可疑响应**：HTTP 401/403、429、验证页（`classify_page` 返回 `vendor` 或 `phrase`）、登录墙（跳到或落在登录页，`is_login_url`）、rss/api 格式校验不通过。robots.txt、每一跳重定向、正文一视同仁。收到任何 HTTP 状态都不重发（429、5xx 也不重试）；只有没收到响应的网络错误有限重试（`NET_RETRIES`）。
+- **可疑响应**：HTTP 401/403、429、验证页（`classify_page` 返回 `vendor` 或 `phrase`）、登录墙（跳到登录页 `is_login_url`，或不跳转、返回 200 等状态的登录页：登录标题加表单与密码框，`login_page`）、rss/api 格式校验不通过。robots.txt、每一跳重定向、正文一视同仁。收到任何 HTTP 状态都不重发（429、5xx 也不重试）；只有没收到响应的网络错误有限重试（`NET_RETRIES`）。
 - **规则 1，单次即停该主机**：一次可疑 → 该主机本轮全部停止（私有 `state/source-health.json` 的 `host_stops.<轮次>.<主机>`，跨进程生效），同主机的其他 URL、其他源本轮都不再请求（`host_stopped_this_round`，列入 `skipped-<run>.json`，不另算可疑）。
 - **规则 2，URL 冷却 ≥24 小时**：被拒的 URL 记入 `urls.<轮次>`（只存规范化 URL 的 sha256：scheme、主机小写，去默认端口，空路径补 `/`，去 fragment），24 小时内任何轮次都不再请求（`url_cooldown`）。经重定向时，最初请求的 URL 和返回可疑响应的那一跳都记冷却；但本轮停止的只是返回可疑响应那一跳的主机，起点主机不停（r15 ⑤：doi.org 跳到出版商 403，同轮其他 DOI 照常）。记录按轮次分开存，补跑 r1 不会清掉 r2 的记录；只保留最近 10 轮。查记录、发请求、写记录在同一把按 URL 的跨进程文件锁内完成（`state/locks/urls/`），两个进程不会同时请求同一 URL；rss/api 格式校验也在锁内（r15 ④）。站点限速锁里等待结束后、发送之前重跑完整预检（旧表停用、源状态、本轮主机停止、URL 冷却），可疑分类与停止写入也在站点限速锁内完成，「写停止」与同站「发请求」互斥（r15 ①）。超过 25 MiB 的 401/403/429 先按状态码判可疑、停主机，再报 `too_large`（r15 ③）。
 - **规则 3，5 轮 3 轮 → pending-disable**：每轮结束，`capture_sources` 只给本轮实际发过请求的源记一轮（轮次 id `YYYY-MM-DD/rN`；同一轮重跑按「任一次可疑即可疑」合并）。最近 5 个记录轮里有 3 轮可疑（不要求连续）→ `pending-disable`，**从下一轮起**生效：触发的那一轮照常跑完，下一轮起该源不再请求（`source_blocked`），每轮报告继续列出。被主机停止、冷却、停用跳过而没发请求的源不记轮。
@@ -241,7 +241,7 @@
 - **人工操作**：`source_health.py confirm-disable --id <id> --reason "<谁确认、依据>"` → `disabled`；`enable --id <id> --reason …` 或 `enable --host <主机> --reason …` → 恢复为 `ok`；`unrecoverable`（因验证页或登录墙停用）的主机和源永不恢复，没有放行开关，只能改 `sources.yaml` 并重新审批；`report` 查看当前状态（只打到终端，可含人工 `--reason` 与旧表原因原文）。
 - **公开输出只写固定代码（r15 ⑦）**：`skipped-<run>.json` 的 `detail`、`source-health-<run>.json`（`reason_code`、各轮 `reasons`）和 `GROK-BOT-REVIEW-<run>.md` 只写固定代码（如 `source disabled:manual-confirm`、`host disabled:legacy-import:bot_check:unrecoverable`、`suspected_challenge:xml_root`）；旧表停用原因、人工 `--reason` 等自由文本只留在私有状态文件。
 - **状态文件**：不要手改。读取严格校验：`version` 必须是整数 2，顶层只能是 `version`、`sources`、`urls`、`host_stops`、`hosts`、`legacy_imports`（缺键、多键都算损坏），每条源记录必须带 `sid`。损坏或读不了时拒绝一切请求，也拒绝改写；`report()` 读失败直接报错。
-- `fetch_primary.py`（须给 `--round 1|2`）：同样遵守上面的规则 1–4、6（单次可疑停该主机本轮、URL 冷却、站点限速、旧表停用主机不请求）。文章按**返回可疑响应的那一跳**的主机归入伪源 `primary:<主机>` 计数（r14 ⑩：经跳转到别的主机被拒，记在被拒的主机上，不记在起点主机上），与 sources.yaml 的源分开计数；但主机停止是按主机的，本轮对所有源都生效。伪源最近 5 轮 3 轮可疑同样转为 `pending-disable`（下一轮起），报告写在公开 `primary/source-health-<run>.json`，当轮另写 `primary/GROK-BOT-REVIEW-<run>.md`，stderr 打出「待 Grok Bot 复核」一行，summary 行带 `pending_disable=N`。scraper 源与 rss/api 源同样按源计数，子 sitemap 被拒算该源可疑，列表页主机已停或列表页冷却时整源本轮跳过。
+- `fetch_primary.py`（须给 `--round 1|2`；来源健康状态更新失败时退出码 1，让上层停下）：同样遵守上面的规则 1–4、6（单次可疑停该主机本轮、URL 冷却、站点限速、旧表停用主机不请求）。文章按**返回可疑响应的那一跳**的主机归入伪源 `primary:<主机>` 计数（r14 ⑩：经跳转到别的主机被拒，记在被拒的主机上，不记在起点主机上），与 sources.yaml 的源分开计数；但主机停止是按主机的，本轮对所有源都生效。伪源最近 5 轮 3 轮可疑同样转为 `pending-disable`（下一轮起），报告写在公开 `primary/source-health-<run>.json`，当轮另写 `primary/GROK-BOT-REVIEW-<run>.md`，stderr 打出「待 Grok Bot 复核」一行，summary 行带 `pending_disable=N`。scraper 源与 rss/api 源同样按源计数，子 sitemap 被拒算该源可疑，列表页主机已停或列表页冷却时整源本轮跳过。
 - 永不绕过付费墙、登录或验证：不重试、不换 UA、不跑 JS、不带 cookie。
 
 ## 验证页识别
