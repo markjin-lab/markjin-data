@@ -8,6 +8,7 @@ _TMP = tempfile.TemporaryDirectory(prefix="markjin-tests-", dir=_root)
 tempfile.tempdir = _TMP.name
 os.environ["TMPDIR"] = _TMP.name
 atexit.register(_TMP.cleanup)
+os.environ.pop("MARKJIN_PRIVATE_TERMS", None)   # v1.12：测试不读本机真实内部用语清单（需要时由用例显式给出临时清单）
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 DATE = "2026-01-05"

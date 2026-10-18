@@ -23,6 +23,13 @@
 | `E-X-ONLY` | 日报中的断言（原文直引、结构化断言、带来源的行）只有 X 来源支撑；X 只作线索，硬拦 |
 | `E-BLOCK-INTERNAL` | 命中仅供内部研究的主题（细节只记本机内部目录） |
 | `E-INTERNAL-LIST-MISSING` | 本机内部主题清单缺失、不可读或结构不完整，无法完成内部主题检查 |
+| `E-FRED-NOT-ARCHIVED` | 正文引用的 FRED 代码在 raw/<日期>/MANIFEST.sha256（不晚于稿件日期）找不到逐字节一致的 fred/<代码>.json 存档 |
+| `E-BRANCH-METHOD-MISSING` | 产业分段分支缺计算口径（目标观测期、公式、基期、单位、季调口径、舍入位数）、端点算法或输入版本（数据版本日期与 raw/ 原件 sha256），不予登记 |
+| `E-BRANCH-AGGREGATE` | 产业分段分支的观测变量或数据来源是全国总量序列（路线图 v1.12 15.3），不作观测变量，不予登记 |
+| `E-CANDIDATE-DATA-CITED` | 正文引用了尚未转为常规的来源（新数据机构网址，或 arxiv/fred/x/fulltext 以外的 raw/ 存档）；候选数据只作线索 |
+| `E-INTERNAL-LABEL` | 出现内部分类标签的写法或“若……此归类不成立”句式 |
+| `E-INTERNAL-TERM` | 命中仓库外本机内部用语清单（公开侧只记错误码与计数，不记具体词与位置） |
+| `E-INTERNAL-TERM-LIST` | 指定的内部用语清单不合规（位于 git 仓库内、不是普通文件、不可读、不是 UTF-8 或为空），无法完成检查 |
 | `E-SELFCHECK-INPUT` | 稿件为空 |
 | `E-DEP-PYYAML` | 缺少运行依赖 PyYAML（requirements.txt）：无法解析 front matter，结构化判失败 / HOLD，不直接崩溃（整体验收 r10） |
 | `E-TONGYI-MISMATCH` | front matter type 为 tongyi 与稿件路径（tongyi/<name>.md 或 content/posts/tongyi/<name>.md）不一致：fail-closed，不给长文豁免（整体验收 r15，审查 bot 定） |
@@ -50,6 +57,7 @@
 | `R-QUOTE-COMPARATIVE` | 直引含比较级或评价性比较（than、better、superior、outperform、优于、超过、更、最…）：移出低风险 |
 | `R-QUOTE-MODAL` | 直引含情态或预测词（will、should、can、may、expect、将、会、应该、可能…）：移出低风险 |
 | `R-QUOTE-ENTITY` | 直引含全大写词/股票代号、句中大写开头的专有名词或驼峰名（公司、机构、人名）：移出低风险 |
+| `R-INDUSTRY-STRAINED` | Codex 判产业链接牵强（只计数，写公开台账；自检不产生） |
 | `R-X-ONLY` | 只有 X 来源（日报断言另判 E-X-ONLY 硬拦；此标记仍用于纯来源链接行与信号卡） |
 | `E-ROUTE-UNCLEAR` | 分类不明，当天不发布 |
 | `E-ROUTE-SELFCHECK-FAIL` | 自检失败，当天不发布 |

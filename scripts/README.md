@@ -200,3 +200,15 @@
 - **整体验收 r12 修复（数字核对范围）**：`check_pair` 判“来源支持”时只用被引用的那一条——arXiv / X 为 `select_entries` 按条目 id（及版本）选出的正文域；FRED 存档已按 series_id 绑定为单一系列（URL 不带 vintage），范围即该系列文件。同一 raw 里其他条目的数字不再算作支持。
 - **整体验收 r13 修复（审查 bot 定）**：FRED 只在被引用的那一期观测里核数字（断言写观测日期则按 date 选；写 vintage 则再按 realtime_start/realtime_end 限定；多条观测且没写日期 → 不算支持；日期与 vintage 本身不当作要核对的数字）；带来源段落、非结构化行核对时带上断言原文（去掉 raw 路径与 URL），断言里有数字却不被引用条目支持 → R-SUPPORT-UNVERIFIED。
 - **整体验收 r15 修复（审查 bot 定的技术方案）**：(1) front matter 统一用 yaml.safe_load 解析一次，更正稿元数据（corrects / corrected_at）与日期字段都按解析后的值判断，带引号与不带引号等价；(2) tongyi 长文豁免：front matter `type: tongyi` 且路径为 `tongyi/<name>.md`（站点 `content/posts/tongyi/<name>.md`）的稿件及其更正稿，不报日报专用的 E-INFER-UNCLEAR、E-REPLAY-001；硬拦（买卖建议、仓位、宏观观点、内部词表、X-only 等）照常；type 与路径只有一方是 tongyi → E-TONGYI-MISMATCH（fail-closed，照常跑日报检查）。理由：长文由 Codex 加王总 v2 direct 逐篇把关。`check_text` 新增 `rel` 参数，CLI 按稿件相对 --repo 的路径传入。
+
+## 路线图 v1.12：产业与经济数据自检（`scripts/markjin/industry.py`）
+
+依据站点 PR #79 路线图 v1.12 第六节“产业分段分支”、15.2、15.3、15.5（审查与治理）。本节改动的合入等 PR #79 合并。
+
+- **小节白名单**：标题“产业与经济数据 / Industry and economic data”与固定栏目名同等对待（不算自由文字）。
+- **E-FRED-NOT-ARCHIVED**：正文引用的 FRED 代码（`fred.stlouisfed.org/series/<代码>`、`graph/?id=<代码>` 链接，或“FRED <代码>”写法）必须在某个不晚于稿件日期的 `raw/<日期>/MANIFEST.sha256` 里登记了 `fred/<代码>.json`（或 `round2/fred/<代码>.json`），文件逐字节一致、不是符号链接，且是该序列的存档。
+- **E-CANDIDATE-DATA-CITED**：正文引用 15.3 所列新数据机构的网址（主机名相同或为其子域），或 arxiv / fred / x / fulltext 以外的 `raw/` 存档，即判失败；候选数据转常规之前只作线索。
+- **E-INTERNAL-LABEL**：内部分类标签的通用写法与“若……此归类不成立”句式（中英，含跨行）。具体标签词属于内部用语，不写进本仓库，由 E-INTERNAL-TERM 按本机清单检查。
+- **E-INTERNAL-TERM**：清单只在仓库外的本机文件（每行一词），用 `scripts/selfcheck.py --private-terms <路径>` 或环境变量 `MARKJIN_PRIVATE_TERMS` 指定。没给或文件不存在 → 跳过并在结果（`internal_term_check: "skipped"`）与 CLI 输出里写明；清单在任何 git 仓库内（含被检查的仓库）、不是普通文件、读不出、不是 UTF-8 或为空 → `E-INTERNAL-TERM-LIST`（fail-closed）。命中只记错误码与计数（`internal_term_hits`，错误行号记 0），不回显词与位置。NFKC 会改变字形的词只按原字形匹配，避免被折叠成普通数字或字母误中。测试只用中性占位词。
+- **E-BRANCH-METHOD-MISSING / E-BRANCH-AGGREGATE**：`industry.check_branch(row)` 在登记产业分段分支前核对：observed_variable 与 unit 须写全目标观测期、公式、基期、单位、季调口径、舍入位数；endpoint_method、input_version（含 YYYY-MM-DD）与 raw_sha256 必须齐全；观测变量或数据来源为全国总量序列（INDPRO、TCU、PPIACO、Y033RC1Q027SBEA、A053RC1Q027SBEA）即拒绝。分支台账（PR #20）合并后由登记流程调用；本 PR 不改台账 schema。
+- **R-INDUSTRY-STRAINED**：Codex 判产业链接牵强，只计数。日报审查提示词要求 Codex 输出一行 `R-INDUSTRY-STRAINED: <计数>`，`industry.strained_count()` 读出后写公开台账；自检本身不产生这个码。

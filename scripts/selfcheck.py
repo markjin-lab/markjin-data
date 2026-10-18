@@ -17,8 +17,11 @@ ap.add_argument("--date", required=True)
 ap.add_argument("--card-type", required=True, choices=["daily", "signal"])
 ap.add_argument("--json", action="store_true")
 ap.add_argument("--no-link-check", action="store_true", help="不检查链接（结果带 R-LINK-UNCHECKED，非低风险）")
+ap.add_argument("--private-terms", default=None,
+                help="仓库外的本机内部用语清单（每行一词）；不给则读环境变量 MARKJIN_PRIVATE_TERMS，都没有或文件不存在则跳过 E-INTERNAL-TERM 检查")
 a = ap.parse_args()
-r = check_file(a.draft, a.repo, a.date, a.card_type, link_checker=None if a.no_link_check else http_link_checker)
+r = check_file(a.draft, a.repo, a.date, a.card_type, link_checker=None if a.no_link_check else http_link_checker,
+               private_terms=a.private_terms)
 if a.json:
     print(json.dumps(r, ensure_ascii=False, indent=2))
 else:
@@ -28,4 +31,11 @@ else:
     for c in r["error_codes"]:
         if c.startswith("R-"):
             print(f"  审查原因 {c}  {ERROR_CODES[c]}")
+    st = r.get("internal_term_check")
+    if st == "skipped":
+        print("  内部用语检查（E-INTERNAL-TERM）：已跳过——未提供仓库外清单（--private-terms 或 MARKJIN_PRIVATE_TERMS），或文件不存在")
+    elif st == "loaded":
+        print(f"  内部用语检查（E-INTERNAL-TERM）：已检查，命中 {r.get('internal_term_hits', 0)}")
+    elif st == "error":
+        print("  内部用语检查（E-INTERNAL-TERM）：清单不合规（E-INTERNAL-TERM-LIST），未完成")
 sys.exit({"PASS": 0, "FAIL": 1, "UNCLEAR": 2}[r["status"]])

@@ -34,6 +34,7 @@ from .deps import DEP_CODE, have_yaml
 from . import strictjson
 from .fmkeys import FM_CATEGORY_KEYS
 from .internal import load_internal_terms
+from . import industry
 from .textnorm import compact, has_any, norm
 
 CARD_TYPES = ("daily", "signal")
@@ -145,6 +146,7 @@ DISCLAIMERS = (DISCLAIMER, DISCLAIMER_EN)   # 整体验收 r2（王总定）：�
 def disclaimer_line(s):
     return s.strip() in DISCLAIMERS
 ALLOWED_HEADINGS = {"", "日报", "ai日报", "论文", "arxiv", "模型发布", "daily", "digest"}
+ALLOWED_HEADINGS |= industry.heading_whitelist()   # 路线图 v1.12 15.5：小节白名单加“产业与经济数据 / Industry and economic data”
 
 # —— 词表：公开 JSON（lexicon.json，与生产 bot 共用）。读取或结构失败 → 抛 LexiconError（调用方 FAIL）
 LEXICON_PATH = Path(__file__).with_name("lexicon.json")
@@ -496,15 +498,17 @@ def _claim_of(s):
     return URL_RE.sub(" ", RAW_RE.sub(" ", s))
 
 
-def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
+def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None, private_terms=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
-    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。"""
+    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。
+    private_terms：仓库外的本机内部用语清单路径（v1.12，E-INTERNAL-TERM）；为 None 时读环境变量 MARKJIN_PRIVATE_TERMS，
+    都没有或文件不存在 → 跳过（结果 internal_term_check="skipped"）。详见 industry.py。"""
     errors = []
     flags = {k: False for k in FLAG_KEYS}
     counts = {k: 0 for k in COUNT_KEYS}
     meta = {"card_type": card_type if card_type in CARD_TYPES else None,
-            "date": date if valid_date(date) else None}
+            "date": date if valid_date(date) else None, "internal_term_check": "not_run"}
 
     def err(code, line=0):
         errors.append({"code": code, "line": line})
@@ -828,6 +832,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
         flags["stock"] = True
     if not flags["religion"] and has_any(doc_compact, LEX["religion"]):
         flags["religion"] = True
+    # —— 路线图 v1.12（产业与经济数据）：候选来源、内部分类标签、FRED 存档、仓库外内部用语清单
+    _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms)
     # 双语规则（t141u，经 Grok Bot 转达）：出现“译文：”行即 R-TRANSLATION，不算低风险
     if any(TRANSLATION_RE.search(norm(ln)) for ln in text.splitlines()):
         flags["translation"] = True
@@ -1035,7 +1041,9 @@ def _result(errors, flags, counts, meta):
     fail = [c for c in hard if c not in UNCLEAR_CODES]
     status = "FAIL" if fail else ("UNCLEAR" if set(hard) & set(UNCLEAR_CODES) else "PASS")
     r = {"status": status, "error_codes": hard + soft, "errors": errors, "flags": flags,
-         "counts": dict(counts, errors=len(errors)), "card_type": meta["card_type"], "date": meta["date"]}
+         "counts": dict(counts, errors=len(errors)), "card_type": meta["card_type"], "date": meta["date"],
+         "internal_term_check": meta.get("internal_term_check", "not_run"),
+         "internal_term_hits": meta.get("internal_term_hits", 0)}
     r["low_risk"] = compute_low_risk(r)
     return r
 
@@ -1350,6 +1358,73 @@ def http_link_checker(url, timeout=10):
         except Exception:   # noqa: BLE001
             continue
     return False
+
+
+def _fred_archived(ctx, code):
+    """v1.12：FRED 代码在 raw/<日期>/MANIFEST.sha256（日期为真实日期且不晚于稿件日期）里登记了 fred/<代码>.json
+    （或 round2/fred/<代码>.json），文件存在、不是符号链接、字节 sha256 与登记一致，且是该序列的存档
+    （自报 series_id 时须唯一且等于代码；未自报时须是 observations 列表）。"""
+    raw = ctx.repo / "raw"
+    if raw.is_symlink() or not raw.is_dir():
+        return False
+    try:
+        days = sorted(d for d in raw.iterdir() if valid_date(d.name) and d.name <= ctx.date)
+    except OSError:
+        return False
+    for d in days:
+        if d.is_symlink() or not d.is_dir() or (d / "MANIFEST.sha256").is_symlink():
+            continue
+        entries, e = ctx.manifest(d)
+        if e or not entries:
+            continue
+        for rel in (f"fred/{code}.json", f"round2/fred/{code}.json"):
+            if rel not in entries:
+                continue
+            parts = ("raw", d.name, *rel.split("/"))
+            if _has_symlink(ctx.repo, parts):
+                continue
+            try:
+                data = ctx.repo.joinpath(*parts).read_bytes()
+                fj = strictjson.loads(data.decode("utf-8"))
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
+            if _sha256(data) != entries[rel]:
+                continue
+            ids = _fred_ids(fj)
+            if ids == {code} or (not ids and isinstance(fj, dict) and isinstance(fj.get("observations"), list)):
+                return True
+    return False
+
+
+def _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms):
+    """路线图 v1.12 15.5 审查与治理的自检项（industry.py）。E-INTERNAL-TERM 只记错误码与计数（行号 0），不回显词与位置。"""
+    for i, s in enumerate(lines, 1):
+        if not s:
+            continue
+        if industry.candidate_cited(raw_lines[i - 1]) or industry.candidate_cited(s):
+            err("E-CANDIDATE-DATA-CITED", i)
+        if industry.internal_label(s):
+            err("E-INTERNAL-LABEL", i)
+    if not any(e["code"] == "E-INTERNAL-LABEL" for e in errors) and industry.internal_label(" ".join(lines)):
+        err("E-INTERNAL-LABEL", 0)                     # 跨行拼接后才出现的句式
+    archived = {}
+    for i, s in enumerate(lines, 1):
+        for code in industry.fred_codes(s):
+            if code not in archived:
+                archived[code] = _fred_archived(ctx, code)
+                if not archived[code]:
+                    err("E-FRED-NOT-ARCHIVED", i)
+    try:
+        state, terms = industry.load_private_terms(private_terms, repo=repo)
+    except industry.PrivateTermsError:
+        meta["internal_term_check"] = "error"
+        err("E-INTERNAL-TERM-LIST", 0)
+        return
+    meta["internal_term_check"] = state
+    hits = industry.term_hits(raw_lines, terms) if state == "loaded" else 0
+    meta["internal_term_hits"] = hits
+    for _ in range(hits):
+        err("E-INTERNAL-TERM", 0)
 
 
 def check_file(path, repo, date, card_type, **kw):
