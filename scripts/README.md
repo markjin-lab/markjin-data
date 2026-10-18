@@ -75,7 +75,7 @@
 
 ### 内部主题检查
 
-词表只从本机 `$MARKJIN_INTERNAL_DIR/topics-private.md`（默认 `/workspace/markjin-internal/`）读取，仓库内不含任何内部主题词。
+词表只从本机内部目录的 `topics-private.md` 读取，仓库内不含任何内部主题词。内部目录由环境变量 `MARKJIN_INTERNAL_DIR` 指定（推荐显式设置）；未设置时用相对路径：仓库根目录的同级目录 `../markjin-internal`。代码和文档里都不写本机绝对路径。
 清单严格解析：恰好一张三列表格，表头必须是 `名称 | 识别条件 | 来源`，各行三列非空、名称不重复；三列内容都受保护。缺失、不可读或结构不完整 → `E-INTERNAL-LIST-MISSING`（FAIL）。
 
 ## route（#10 审查路由）

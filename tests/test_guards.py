@@ -260,7 +260,7 @@ class CheckPublic(Base):
         bad = {"review/2026-10-12.md": '{"topic":"任意自由文本"}\n',               # 首行不是带日期的标题
                "review/codex/2026-10-12-d01.log": "随便写的内部审查描述\n",         # 不是 Codex 日志
                "review/2026-10-12-r1/result-r1.txt": "VERDICT: `APPROVED`\n",       # 不是纯文本 VERDICT 行
-               "review/2026-10-12-r1/review-prompt.md": "# x\n见 /workspace/markjin-internal/a\n"}
+               "review/2026-10-12-r1/review-prompt.md": "# x\n见 ../markjin-internal/a\n"}
         for p, t in bad.items():
             (self.repo / p).write_text(t, encoding="utf-8"); self.commit("bad " + p)
             self.expect(self.public("--range", "HEAD~1..HEAD"), False, "E-REVIEW-FORMAT")
