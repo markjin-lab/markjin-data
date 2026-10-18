@@ -675,6 +675,7 @@ def ext_for(ctype, body):
 # 15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。现行细则：
 #  1. 单次可疑（401/403、429、验证页、登录墙；robots.txt 同样）→ 该主机本轮全部停止（跨进程、跨源生效），429 不重试。
 #  2. 被拒的 URL（含跳转起点）至少冷却 COOLDOWN_SECONDS（24 小时）；失败记录按轮次分别保存，补跑旧轮不清新轮的记录。
+#     来源级扩展（补充口径，待审查确认）：来源只要还有未到期的 URL 冷却，从下一轮起整个来源都不请求（source cooldown）。
 #     本轮停止的只是返回可疑响应的那一跳的主机；跳转起点只冷却该 URL，起点主机不停（r15 ⑤）。
 #  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
@@ -969,11 +970,24 @@ class SourceHealth:
         if bad:
             return f"source health invalid ({bad}); refusing requests"
         rec = self.data["sources"].get(sid) if sid else None
-        if not rec or rec["status"] == "ok":
+        if rec and rec["status"] != "ok" and not (rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]):
+            return f"source {status_code(rec)}"          # r15 ⑦：只写固定代码，不写 status_reason 原文
+        return self.source_cooling(sid, rid)             # 触发 pending 的那一轮照常跑完（但仍受来源冷却约束）
+
+    def source_cooling(self, sid, rid, now=None):
+        """来源级冷却（补充口径，待审查确认）：该来源在别的轮次被拒、且仍有未到期（≥24 小时）的 URL 冷却记录 →
+        下一轮起整个来源都不请求（不只那个 URL），直到最晚的那条记录到期。触发的那一轮不受此限（同主机已按规则 1 停止）；
+        没有轮次上下文时保守拒绝。只看持久状态（跨运行生效）。返回固定代码或 None。"""
+        if not sid:
             return None
-        if rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]:
-            return None                                    # 触发 pending 的那一轮照常跑完
-        return f"source {status_code(rec)}"              # r15 ⑦：只写固定代码，不写 status_reason 原文
+        t = self.clock() if now is None else now
+        for r in sorted(self.data["urls"], reverse=True):
+            if r == rid:
+                continue
+            for u in self.data["urls"][r].values():
+                if u["sid"] == sid and u["until"] > t:
+                    return f"source cooldown:{public_code(u['reason'])}"
+        return None
 
     def host_blocked(self, host):
         """旧表迁移来的停用主机（或状态文件损坏）→ 拒绝原因；否则 None。对这些主机不发任何请求（含 robots.txt）。"""
