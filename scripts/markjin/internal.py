@@ -1,4 +1,8 @@
-"""本机内部目录访问。内部主题清单只在本机 $MARKJIN_INTERNAL_DIR（默认 /workspace/markjin-internal/），不进任何仓库。
+"""本机内部目录访问。内部主题清单只在本机内部目录，不进任何仓库。
+
+内部目录：环境变量 $MARKJIN_INTERNAL_DIR 给出的路径（推荐显式设置）；未设置时用相对路径——仓库根目录的同级目录
+`../markjin-internal`（按本文件位置推出仓库根，不写任何本机绝对路径）。目录或清单不存在时调用方 fail-closed
+（E-INTERNAL-LIST-MISSING），不会悄悄放行。
 
 清单文件 topics-private.md 必须恰好含一张三列 Markdown 表格（严格解析）：
   表头必须恰好是：名称 | 识别条件 | 来源；第 2 行为分隔行；
@@ -17,15 +21,22 @@ from pathlib import Path
 
 from .textnorm import compact, norm
 
-DEFAULT_DIR = "/workspace/markjin-internal"
+ENV_VAR = "MARKJIN_INTERNAL_DIR"
+DEFAULT_SIBLING = "markjin-internal"     # 未设环境变量时：仓库根的同级目录（相对路径）
 NAME_HEADERS = {"名称"}
 COND_HEADERS = {"识别条件"}
 SRC_HEADERS = {"来源"}
 _SEP = re.compile(r"^:?-{3,}:?$")
 
 
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]          # scripts/markjin/internal.py → 仓库根
+
+
 def internal_dir() -> Path:
-    return Path(os.environ.get("MARKJIN_INTERNAL_DIR", DEFAULT_DIR))
+    """$MARKJIN_INTERNAL_DIR（空串视同未设置）；否则 <仓库根>/../markjin-internal。"""
+    v = os.environ.get(ENV_VAR, "").strip()
+    return Path(v) if v else repo_root().parent / DEFAULT_SIBLING
 
 
 def _cells(line):

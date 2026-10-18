@@ -6,7 +6,7 @@
 - `review/error-codes.md`：错误码表，由 `scripts/gen-error-codes.py` 从 `scripts/markjin/codes.py` 生成。审查意见一律按错误码写入台账。
 - **台账只是统计**：计数不是批准凭证（`I-AUTO-APPROVED` 计数已随 t161u 取消低风险自动批准而停用，不再产生）；路由不读取台账判断是否已批准。
 - 台账日期按真实日历解析，且必须与文件名 `YYYY-MM-DD.jsonl` 一致（`E-LEDGER-DATE`）；`review/ledger/` 目录缺失 → `E-LEDGER-DIR`。
-- 内部材料只放本机 `/workspace/markjin-internal/`，不做 git 管理、不推送。写入只靠**操作系统身份与目录权限**：目录必须属于当前用户、权限 0700、不是符号链接、不在 git 仓库内。`write_internal()` 的 `actor` 参数只是自报标签，不做授权，**不能作为任何批准凭证**。
+- 内部材料只放本机内部目录（环境变量 `MARKJIN_INTERNAL_DIR`；未设置时为仓库根目录的同级目录 `../markjin-internal`），不做 git 管理、不推送。写入只靠**操作系统身份与目录权限**：目录必须属于当前用户、权限 0700、不是符号链接、不在 git 仓库内。`write_internal()` 的 `actor` 参数只是自报标签，不做授权，**不能作为任何批准凭证**。
 - 公开仓库守卫 `python3 scripts/check-public.py [--pre-push | --rev REV | --range A..B]`：检查 git 对象（默认 HEAD 提交对象），不检查工作树；逐个提交检查内部材料路径、review/ 路径白名单与格式、台账白名单（原“两个禁词”检查已于 2026-10-11 解禁撤除）。不依赖本机内部清单，CI 与本机都可跑。
 - 内部主题检查只在**本机推送前**执行：`git config core.hooksPath scripts/hooks` 安装 `scripts/hooks/pre-push`，它把 stdin 原样交给 `check-internal.py --pre-push` 与 `check-public.py --pre-push`，按每个 `local_sha` 检查 git 对象：hook 把 Git 传入的远端名（$1）和本次实际推送 URL（$2）用 `--remote` / `--remote-url` 交给两个守卫。新分支（或 remote_sha 本地不存在）先核验可信上游 main：**本次推送的目标 URL** 与 origin URL（含 pushurl）都是 markjin-lab/markjin-data，且目标 URL 上的远端 main（`git ls-remote <url> refs/heads/main`）等于本地基线 `origin/main`——全部满足才只扫新引入的提交（`<local_sha> --not <上游 main>`）；推往任何其他远端、手工运行没给 `--remote-url`、或核验失败，一律扫描其可达的全部提交（r6 协调方定、r7 王总定；不依赖 `--not --remotes`）；已有分支同样先核验目标——只有上述可信条件全部满足（目标是 markjin-lab/markjin-data、远端 main 等于基线）时才扫描 `remote_sha..local_sha`，否则同样从 local_sha 全量扫描（r8 王总定），每个提交检查完整树的路径、内容与提交说明。stdin 为空或格式异常、清单缺失或结构不完整、git 出错、解码失败 → 拒绝推送（fail-closed）。报错只给提交短 SHA、文件序号与行号，不输出文件名或命中内容。CI 读不到内部清单，不跑这项检查。
 
