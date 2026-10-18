@@ -7,7 +7,7 @@
 > **硬拦的边界（王总经 Grok Bot 转达，2026-10-11 r13）**：selfcheck 只是 Codex 之前的前置硬拦，不承担语义层面的完备拦截。词表和模式能识别的宏观观点、仓位与买卖建议直接 FAIL；**词表和模式之外的观点、评价与倾向，由每篇必过的 Codex 审查拦截**。因此 selfcheck `PASS` 不代表稿件没有观点，也不构成 B1 已满足的证明；不再为追求完备而无限加词。
 
 
-> **FRED 已停用（2026-10-18）**：FRED 已于 2026-10-18 停用，改从原始机构取数，FRED 原始文件及两份含 FRED 数值的年度对账表已由 data PR #87 撤回；登记见 raw/2026-10-10/ 至 raw/2026-10-18/ 各日期的 RETRACTIONS.md。下文凡写 FRED 存档、FRED 序列、FRED 观测的规则都是历史口径，只说明 selfcheck 现有代码的行为，不表示 FRED 仍是来源；selfcheck 里的 FRED 回放代码与对应测试和 data PR #79 重叠，留待 #79 处理后再清理。稿件提到 FRED（`fred` 词、`/fred/` 路径、`fred.stlouisfed.org` 链接）仍按宏观处理（`R-MACRO`，须王总批准），引用已撤回的 raw 文件会失败：同日同类型的 raw/<日期>/fred/<文件> 在文件缺失时返回 E-REPLAY-002；其他路径或 URL 组合可能先返回 E-REPLAY-005 或 E-REPLAY-006。
+> **FRED 已停用（2026-10-18）**：FRED 已于 2026-10-18 停用，改从原始机构取数，FRED 原始文件及两份含 FRED 数值的年度对账表已由 data PR #87 撤回；登记见 raw/2026-10-10/ 至 raw/2026-10-18/ 各日期的 RETRACTIONS.md。下文凡写 FRED 存档、FRED 序列、FRED 观测的规则都是历史口径，只说明 selfcheck 现有代码的行为，不表示 FRED 仍是来源；selfcheck 里的 FRED 回放代码与对应测试留待后续 FRED 代码清理 PR 处理；data PR #79 已关闭，由 #91 取代。稿件提到 FRED（`fred` 词、`/fred/` 路径、`fred.stlouisfed.org` 链接）仍按宏观处理（`R-MACRO`，须王总批准），引用已撤回的 raw 文件会失败：同日同类型的 raw/<日期>/fred/<文件> 在文件缺失时返回 E-REPLAY-002；其他路径或 URL 组合可能先返回 E-REPLAY-005 或 E-REPLAY-006。
 
 `python3 scripts/selfcheck.py DRAFT.md --repo REPO_ROOT --date YYYY-MM-DD --card-type daily|signal [--json]`
 
