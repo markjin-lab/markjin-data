@@ -2289,6 +2289,15 @@ class FinalR5(FinalR1):
         sc, d = self._route_daily_src(TITLE + line + DISC, loc)
         self.assertNotIn("E-X-ONLY", sc["error_codes"]); self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
 
+    def test_keyless_negation_word_pairing_with_x_still_x_only_via_route_pr(self):
+        # #32 r6 审查 HIGH：否定词不参与配对；“The baseline does not improve recall.” 不能借用 new method 的否定解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "The new method does not improve recall, and the baseline improves recall clearly."
+        claim = "The baseline does not improve recall."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
     def test_x_plus_supporting_nonx_publishable_via_route_pr(self):
         # 对照：X + 经原文支持位置核对确实支撑的非 X 来源 → 可发布
         from helpers import x_line, ARXIV_LOC, ARXIV_ID

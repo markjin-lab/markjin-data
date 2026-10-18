@@ -453,7 +453,7 @@ class WithoutScopeHint(Base):
 
 
 class KeylessClauseR5(Base):
-    """#32 r5（dry run 发现）：不含数字和代号的分句合起来与原文剩余部分比否定，不再各自与整个片段比。"""
+    """#32 r5（dry run 发现）：看板英文用例，不含数字和代号的分句按对应分句核对否定状态，不再各自与整个片段比。"""
     def test_both_sides_negated_passes(self):
         loc = "Researchers could watch the run on a live dashboard and pause or stop it at any time, but they had no cause to intervene."
         r = run(T + arxiv_line("Researchers could pause or stop the run at any time from a live dashboard, but had no cause to intervene.", locator=loc), repo=custom_repo(loc))
@@ -494,3 +494,36 @@ class KeylessPairingR5(Base):
     def test_keyless_zh_mixed_source_blocks(self):
         r = run(T + arxiv_line("该方法在长文档上并不准确，但对对抗性提示很稳健。", locator=self.LOC), repo=custom_repo(self.LOC))
         self.expect(r, "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+
+class KeylessPairingR6(Base):
+    """r6 审查 HIGH：否定词、助动词与句首大写普通词不参与配对，带否定的断言分句不能因此被拉向原文里带否定的另一对象。"""
+
+    def test_negation_word_cannot_drive_pairing(self):
+        loc = "The new method does not improve recall, and the baseline improves recall clearly."
+        self.expect(run(T + arxiv_line("The baseline does not improve recall.", locator=loc), repo=custom_repo(loc)),
+                    "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + arxiv_line("The new method does not improve recall.", locator=loc), repo=custom_repo(loc)), "PASS")
+
+    def test_sentence_initial_capital_is_not_an_object(self):
+        loc = "The method is not robust; the baseline is robust."
+        self.expect(run(T + arxiv_line("The baseline is not robust.", locator=loc), repo=custom_repo(loc)),
+                    "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(T + arxiv_line("The baseline is robust.", locator=loc), repo=custom_repo(loc)), "PASS")
+
+    def test_status_words_cannot_choose_the_other_object(self):
+        cases = (
+            ("The old system does not process audio; the replacement processes audio.", "The replacement does not process audio."),
+            ("The engine is not robust; the backup is reliable.", "备份系统并不 robust."),
+        )
+        for loc, claim in cases:
+            with self.subTest(claim=claim):
+                self.expect(run(T + arxiv_line(claim, locator=loc), repo=custom_repo(loc)),
+                            "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
+
+    def test_tied_candidates_same_state_pass(self):
+        # 并列最高分的候选分句否定状态相同 → 可比（dry run：open-weight models 一句）；状态不同仍拦
+        loc = "Reward models favor the construction; the judge does not license it; open-weight models use the construction more."
+        self.expect(run(T + arxiv_line("Open-weight models favor the construction.", locator=loc), repo=custom_repo(loc)), "PASS")
+        self.expect(run(T + arxiv_line("Open-weight models do not favor the construction.", locator=loc), repo=custom_repo(loc)),
+                    "FAIL", "E-SUPPORT-LOCATOR-MISMATCH")
