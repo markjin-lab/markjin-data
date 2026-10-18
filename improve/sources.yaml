@@ -139,54 +139,6 @@ sources:
   license: url+hash-only
   internal_only: false
   notes: 'abandoned: robots.txt allows only Baiduspider; PBOC data via FRED or official republication'
-- id: fred-china-m2
-  theme: macro
-  priority: P0
-  method: api
-  url: https://api.stlouisfed.org/fred/series/observations?series_id=MYAGM2CNM189N&file_type=json&sort_order=desc&limit=30
-  check_status: '200'
-  checked_at: '2026-10-12T07:04:05+08:00'
-  enabled: false
-  approval_status: pending
-  license: url+hash-only
-  internal_only: false
-  notes: 'not in source-research report: pending approval; disabled 2026-10-12: series stale (observations end 2019-08); FRED
-    public data; series MYAGM2CNM189N (China M2, PBOC-sourced via FRED); fetch needs env FRED_API_KEY; obs end 2019-08 (stale)'
-  auth_env: FRED_API_KEY
-  auth_param: api_key
-  license_note: research note said public data; not a permission - per-item license evidence required
-- id: fred-china-interbank
-  theme: macro
-  priority: P0
-  method: api
-  url: https://api.stlouisfed.org/fred/series/observations?series_id=IR3TIB01CNM156N&file_type=json&sort_order=desc&limit=30
-  check_status: '200'
-  checked_at: '2026-10-12T07:04:05+08:00'
-  enabled: true
-  approval_status: approved
-  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
-  license: url+hash-only
-  internal_only: false
-  notes: FRED public data; series IR3TIB01CNM156N (China 3M interbank); fetch needs env FRED_API_KEY
-  auth_env: FRED_API_KEY
-  auth_param: api_key
-  license_note: research note said public data; not a permission - per-item license evidence required
-- id: fred-china-reserves
-  theme: macro
-  priority: P0
-  method: api
-  url: https://api.stlouisfed.org/fred/series/observations?series_id=TRESEGCNM052N&file_type=json&sort_order=desc&limit=30
-  check_status: '200'
-  checked_at: '2026-10-12T07:04:05+08:00'
-  enabled: true
-  approval_status: approved
-  approval_basis: Grok Bot 2026-10-12 确认（替代 pbc/tsmc/asml）
-  license: url+hash-only
-  internal_only: false
-  notes: FRED public data; series TRESEGCNM052N (China total reserves ex-gold); fetch needs env FRED_API_KEY
-  auth_env: FRED_API_KEY
-  auth_param: api_key
-  license_note: research note said public data; not a permission - per-item license evidence required
 - id: fed-press-monetary
   theme: macro
   priority: P0
