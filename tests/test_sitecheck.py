@@ -758,6 +758,27 @@ class R3FormatTest(unittest.TestCase):
         self.assertTrue(R.correction_heading_ok("导语。\n\n## Corrections\n\n**2026-10-17**: b.\n", "2026-10-17", en=True))
         self.assertFalse(R.correction_heading_ok("Lead.\n## Corrections\n\n**2026-10-17**: b.\n", "2026-10-17", en=True))
 
+    def test_r11_title_raw_exact(self):
+        for title in ("## 更正<!-- 注释 -->", "## 更正   ", "## 更正\t"):
+            body = title + "\n\n**2026-10-17**：说明。\n"
+            self.assertFalse(R.correction_heading_ok(body, "2026-10-17", False), repr(title))
+            self.assertIn("第 1 行", R.correction_format_problems(body)[0])
+        self.assertTrue(R.correction_heading_ok("## 更正\r\n\r\n**2026-10-17**：说明。\r\n".replace("\r", ""), "2026-10-17", False))
+
+    def test_r11_lastmod_inside_multiline_string(self):
+        old = '---\ntitle: "原题\nlastmod: 旧字\n后缀"\ndate: 2026-10-16T05:00:00+08:00\n---\n正文。\n'
+        self.assertFalse(S.lastmod_only(old, old.replace("旧字", "新字")))
+        top = '---\ntitle: "x"\nlastmod: 2026-10-17\ndate: 2026-10-16T05:00:00+08:00\n---\n正文。\n'
+        self.assertTrue(S.lastmod_only(top, top.replace("lastmod: 2026-10-17", "lastmod: 2026-10-18")))
+        self.assertFalse(S.lastmod_only(top, top.replace("lastmod: 2026-10-17", "lastmod: |\n  2026-10-18")))
+
+    def test_r11_docs_require_full_json(self):
+        doc = (Path(__file__).resolve().parents[1] / "docs" / "approvals.md").read_text(encoding="utf-8")
+        line = [l for l in doc.splitlines() if "**人工运行" in l]
+        self.assertEqual(len(line), 1)
+        self.assertIn("完整 JSON 结果", line[0])
+        self.assertNotIn("或其 sha256", line[0])
+
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
         old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")
@@ -921,6 +942,21 @@ class R3CheckTest(unittest.TestCase):
             self.assertIn("E-SITE-CORRECTION-MISSING", self.check(base)[P], k)
         self.s.write(P, ORIG.replace("date:", "lastmod: 2026-10-18\ndate:"))
         self.assertEqual(self.check(base)[P], [])
+
+    def test_r11_title_comment_via_check(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("导语。", "导语！").replace("## 更正\n", "## 更正<!-- 注释 -->\n")
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-17**：导语改标点。\n"))
+        head = self.s.commit("head")
+        pg = [p for p in S.check_range(str(self.s.d), base, head, today=TODAY, clock=CLOCK)["pages"] if p["path"] == P][0]
+        self.assertEqual(pg["codes"], ["E-ROUTE-CORRECTION-NOTE"])
+        self.assertTrue(any("更正标题须单独一行" in h for h in pg["hints"]))
+
+    def test_r11_multiline_title_lastmod_via_check(self):
+        old = '---\ntitle: "原题\nlastmod: 旧字\n后缀"\ndate: 2026-10-16T05:00:00+08:00\n---\n导语。\n'
+        self.s.write(P, old); base = self.s.commit("base")
+        self.s.write(P, old.replace("旧字", "新字"))
+        self.assertIn("E-SITE-CORRECTION-MISSING", self.check(base)[P])
 
     def test_old_format_unrelated_dated_heading_same_day(self):
         self.s.write(P, corr()); base = self.s.commit("base")

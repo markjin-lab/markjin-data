@@ -308,14 +308,48 @@ def format_migration_only(old, new, en):
 
 # 只改 front matter 顶层 lastmod 的维护改动不算更正（Grok Bot 2026-10-18 定，POLICY「字节改动」选 B）：正文逐字节相同，
 # front matter 原文去掉顶层「lastmod:」单行后逐字节相同。其他字段、正文里的 lastmod 字样、带缩进或续行的写法都不豁免。
-_LASTMOD_LINE_RE = re.compile(r"^lastmod[ \t]*:[^\n]*(?:\n|$)", re.M)
+_LASTMOD_LINE_RE = re.compile(r"^lastmod[ \t]*:[^\n]*(?:\n|$)")
+
+
+def _without_top_level_lastmod(text):
+    """front matter 原文删去真正的顶层 lastmod 键所在行（用 YAML 节点确认：顶层、未加引号、值在同一行）；
+    多行字符串里顶格的「lastmod:」文字不算（PR #52 r11 MEDIUM 1）。读不出 → None（不豁免）。"""
+    m = R._FM_RE.match(text)
+    if not m:
+        return None
+    yaml = R.require_yaml()
+    try:
+        R.front_matter(text)
+        root = yaml.compose(m.group(1), Loader=yaml.SafeLoader)
+    except (R.FrontMatterError, yaml.YAMLError):
+        return None
+    if root is None:
+        return m.group(0)
+    if not isinstance(root, yaml.nodes.MappingNode):
+        return None
+    hits = [(k, v) for k, v in root.value
+            if isinstance(k, yaml.nodes.ScalarNode) and k.value == "lastmod" and k.style is None
+            and k.start_mark.column == 0]
+    if len(hits) > 1:
+        return None
+    lines = m.group(0).splitlines(keepends=True)
+    if hits:
+        key, value = hits[0]
+        if value.end_mark.line != key.start_mark.line:
+            return None
+        i = 1 + key.start_mark.line
+        if i >= len(lines) or not _LASTMOD_LINE_RE.fullmatch(lines[i]):
+            return None
+        del lines[i]
+    return "".join(lines)
 
 
 def lastmod_only(old, new):
     mo, mn = R._FM_RE.match(old), R._FM_RE.match(new)
     if not mo or not mn or old[mo.end():] != new[mn.end():]:
         return False
-    return _LASTMOD_LINE_RE.sub("", mo.group(0)) == _LASTMOD_LINE_RE.sub("", mn.group(0))
+    before, after = _without_top_level_lastmod(old), _without_top_level_lastmod(new)
+    return before is not None and before == after
 
 
 def check_page(repo, mb, head, path, status, today, base_pages, head_pages):

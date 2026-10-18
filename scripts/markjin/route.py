@@ -707,7 +707,7 @@ def correction_format_problems(body):
     probs = []
     for h in heads:
         name = prepped[h].strip()
-        if prepped[h].rstrip() not in titles:
+        if src[h].removesuffix("\r") not in titles:     # 标题行按原文逐字比对，尾注释、尾随空白都不行（PR #52 r11 MEDIUM 2）
             probs.append(f"第 {h + 1} 行：更正标题须单独一行、原文正好是「## 更正」或「## Corrections」（二级 #，不加其他符号或 HTML）。")
         if h > 0 and src[h - 1].strip():
             probs.append(f"第 {h + 1} 行：「{name}」前必须空一行。")
