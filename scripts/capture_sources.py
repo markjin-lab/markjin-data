@@ -6,7 +6,10 @@ Usage:
       --private-root DIR (或环境变量 MARKJIN_PRIVATE_DIR) [--out-root REPO_ROOT] \
       [--internal-root DIR (或 MARKJIN_INTERNAL_DIR)] [--only id1,id2] [--interval 2.0]
 
-只采集 approval_gate 通过的源（enabled + approval_status: approved + approval_basis），method rss/api。
+只采集 approval_gate 通过的源（enabled + approval_status: approved + approval_basis），method rss/api/scraper。
+scraper（`scraper: <module>` → scripts/scrapers/<module>.py）：scraper 内每个请求（列表页、子 sitemap）都经同一个
+Fetcher（逐跳 robots、限速、停用），每个原始响应先按字节私有存档并登记 MANIFEST；条目 JSON 只作派生物
+（derived/，带 derived_from 原件 sha256），公开 index 只记列表页 URL 与原件 sha256。
 未通过审批的源一律拒绝（--only 点名未审批源 → 退出码 1）。
 每次响应：
   原字节（不解压、不脱敏）→ PRIVATE/raw/DATE/[round2/]<id>/<sha256>.<ext>，独占创建，追加 PRIVATE/raw/DATE/MANIFEST.sha256；
@@ -43,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from markjin import collect, strictjson  # noqa: E402
 
 NO_REQUEST = ("source_blocked", "host_disabled", "host_stopped_this_round", "url_cooldown")   # 没发请求的拦截
-METHODS = ("rss", "api")
+METHODS = ("rss", "api", "scraper")
 
 
 def parse_ok(body):
@@ -88,6 +91,33 @@ def request_url(s, url):
     if not key or not param:
         return None, "missing_credential"
     return url + ("&" if "?" in url else "?") + urlencode({param: key}), None
+
+
+def run_scraper(fetcher, raw_ar, sub, sid, s, url):
+    """返回 (Result, raw_records)。Result.body = 条目 JSON（派生物），raw_records = 每个原始响应的存档记录。"""
+    import scrapers
+    raws, hop_raws = [], []
+
+    def sink(body, st, ctype):            # 每一跳原字节先私有存档（含跳转、验证页、失败响应）
+        rel_h, sha_h = raw_ar.put_raw(sub, sid, body, collect.ext_for(ctype, body))
+        hop_raws.append({"raw": rel_h, "sha256": sha_h, "status": st})
+
+    def fetch(u):
+        r = fetcher.get(u, sid=sid, raw_sink=sink)
+        if r.ok:
+            rel, sha = raw_ar.put_raw(sub, sid, r.body, collect.ext_for(r.ctype, r.body))
+            raws.append({"url": collect.public_url(u, s.get("public_params") or ()), "query_param_count": collect.query_count(u),
+                         "raw": rel, "sha256": sha})
+        return r.status, r.ctype, r.body, (None if r.ok else (r.error or f"http_{r.status}"))
+    try:
+        items = scrapers.get(s["scraper"]).scrape(fetch, url, None, **(s.get("scraper_args") or {}))
+    except Exception as e:
+        r = collect.Result(False, error=f"scraper:{type(e).__name__}", detail=str(e)[:160])
+    else:
+        r = collect.Result(False, error="scraper:no_items") if not items else \
+            collect.Result(True, 200, "application/json", json.dumps(items, ensure_ascii=False).encode())
+    r.hop_raws = hop_raws          # 所有返回路径都带上每次响应的私有存档记录（含 robots、重试、跳转）
+    return r, raws
 
 
 
@@ -181,10 +211,31 @@ def main(argv=None):
         ppath = s.get("public_path") is True       # 逐源确认路径不含凭证后才公开路径
         purl = collect.public_url(url, pp, ppath)
         t0 = collect.now()
-        req_url, cred_err = request_url(s, url)
-        if cred_err:
-            r = collect.Result(False, error=cred_err)
+        raws = []
+        if s["method"] == "scraper":
+            why = health.blocked(sid, rid)
+            pre = ("source_blocked", why) if why else fetcher.precheck(url)
+            if pre:     # 源停用 / 状态损坏 / 旧表停用主机 / 本轮主机已停 / 列表页冷却：不发请求，列入跳过，不计入可疑轮数
+                skipped[where].append({"id": sid, "url": purl, "reason": pre[0], "detail": pre[1]})
+                print(f"SKIP {sid} {pre[0]}: {pre[1]}", file=sys.stderr)
+                n_bad += 1
+                continue
+            r, raws = run_scraper(fetcher, raw_ar, sub, sid, s, url)
+            kind = "json" if r.ok else None
+            sha = raws[0]["sha256"] if raws else None
+            rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url),
+                   "round": a.round, "fetched_at": t0, "http_status": r.status, "bytes": None, "raw_count": len(raws), "sha256": sha,
+                   "license": lic, "content_type": "scraper", "raw_responses": [x["sha256"] for x in raws]}
+            if raws:
+                rec["stored"] = "internal" if internal else "private"
+            if raws or r.hop_raws:          # 每个 scraper 统一一条私有抓取记录
+                raw_logs[where].append({"id": sid, "run": run, "url": purl, "ok": r.ok, "error": r.error,
+                                        "raws": raws, "hop_raws": r.hop_raws})
+            if r.ok:
+                raw_ar.put_derived(sub, sid, sha, f"items-{run}.json", r.body,
+                                   sources=[x["sha256"] for x in raws])   # 登记全部原件
         else:
+            req_url, cred_err = request_url(s, url)
             hop_raws = []
 
             def sink(body, st, ctype, _ar=raw_ar, _sid=sid, _acc=hop_raws):   # 每一跳原字节先私有存档
@@ -193,39 +244,41 @@ def main(argv=None):
             def validate(ctype, body, _s=s):     # r15 ④：rss/api 格式校验与停止写入在 URL 锁（及站点限速锁）内完成
                 return collect.content_suspect(_s["method"], {"Content-Type": ctype}, body, _s.get("format"),
                                                _s.get("xml_roots"))
-            r = fetcher.get(req_url, sid=sid, raw_sink=sink, validate=validate)
-        if r.error == "not_configured":   # 例如 SEC 未设 MARKJIN_SEC_USER_AGENT：不发请求、不停用，记为未配置
-            skipped[where].append({"id": sid, "url": purl, "reason": "not_configured", "detail": r.detail})
-            print(f"SKIP {sid} not_configured: {r.detail}", file=sys.stderr)
-            continue
-        if r.error in NO_REQUEST and not r.hops:
-            # 源停用 / 状态损坏 / 旧表停用主机 / 本轮主机已停 / URL 冷却：没发请求，列入跳过，不计入可疑轮数
-            skipped[where].append({"id": sid, "url": purl, "reason": r.error, "detail": r.detail})
-            print(f"SKIP {sid} {r.error}: {r.detail}", file=sys.stderr)
-            n_bad += 1
-            continue
-        rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url), "round": a.round,
-               "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
-               "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
-        # 格式校验不通过（suspected_challenge:<原因>）已在 fetcher.get 的锁内判定并写停止，这里 r.ok 为 False
-        kind = parse_ok(r.body) if r.ok else None
-        if r.ok:   # 每个成功响应的原字节都先私有存档（不论能否解析）
-            ext = collect.ext_for(r.ctype, r.body)
-            rel, sha = raw_ar.put_raw(sub, sid, r.body, ext)
-            if ext == "gz" and kind:
-                raw_ar.put_derived(sub, sid, sha, kind, gzip.decompress(r.body))
-            rec["stored"] = "internal" if internal else "private"
-            raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": purl, "parsed": kind,
-                                    "final_url": collect.public_url(r.final_url or url, pp, ppath), "hops": r.hops,
-                                    "hop_raws": hop_raws})
-        elif not cred_err and hop_raws:   # 失败/验证页/跳转中途的响应原字节也已私有存档，登记到私有 fetch-log
-            raw_logs[where].append({"id": sid, "run": run, "url": purl, "error": r.error, "hops": r.hops,
-                                    "hop_raws": hop_raws})
+            r = collect.Result(False, error=cred_err) if cred_err else \
+                fetcher.get(req_url, sid=sid, raw_sink=sink, validate=validate)
+            if r.error == "not_configured":   # 例如 SEC 未设 MARKJIN_SEC_USER_AGENT：不发请求、不停用，记为未配置
+                skipped[where].append({"id": sid, "url": purl, "reason": "not_configured", "detail": r.detail})
+                print(f"SKIP {sid} not_configured: {r.detail}", file=sys.stderr)
+                continue
+            if r.error in NO_REQUEST and not r.hops:
+                # 源停用 / 状态损坏 / 旧表停用主机 / 本轮主机已停 / URL 冷却：没发请求，列入跳过，不计入可疑轮数
+                skipped[where].append({"id": sid, "url": purl, "reason": r.error, "detail": r.detail})
+                print(f"SKIP {sid} {r.error}: {r.detail}", file=sys.stderr)
+                n_bad += 1
+                continue
+            rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url), "round": a.round,
+                   "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
+                   "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
+            # 格式校验不通过（suspected_challenge:<原因>）已在 fetcher.get 的锁内判定并写停止，这里 r.ok 为 False
+            kind = parse_ok(r.body) if r.ok else None
+            if r.ok:   # 每个成功响应的原字节都先私有存档（不论能否解析）
+                ext = collect.ext_for(r.ctype, r.body)
+                rel, sha = raw_ar.put_raw(sub, sid, r.body, ext)
+                if ext == "gz" and kind:
+                    raw_ar.put_derived(sub, sid, sha, kind, gzip.decompress(r.body))
+                rec["stored"] = "internal" if internal else "private"
+                raw_logs[where].append({"id": sid, "run": run, "raw": rel, "url": purl, "parsed": kind,
+                                        "final_url": collect.public_url(r.final_url or url, pp, ppath), "hops": r.hops,
+                                        "hop_raws": hop_raws})
+            elif not cred_err and hop_raws:   # 失败/验证页/跳转中途的响应原字节也已私有存档，登记到私有 fetch-log
+                raw_logs[where].append({"id": sid, "run": run, "url": purl, "error": r.error, "hops": r.hops,
+                                        "hop_raws": hop_raws})
         if r.ok and kind:
             (int_ar if internal else pub_ar).put_json(
                 f"{sub}{sid}/index-{run}.json",
-                [{"id": sid, "url": rec["url"], "sha256": sha, "fetched_at": t0, "bytes": len(r.body),
-                  "license": lic, "round": a.round, "stored": rec["stored"]}])
+                [{"id": sid, "url": rec["url"], "sha256": sha, "fetched_at": t0, "bytes": rec["bytes"],
+                  "license": lic, "round": a.round, "stored": rec["stored"], "method": s["method"],
+                  **({"raw_responses": rec["raw_responses"]} if rec.get("raw_responses") else {})}])
             n_ok += 1
             print(f"OK  {sid} {r.status} {len(r.body)}B", file=sys.stderr)
         else:
