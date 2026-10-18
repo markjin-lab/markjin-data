@@ -71,8 +71,8 @@ def is_login_url(u):
     p = urlsplit(u)
     h = (p.hostname or "").lower()
     return bool(_LOGIN_PATH.search(p.path or "/")) or h.split(".")[0] in ("login", "signin", "sso", "auth", "accounts")
-REFUSED_HOSTS = {"t.co"}
-REDIRECT_CODES = {301, 302, 303, 307, 308}
+REFUSED_HOSTS = frozenset({"t.co"})
+REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 # 验证页识别（collector 与 scrapers 共用这一份）。厂商标记（vendor）与泛用短语（phrase）都算可疑：该主机本轮停止、
 # URL 冷却，给源记一次可疑（见「封锁规则与来源健康状态」）；区分两者只为报告里写清原因。误判代价是该主机本轮丢失，
 # 并可能累积成源的 pending-disable，所以两类仍尽量收紧。
@@ -325,9 +325,18 @@ def classify_page(ctype, body, headers=None, url=None):
 #   P  <form> 里有密码输入框 <input type=password>
 #   A  某个 <form> 的 action 指向登录路径（is_login_url：/login、/signin、/auth、/sso… 或 login./accounts. 主机）
 #   F  <form> 内可见文字（含 label、button、submit 的 value）含上述登录词
-# 判定：P 且 T；或 T 且 A；或 P 且 A 且 F 且表单外可见文字很短（≤ LOGIN_OUTSIDE_MAX，整页基本就是登录表单）。
-# 侧栏 / 页眉里带登录框的普通文章（标题不是登录、正文很长）不算。
-_LOGIN_WORDS = re.compile(r"(?<![a-z])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on|password)(?![a-z])|登录|登入|ログイン", re.I)
+#   E  <form> 里有邮箱输入框（type=email 或 name/autocomplete 为 email/username）——无密码（magic link / 一次性码）登录
+#   L  有链接（<a href>）指向登录路径；Q  可见文字里有登录提示语（sign in to continue、please log in、登录后查看…）
+#   S  表单外可见文字很短（≤ LOGIN_OUTSIDE_MAX，整页基本只有登录内容）
+# 判定：(P 或 E) 且 T；或 T 且 A；或 (P 或 E) 且 F 且 S；
+#       无表单的登录提示 / 中间页：L 且 Q 且 S，或 T 且 L 且 S。
+# 侧栏 / 页眉里带登录框或「Sign in」链接的普通文章（标题不是登录、正文很长）不算；扫描整个正文（不截断）。
+# 词边界：两侧不能是字母数字，所以「FRED Blog Index」「signing」「loginx」都不算。
+_LOGIN_WORDS = re.compile(r"(?<![a-z0-9])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on|password)(?![a-z0-9])|登录|登入|ログイン", re.I)
+_LOGIN_PROMPT = re.compile(r"(?<![a-z0-9])(?:(?:please\s+)?(?:sign|log)[\s-]?in\s+(?:to|for)\s+(?:continue|view|access|read|see|download|proceed)"
+                           r"|please\s+(?:sign|log)[\s-]?in|you\s+(?:must|need\s+to)\s+(?:be\s+)?(?:sign(?:ed)?|log(?:ged)?)[\s-]?in"
+                           r"|(?:sign|log)[\s-]?in\s+required|login\s+required|members?\s+only)(?![a-z0-9])"
+                           r"|(?:请|需要)?登录(?:后|以)(?:查看|继续|访问|阅读|下载)|请先登录", re.I)
 LOGIN_OUTSIDE_MAX = 600
 
 
@@ -338,8 +347,8 @@ def _login_features(text, base=None):
         def __init__(self):
             super().__init__(convert_charrefs=True)
             self.title, self.in_title, self.skip, self.form = [], False, 0, 0
-            self.pw = self.action = self.has_form = False
-            self.form_text, self.outside = [], 0
+            self.pw = self.action = self.has_form = self.email = self.link = False
+            self.form_text, self.outside, self.text = [], 0, []
 
         def handle_starttag(self, tag, attrs):
             a = {}
@@ -359,10 +368,20 @@ def _login_features(text, base=None):
                             full if full.startswith("/") else "/" + full))
                     except ValueError:
                         pass
+            elif tag == "a" and a.get("href", "").strip():
+                try:
+                    full = urljoin(base, a["href"].strip()) if base else a["href"].strip()
+                    full = full if urlsplit(full).scheme else "https://x" + (full if full.startswith("/") else "/" + full)
+                    self.link = self.link or (urlsplit(full).scheme in ("http", "https") and is_login_url(full))
+                except ValueError:
+                    pass
             elif tag == "input" and self.form:
                 typ = a.get("type", "").strip().lower()
                 if typ == "password":
                     self.pw = True
+                if typ == "email" or (typ in ("", "text") and (a.get("name", "").strip().lower() in ("email", "username", "login", "user")
+                                                              or a.get("autocomplete", "").strip().lower() in ("email", "username"))):
+                    self.email = True
                 if typ in ("submit", "button") and a.get("value"):
                     self.form_text.append(a["value"])
 
@@ -383,9 +402,9 @@ def _login_features(text, base=None):
             elif self.skip:
                 return
             elif self.form:
-                self.form_text.append(d)
+                self.form_text.append(d); self.text.append(d)
             else:
-                self.outside += len(" ".join(d.split()))
+                self.outside += len(" ".join(d.split())); self.text.append(d)
     p = P()
     try:
         p.feed(text); p.close()
@@ -393,19 +412,22 @@ def _login_features(text, base=None):
         pass
     title = " ".join("".join(p.title).split())
     return {"T": bool(title) and len(title) <= 160 and bool(_LOGIN_WORDS.search(title)), "P": p.pw, "A": p.action,
-            "F": bool(_LOGIN_WORDS.search(" ".join(p.form_text))), "form": p.has_form, "outside": p.outside}
+            "F": bool(_LOGIN_WORDS.search(" ".join(p.form_text))), "form": p.has_form, "outside": p.outside,
+            "E": p.email, "L": p.link, "Q": bool(_LOGIN_PROMPT.search(" ".join(" ".join(p.text).split())))}
 
 
 def login_page(ctype, body, url=None):
     """不跳转的登录页（结构特征，见上）。只判 HTML 形态。"""
     if not body or not htmlish(ctype, body):
         return False
-    t = body[:200000].decode("utf-8", "replace") if isinstance(body, bytes) else body[:200000]
+    t = body.decode("utf-8", "replace") if isinstance(body, bytes) else body     # 整个正文（不截断：表单可能在 300KB 之后）
     f = _login_features(t, url)
-    if not f["form"]:
-        return False
-    return (f["P"] and f["T"]) or (f["T"] and f["A"]) or \
-        (f["P"] and f["A"] and f["F"] and f["outside"] <= LOGIN_OUTSIDE_MAX)
+    short = f["outside"] <= LOGIN_OUTSIDE_MAX
+    if f["form"]:
+        cred = f["P"] or f["E"]
+        if (cred and f["T"]) or (f["T"] and f["A"]) or (cred and f["F"] and short):
+            return True
+    return short and f["L"] and (f["Q"] or f["T"])
 
 
 def is_challenge(body, ctype="", headers=None, url=None):
@@ -764,7 +786,8 @@ def ext_for(ctype, body):
 # 15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。现行细则：
 #  1. 单次可疑（401/403、429、验证页、登录墙；robots.txt 同样）→ 该主机本轮全部停止（跨进程、跨源生效），429 不重试。
 #  2. 被拒的 URL（含跳转起点）至少冷却 COOLDOWN_SECONDS（24 小时）；失败记录按轮次分别保存，补跑旧轮不清新轮的记录。
-#     来源级扩展（补充口径，待审查确认）：来源只要还有未到期的 URL 冷却，从下一轮起整个来源都不请求（source cooldown）。
+#     来源级扩展（15:22 规则之外的扩展，待 Grok Bot 决定，不是 15:22 规则本身）：来源只要还有未到期的 URL 冷却，
+#     从下一轮起整个来源都不请求（source cooldown）。
 #     本轮停止的只是返回可疑响应的那一跳的主机；跳转起点只冷却该 URL，起点主机不停（r15 ⑤）。
 #  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
@@ -857,9 +880,23 @@ def normalize_url(u):
     return urlunsplit((scheme, host, p.path or "/", p.query, ""))
 
 
+# 冷却键里去掉的凭据类查询参数（API key / token / 签名等）：换一把 key 或 token 不能绕过冷却，键里也不留凭据。
+_CRED_PARAM = re.compile(r"(?:api[_-]?key|apikey|key|access[_-]?key|token|access[_-]?token|auth[_-]?token|id[_-]?token|"
+                         r"refresh[_-]?token|auth|authorization|bearer|signature|sig|x-amz-[a-z-]+|secret|client[_-]?secret|"
+                         r"password|passwd|pwd|session|session[_-]?id|sessionid|jsessionid|phpsessid)", re.I)
+
+
+def cooldown_identity(u):
+    """冷却用的请求身份：normalize_url 之后再去掉用户信息与凭据类查询参数（_CRED_PARAM，参数名整体匹配）。"""
+    p = urlsplit(normalize_url(u))
+    host = p.netloc.rsplit("@", 1)[-1]
+    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if not _CRED_PARAM.fullmatch(k.strip())]
+    return urlunsplit((p.scheme, host, p.path, urlencode(q), ""))
+
+
 def url_key(u):
-    """失败 URL 的持久键：规范化后的 sha256（不写 URL 本身）。"""
-    return hashlib.sha256(normalize_url(u).encode("utf-8")).hexdigest()
+    """失败 URL 的持久键：cooldown_identity 的 sha256（不写 URL 本身，也不含 key / token）。"""
+    return hashlib.sha256(cooldown_identity(u).encode("utf-8")).hexdigest()
 
 
 _TWO_LEVEL = frozenset({"co.uk", "ac.uk", "gov.uk", "org.uk", "com.cn", "gov.cn", "edu.cn", "ac.cn", "org.cn", "net.cn",
@@ -1064,9 +1101,10 @@ class SourceHealth:
         return self.source_cooling(sid, rid)             # 触发 pending 的那一轮照常跑完（但仍受来源冷却约束）
 
     def source_cooling(self, sid, rid, now=None):
-        """来源级冷却（补充口径，待审查确认）：该来源在别的轮次被拒、且仍有未到期（≥24 小时）的 URL 冷却记录 →
-        下一轮起整个来源都不请求（不只那个 URL），直到最晚的那条记录到期。触发的那一轮不受此限（同主机已按规则 1 停止）；
-        没有轮次上下文时保守拒绝。只看持久状态（跨运行生效）。返回固定代码或 None。"""
+        """来源级冷却（Grok Bot 15:22 规则「被拒 URL 冷却 ≥24h」之外的扩展，待 Grok Bot 决定）：该来源在别的轮次被拒、
+        且仍有未到期的 URL 冷却记录 → 下一轮起整个来源都不请求（不只那个 URL），直到最晚的那条记录到期。
+        记录属于哪个来源：记录里的 sid（请求时已核对与主机不冲突）；没有 sid 的记录按 host_sources 由主机推出。24 小时从收到可疑响应、写下记录时起算。
+        触发的那一轮不受此限（同主机已按规则 1 停止）；没有轮次上下文时保守拒绝。只看持久状态（跨运行生效）。"""
         if not sid:
             return None
         t = self.clock() if now is None else now
@@ -1074,7 +1112,10 @@ class SourceHealth:
             if r == rid:
                 continue
             for u in self.data["urls"][r].values():
-                if u["sid"] == sid and u["until"] > t:
+                # 记录的来源：记录里的 sid（请求时已按主机核对过，见 Fetcher.source_mismatch）；没有 sid 的记录按主机推出
+                mine = u["sid"] == sid if u.get("sid") else \
+                    sid in getattr(self, "host_sources", {}).get((u.get("host") or "").lower(), ())
+                if mine and u["until"] > t:
                     return f"source cooldown:{public_code(u['reason'])}"
         return None
 
@@ -1379,7 +1420,7 @@ def looks_html(headers, body, xml_ok=False):
 _NO_SID = object()      # _raw 未给源（直接调用）：不重查源状态
 # 没发请求的结果（不算本轮联系过该源，也不算可疑）
 NO_CONTACT = frozenset({"host_disabled", "not_configured", "source_blocked", "host_stopped_this_round", "url_cooldown",
-                        "rate_lock_invalid"})
+                        "rate_lock_invalid", "source_mismatch"})
 
 
 def _read_rate_lock(text):
@@ -1404,6 +1445,49 @@ def _read_rate_lock(text):
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
+
+
+def check_gates():
+    """门禁常量完整性：任何入口（含调用方在运行时改模块常量）都不能把限速、冷却、窗口、重试、拒绝主机、可疑分类调松。
+    下限写成字面量；被调松 → ConfigError，不发请求。"""
+    bad = []
+    if not (_num(HOST_INTERVAL) and HOST_INTERVAL >= 2.0): bad.append("HOST_INTERVAL")
+    if not (_num(SITE_INTERVAL) and SITE_INTERVAL >= 60.0): bad.append("SITE_INTERVAL")
+    if not (_num(COOLDOWN_SECONDS) and COOLDOWN_SECONDS >= 86400): bad.append("COOLDOWN_SECONDS")
+    if WINDOW_ROUNDS != 5 or PENDING_AFTER != 3: bad.append("WINDOW_ROUNDS/PENDING_AFTER")
+    if not (isinstance(MAX_REDIRECTS, int) and 0 <= MAX_REDIRECTS <= 5): bad.append("MAX_REDIRECTS")
+    if not (isinstance(NET_RETRIES, int) and 0 <= NET_RETRIES <= 2): bad.append("NET_RETRIES")
+    if not (isinstance(MAX_BYTES, int) and 0 < MAX_BYTES <= 25 * 1024 * 1024): bad.append("MAX_BYTES")
+    if not (isinstance(REFUSED_HOSTS, frozenset) and "t.co" in REFUSED_HOSTS): bad.append("REFUSED_HOSTS")
+    if not (isinstance(REDIRECT_CODES, frozenset) and {301, 302, 303, 307, 308} <= REDIRECT_CODES): bad.append("REDIRECT_CODES")
+    if not (isinstance(SUSPICIOUS_ERRORS, frozenset) and SUSPICIOUS_ERRORS >= {
+            "http_401", "http_403", "http_429", "challenge", "suspected_challenge", "login_wall", "robots_http_401",
+            "robots_http_403", "robots_http_429", "robots_challenge", "robots_suspected_challenge", "robots_login_wall"}):
+        bad.append("SUSPICIOUS_ERRORS")
+    if bad:
+        raise ConfigError("gate constants weakened: " + ", ".join(bad) + "; refusing requests")
+
+
+def check_opener(opener):
+    """自带 opener 只收两种：urllib 的 OpenerDirector 原类（不能是子类），且不能装会自动跟随跳转的 handler（跳转处理器必须是
+    _NoRedirect 原类）或 cookie 处理器；或不是 OpenerDirector 的测试替身（它返回的响应若不是请求的那个 URL，
+    _raw_inner 照样拒绝：opener_redirected）。否则 ConfigError。"""
+    if isinstance(opener, urllib.request.OpenerDirector):
+        if type(opener) is not urllib.request.OpenerDirector:
+            raise ConfigError("opener subclass not allowed")
+        for h in opener.handlers:
+            if isinstance(h, urllib.request.HTTPRedirectHandler) and type(h) is not _NoRedirect:
+                raise ConfigError("opener follows redirects")
+            if isinstance(h, urllib.request.HTTPCookieProcessor):
+                raise ConfigError("opener carries cookies")
+        if not any(type(h) is _NoRedirect for h in opener.handlers):
+            raise ConfigError("opener must install the no-redirect handler")
+        for name in ("open", "_open", "_call_chain", "error"):
+            if name in vars(opener):
+                raise ConfigError(f"opener.{name} overridden")
+    elif not callable(getattr(opener, "open", None)):
+        raise ConfigError("opener has no open()")
+    return opener
 
 
 class Result:
@@ -1433,7 +1517,7 @@ def retry_after(headers):
 class Fetcher:
     def __init__(self, state=None, interval=HOST_INTERVAL, timeout=30, opener=None, sleep=time.sleep,
                  clock=time.monotonic, max_bytes=MAX_BYTES, log=None, addr_policy=None, resolver=None,
-                 fakeip_cidr=None, lock_dir=None, round_id=None, wall=None, site_limits=None):
+                 fakeip_cidr=None, lock_dir=None, round_id=None, wall=None, site_limits=None, host_sources=None):
         # state = SourceHealth（逐源可疑计数、按轮次的失败 URL 与主机停止）；round_id = "YYYY-MM-DD/rN"
         self.state = state if state is not None else SourceHealth(None)
         if self.state.path and not round_id:
@@ -1456,7 +1540,11 @@ class Fetcher:
                                             resolver=resolver)
         self.addr_policy = addr_policy
         self.interval, self.timeout, self.max_bytes = interval, timeout, max_bytes
-        self.opener = opener or urllib.request.build_opener(_NoRedirect)
+        self.opener = check_opener(opener) if opener is not None else urllib.request.build_opener(_NoRedirect)
+        # 主机 → 来源（capture_sources 按 sources.yaml 的 url 建表）：请求带的 sid 与该主机所属来源冲突 → 拒绝（source_mismatch）
+        self.host_sources = {h.lower(): frozenset(v) for h, v in (host_sources or {}).items()}
+        self.state.host_sources = self.host_sources
+        check_gates()
         self.sleep, self.clock = sleep, clock
         self.wall = wall or ((lambda: time.time()) if clock is time.monotonic else clock)   # 跨进程限速用墙钟
         self.site_limits = dict(site_limits or {})
@@ -1481,6 +1569,14 @@ class Fetcher:
         self._event(sid, reason, url)
         urls = [url] + [u for u in also if u and u != url]
         self.state.stop(urls, self.round_id, sid, reason)
+
+    def source_mismatch(self, host, sid):
+        """来源由 URL 主机推出（host_sources）；调用方给的 sid 不在该主机所属来源里 → 固定代码，否则 None。
+        表里没有的主机（跳转目标、子 sitemap 所在 CDN 等）不推断。"""
+        own = self.host_sources.get((host or "").lower())
+        if own and sid not in own:
+            return "source mismatch:host-belongs-to-other-source"
+        return None
 
     def precheck(self, url):
         """不发请求的拦截：旧表停用主机、本轮主机已停、URL 冷却中。返回 (错误码, 原因) 或 None。都不算可疑。"""
@@ -1535,6 +1631,7 @@ class Fetcher:
         停掉的主机不会再被请求，本进程判定可疑并写下停止之前，同站其他请求也发不出去。
         judge(st, headers, body, ec, det) 在锁内调用，返回值原样交给调用方（第 6 个返回值）。"""
         host = host_of(url)
+        check_gates()                          # 门禁常量被改小 / 打开了 → 拒绝运行（ConfigError）
         why = self.state.host_blocked(host)
         if why:                                # 所有出站入口的最后一道门：旧表停用主机一律不发请求
             return 0, {}, b"", "host_disabled", why, None
@@ -1566,7 +1663,10 @@ class Fetcher:
             if why:
                 return 0, {}, b"", "host_disabled", why, None
             if sid is not _NO_SID:
-                why = self.state.blocked(sid, self.round_id)
+                why = self.source_mismatch(host, sid)
+                if why:
+                    return 0, {}, b"", "source_mismatch", why, None
+                why = self.state.blocked(sid, self.round_id)      # 含来源级冷却：锁内、发送前从磁盘重读
                 if why:
                     return 0, {}, b"", "source_blocked", why, None
             pre = self.precheck(url)
@@ -1595,6 +1695,10 @@ class Fetcher:
         try:
             status = getattr(r, "status", None) or r.getcode()
             headers = r.headers or {}
+            got = r.geturl() if callable(getattr(r, "geturl", None)) else getattr(r, "url", None)
+            if isinstance(got, str) and got and cooldown_identity(got) != cooldown_identity(url):
+                # opener 自己跟随了跳转（子类、替身、自定义 handler）：中间各跳没过门禁 → 丢弃正文、拒绝
+                return 0, {}, b"", "opener_redirected", "opener followed a redirect on its own; refusing"
             buf = r.read(self.max_bytes + 1) or b""
         except Exception as e:
             return 0, {}, b"", "network", type(e).__name__
@@ -1649,7 +1753,7 @@ class Fetcher:
         p = urlsplit(url)
         host = (p.hostname or "").lower()
         base = f"{p.scheme}://{p.netloc}"
-        if self.state.blocked(sid, self.round_id) or self.precheck(base + "/robots.txt"):
+        if self.source_mismatch(host, sid) or self.state.blocked(sid, self.round_id) or self.precheck(base + "/robots.txt"):
             return self._disallow_all()               # 状态损坏 / 源停用 / 旧表停用 / 本轮主机已停 / 冷却中：不发请求
         if base in self._robots:
             return self._robots[base]
@@ -1745,6 +1849,9 @@ class Fetcher:
             if host in REFUSED_HOSTS:
                 return Result(False, final_url=cur, hops=hops, error="refused_host")
             esid = sid_of(host)
+            why = self.source_mismatch(host, esid)
+            if why:                       # 来源由主机推出；与请求带的来源冲突 → 不发请求
+                return Result(False, final_url=cur, hops=hops, error="source_mismatch", detail=why)
             why = self.state.blocked(esid, self.round_id)
             if why:
                 return Result(False, final_url=cur, hops=hops, error="source_blocked", detail=why)

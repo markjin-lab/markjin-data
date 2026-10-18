@@ -132,9 +132,17 @@ def main(argv=None):
     except (collect.StateError, OSError) as e:
         print(f"source health: {e}; refusing to run", file=sys.stderr)
         return 2
+    host_sources = {}          # 主机 → 来源（按 sources.yaml 的 url 推出）：请求的 sid 与主机所属来源冲突 → 拒绝
+    for s in srcs:
+        try:
+            h = collect.host_of(expand_url(s["url"], a.date))
+        except Exception:
+            continue
+        if h:
+            host_sources.setdefault(h, set()).add(s["id"])
     fetcher = collect.Fetcher(health, interval=a.interval, timeout=a.timeout, fakeip_cidr=a.proxy_fakeip_cidr or "",
                               lock_dir=priv_root / "state" / "locks", round_id=rid,
-                              site_limits=site_limits)   # SEC 等主机组的跨进程限速锁放在私有目录
+                              site_limits=site_limits, host_sources=host_sources)   # SEC 等主机组的跨进程限速锁放在私有目录
     # 地址策略（addr_policy）由 Fetcher 强制安装：每一跳、scraper 的子 sitemap 都在请求前检查
     pub_ar = collect.Archive(day_dir(a.out_root, a.date))
     priv_ar = collect.Archive(day_dir(priv_root, a.date))
