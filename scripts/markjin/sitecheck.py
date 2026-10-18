@@ -1,43 +1,69 @@
-"""站点 PR 的更正规则检查（Grok Bot 2026-10-18）。
+"""站点 PR 的更正规则检查（Grok Bot 2026-10-18；PR #52 r1 审查后改为按 Hugo 实际发布结果判定）。
 
 route_pr 只看数据仓库顶层的 daily/、digest/ 等稿件，站点 PR 直接改 content/posts/（或 content/cards/）页面时，
 更正规则（E-ROUTE-CORRECTION-*）没人检查。本模块对站点仓库某个 base..head 范围内改动的页面做同一套检查，
-判断逻辑尽量复用 route.py（front matter 解析、日期解析、标题行可见文字），不另写一份。
+front matter 解析、日期解析、标题行可见文字的判断复用 route.py，不另写一份。
+
+“已发布”按 Hugo 判定：把 merge-base 与 head 两个提交各自导出（git archive，不动工作树），用站点部署所用的同一版本
+Hugo 以同一时钟（默认当前时间）构建，`hugo list published` 中 kind=page、且构建输出里确有对应 HTML 的页面才算已发布
+（草稿、未来 date/publishDate、过期 expiryDate、build.render: never、cascade 继承的同类设置都不算）。
 
 对 merge-base(base, head)..head 中每个改动的页面 content/posts/<section>/<name>[.en].md、content/cards/<name>[.en].md：
-- 新增页面（base 上没有）且不带更正字段 → 不查（新稿由日报流程审查）。
-- 删除或改名 base 上已有的页面 → E-SITE-PAGE-DELETED。
-- 改动 base 上已有的页面：front matter 须有 corrects 与 corrected_at，否则 E-SITE-CORRECTION-MISSING；
-  有更正字段时（含新增页面带了更正字段）按 route._correction 的同一组规则：
+- base 上已发布的页面：
+  · 删除、改名，或 head 上不再发布、permalink 改变 → E-SITE-PAGE-DELETED；
+  · 有改动但 front matter 没有 corrects 与 corrected_at → E-SITE-CORRECTION-MISSING；
+- base 上未发布的页面（含新增、草稿、未来稿）且不带更正字段 → 不查（首次发布前的修改）；
+- 带更正字段的页面按 route._correction 的同一组规则：
   · 缺一、为空或不是字符串 → E-ROUTE-CORRECTION-INVALID；
-  · corrects 须等于由页面路径推出的 draft_id（<section>-<name>[-en]，卡片为 cards-<name>[-en]），
-    且页面须在 base 上已存在（已发布），base 版 front matter 须有合法 date → 否则 E-ROUTE-CORRECTION-TARGET；
-  · corrected_at 须是 YYYY-MM-DD，不早于页面日期（base 版 date 按 SGT 取日期），不晚于今天（SGT），
-    不早于 base 版已有的 corrected_at；head 版 date 须与 base 版相同 → 否则 E-ROUTE-CORRECTION-DATE；
-  · corrected_at 须出现在某个标题行渲染后可见的文字里（route.correction_heading_ok）→ 否则 E-ROUTE-CORRECTION-NOTE。
+  · corrects 须等于由路径推出的 draft_id（<section>-<name>[-en]，卡片为 cards-<name>[-en]），页面须在 base 上已发布，
+    base 版 front matter 须有合法 date → 否则 E-ROUTE-CORRECTION-TARGET；
+  · corrected_at 须是 YYYY-MM-DD，不早于页面日期（base 版 date 按 SGT 取日期）、不晚于今天（SGT）、不早于 base 版已有的
+    corrected_at；head 版 date 须与 base 版完全相同 → 否则 E-ROUTE-CORRECTION-DATE；
+  · corrected_at 须出现在某个标题行渲染后可见的文字里（route.correction_heading_ok）→ 否则 E-ROUTE-CORRECTION-NOTE；
+    corrected_at 与 base 版相同（同日再次更正）时，还须新增一条写有该日期的可见标题行，沿用旧标题 → E-ROUTE-CORRECTION-NOTE。
+- 路径推不出合法 draft_id 的已发布页面被改动 → E-ROUTE-CORRECTION-TARGET（不能用怪路径绕开规则）。
 - front matter 解析失败 → E-ROUTE-FRONT-MATTER。
-其他文件（列表页 _index.md、模板、配置、静态文件等）不查。只读：不写文件、不改仓库（--pr 时只 fetch PR 引用）。
+- 读不到对象、非 UTF-8 路径或内容、Hugo 缺失或版本与站点部署不符、构建失败 → E-SITE-INPUT（失败关闭）。
+列表页（_index.md，kind 不是 page）、模板、配置、静态文件不查。
 """
+import csv
 import datetime as dt
-from pathlib import PurePosixPath
+import io
+import os
+import re
+import shutil
+import subprocess
+import tarfile
+import tempfile
+from pathlib import Path, PurePosixPath
+from urllib.parse import urlparse
 
 from . import route as R
 
 SITE_PAGE_ROOTS = (R.SITE_CONTENT + "/", R.SITE_CARDS + "/")
+DEPLOY_WORKFLOW = ".github/workflows/hugo.yml"
+_HUGO_VERSION_RE = re.compile(r"HUGO_VERSION\s*:\s*['\"]?v?(\d+\.\d+\.\d+)")
+_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]")
 
 
 class SiteInputError(RuntimeError):
     pass
 
 
+def hugo_bin():
+    return os.environ.get("MARKJIN_HUGO") or "hugo"
+
+
 def page_draft_id(path):
-    """站点页面路径 → draft_id（route.site_path 的逆映射）；不是可检查的页面 → None。"""
+    """站点页面路径 → draft_id（route.site_path 的逆映射）；推不出合法 draft_id → None。"""
     p = PurePosixPath(path)
     name = p.name
     if not name.endswith(".md"):
         return None
     en = name.endswith(".en.md")
     stem = name[: -len(".en.md")] if en else name[: -len(".md")]
+    if not en and stem.endswith(R.EN_SUFFIX):
+        return None                          # a-en.md 与 a.en.md 不得推出同一 draft_id（r1 MEDIUM 6）
     parts = p.parts
     if len(parts) == 4 and "/".join(parts[:2]) == R.SITE_CONTENT:
         sec = parts[2]
@@ -48,109 +74,263 @@ def page_draft_id(path):
     else:
         return None
     if not R.SECTION_RE.fullmatch(sec) or not R.SEG_RE.fullmatch(stem):
-        return None                          # _index.md 等列表页不查
+        return None
     did = f"{sec}-{stem}" + (R.EN_SUFFIX if en else "")
-    if R.site_path(did, en) != path:
+    if not R.DRAFT_ID_RE.fullmatch(did) or R.site_path(did, en) != path:
         return None
     return did
 
 
-def _git_ok(repo, *args):
-    r = R._git(repo, *args)
+def _git_ok(repo, *args, text=True):
+    r = R._git(repo, *args, text=text)
     if r.returncode != 0:
-        raise SiteInputError(f"E-SITE-INPUT: git {' '.join(args[:2])} 失败")
+        raise SiteInputError(f"E-SITE-INPUT: git {' '.join(str(a) for a in args[:2])} 失败")
     return r.stdout
 
 
-def _show(repo, ref, path):
+def _show_required(repo, ref, path):
     r = R._git(repo, "show", f"{ref}:{path}", text=False)
     if r.returncode != 0:
-        return None
+        raise SiteInputError(f"E-SITE-INPUT: 无法读取 {ref}:{path}")
     try:
         return r.stdout.decode("utf-8")
     except UnicodeDecodeError:
-        return ""                            # 非 UTF-8：当作内容存在但无法解析
+        raise SiteInputError(f"E-SITE-INPUT: 非 UTF-8 内容 {path}") from None
 
 
 def changed_pages(repo, base, head):
-    """返回 (merge-base, [(状态, 路径)])；只含 content/posts、content/cards 下的 .md。不跟踪改名（改名 = 删除 + 新增）。"""
+    """返回 (merge-base, [(状态, 路径)])；只含 content/posts、content/cards 下的 .md。不跟踪改名（改名 = 删除 + 新增）。
+    diff 按字节解析：NUL 字段须成对，路径须是严格 UTF-8，否则 E-SITE-INPUT（r1 MEDIUM 5）。"""
     mb = _git_ok(repo, "merge-base", base, head).strip()
-    out = _git_ok(repo, "diff", "--name-status", "--no-renames", "-z", mb, head, "--", R.SITE_CONTENT, R.SITE_CARDS)
-    toks = [t for t in out.split("\0") if t]
+    out = _git_ok(repo, "diff", "--name-status", "--no-renames", "-z", mb, head, "--",
+                  R.SITE_CONTENT, R.SITE_CARDS, text=False)
+    toks = out.split(b"\0")
+    if toks and toks[-1] == b"":
+        toks = toks[:-1]
+    if len(toks) % 2:
+        raise SiteInputError("E-SITE-INPUT: git diff 输出字段不成对")
     pairs = []
-    for i in range(0, len(toks) - 1, 2):
-        st, path = toks[i], toks[i + 1]
+    for i in range(0, len(toks), 2):
+        try:
+            st, path = toks[i].decode("ascii"), toks[i + 1].decode("utf-8")
+        except UnicodeDecodeError:
+            raise SiteInputError("E-SITE-INPUT: 非 UTF-8 路径") from None
+        if st[:1] not in ("A", "M", "D", "T"):
+            raise SiteInputError(f"E-SITE-INPUT: 未知 diff 状态 {st}")
         if path.endswith(".md") and path.startswith(SITE_PAGE_ROOTS):
             pairs.append((st[0], path))
     return mb, pairs
 
 
-def check_page(repo, mb, head, path, today):
-    """单个页面：返回错误码列表（空 = 通过）。"""
+def _required_hugo_version(repo, ref):
+    r = R._git(repo, "show", f"{ref}:{DEPLOY_WORKFLOW}")
+    if r.returncode != 0:
+        return None
+    m = _HUGO_VERSION_RE.search(r.stdout)
+    return m.group(1) if m else None
+
+
+def _check_hugo(repo, ref):
+    exe = shutil.which(hugo_bin())
+    if not exe:
+        raise SiteInputError("E-SITE-INPUT: 找不到 hugo")
+    want = _required_hugo_version(repo, ref)
+    if want:
+        v = subprocess.run([exe, "version"], capture_output=True, text=True)
+        if v.returncode != 0 or not re.search(r"\bv" + re.escape(want) + r"\b", v.stdout):
+            raise SiteInputError(f"E-SITE-INPUT: 本机 hugo 版本与站点部署（{want}）不符")
+    return exe
+
+
+def rendered_pages(repo, ref, clock):
+    """{源路径: permalink}：ref 这一版在 clock 时刻会实际生成 HTML 的 kind=page 页面（只含 content/posts、content/cards）。"""
+    exe = _check_hugo(repo, ref)
+    data = _git_ok(repo, "archive", "--format=tar", ref, text=False)
+    with tempfile.TemporaryDirectory(prefix="sitecheck-") as tmp:
+        src, pub = Path(tmp) / "src", Path(tmp) / "public"
+        src.mkdir()
+        with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+            for m in tf.getmembers():
+                if m.issym() or m.islnk() or m.name.startswith("/") or ".." in PurePosixPath(m.name).parts:
+                    raise SiteInputError("E-SITE-INPUT: 站点归档含链接或越界路径")
+            if hasattr(tarfile, "data_filter"):
+                tf.extractall(src, filter="data")
+            else:
+                tf.extractall(src)
+        env = {**os.environ, "HUGO_ENVIRONMENT": "production", "HUGO_ENV": "production"}
+        ls = subprocess.run([exe, "list", "published", "--clock", clock, "-s", str(src)],
+                            capture_output=True, text=True, env=env)
+        bd = subprocess.run([exe, "--quiet", "--clock", clock, "-s", str(src), "-d", str(pub)],
+                            capture_output=True, text=True, env=env)
+        if ls.returncode != 0 or bd.returncode != 0:
+            raise SiteInputError(f"E-SITE-INPUT: hugo 构建 {ref} 失败")
+        out = {}
+        for row in csv.DictReader(io.StringIO(ls.stdout)):
+            path = (row.get("path") or "").replace("\\", "/")
+            if row.get("kind") != "page" or not path.startswith(SITE_PAGE_ROOTS):
+                continue
+            url = urlparse(row.get("permalink") or "").path
+            rel = url.lstrip("/")
+            if not rel:
+                continue                     # build.render: never 等不生成页面时 permalink 为空，不能落到首页
+            html = pub / rel / "index.html" if rel.endswith("/") else pub / rel
+            if html.is_file():
+                out[path] = url
+        return out
+
+
+def _corrections_dated(body, at, en):
+    """写有日期 at 的更正次数：旧格式取 max(带该日期的可见更正标题数, 该日期的更正说明行数)（10-12 这类首条更正说明没有标题），
+    加新格式更正区里日期为 at 的条目数。同日再次更正时，head 的次数必须多于 base（新增一条），格式迁移本身不改变次数。"""
+    vis = R.visible_text(body).splitlines()
+    heads = sum(1 for ln in vis if _HEADING_RE.match(ln) and at in R._heading_shown(ln))
+    notes = sum(1 for ln in vis if (m := _OLD_NOTE_RE[en].match(ln.strip())) and m.group(1) == at)
+    return max(heads, notes) + sum(1 for d, _ in R.correction_section(body, en)[1] if d == at)
+
+
+# —— 旧格式 → 新格式的纯格式迁移（Grok Bot 要求的明确例外，Issue #71）
+_OLD_NOTE_RE = {False: re.compile(r"^\*更正说明（(\d{4}-\d{2}-\d{2})）：(.*)\*$"),
+                True: re.compile(r"^\*Correction note \((\d{4}-\d{2}-\d{2})\): (.*)\*$")}
+_OLD_HEAD_RE = {False: re.compile(r"^## 更正 (\d{4}-\d{2}-\d{2})(?:[：:].*)?$"),
+                True: re.compile(r"^## Correction (\d{4}-\d{2}-\d{2})(?:: .*)?$")}
+_NEW_HEAD = {False: "## 更正", True: "## Corrections"}
+# 页首一行的白名单：只允许在下列写法之间互换，前面列出的更正日期必须一字不差
+_TOP_LINE_RE = {False: re.compile(r"^\*本文于 (.+?) 更正，说明见文末(?:「更正」)?。\*$"),
+                True: re.compile(r"^\*This article was corrected on (.+?); see (?:the notes? at the end|Corrections at the end)\.\*$")}
+
+
+def format_migration_only(old, new, en):
+    """只把旧格式更正区改成新格式、不动其他内容 → True（不算新更正）。条件全部满足才成立：
+    front matter 原文逐字节相同；旧版更正区（第一条到最后一条旧格式更正说明/更正标题之间，只含这两种行与空行）
+    与新版更正区（唯一的「## 更正」/「## Corrections」标题及紧随其后的条目行与空行）以外的正文逐字节相同，
+    页首一行只许按 _TOP_LINE_RE 白名单改写；旧版更正说明的（日期, 说明）与新版条目一一对应、文字完全相同；新版条目按日期升序。"""
+    mo, mn = R._FM_RE.match(old), R._FM_RE.match(new)
+    if not mo or not mn or mo.group(0) != mn.group(0):
+        return False
+    ol, nl = old[mo.end():].split("\n"), new[mn.end():].split("\n")
+    oidx = [i for i, ln in enumerate(ol) if _OLD_NOTE_RE[en].match(ln) or _OLD_HEAD_RE[en].match(ln)]
+    if not oidx:
+        return False
+    o0, o1 = oidx[0], oidx[-1]
+    keep = set(oidx)
+    if any(ln.strip() and i not in keep for i, ln in enumerate(ol[o0:o1 + 1], o0)):
+        return False
+    notes = sorted((m.group(1), m.group(2)) for m in (_OLD_NOTE_RE[en].match(ln) for ln in ol[o0:o1 + 1]) if m)
+    hidx = [i for i, ln in enumerate(nl) if ln == _NEW_HEAD[en]]
+    if len(hidx) != 1:
+        return False
+    n0, eidx, j = hidx[0], [], hidx[0] + 1
+    while j < len(nl) and (not nl[j].strip() or R.CORRECTION_ENTRY_RE[en].match(nl[j])):
+        if nl[j].strip():
+            eidx.append(j)
+        j += 1
+    if not eidx:
+        return False
+    entries = [(m.group(1), m.group(2)) for m in (R.CORRECTION_ENTRY_RE[en].match(nl[k]) for k in eidx)]
+    if [d for d, _ in entries] != sorted(d for d, _ in entries) or sorted(entries) != notes:
+        return False
+    pre_o, pre_n, suf_o, suf_n = ol[:o0], nl[:n0], ol[o1 + 1:], nl[eidx[-1] + 1:]
+    if suf_o != suf_n or len(pre_o) != len(pre_n):
+        return False
+    for a, b in zip(pre_o, pre_n):
+        if a != b:
+            ma, mb = _TOP_LINE_RE[en].match(a), _TOP_LINE_RE[en].match(b)
+            if not (ma and mb and ma.group(1) == mb.group(1)):
+                return False
+    return True
+
+
+def check_page(repo, mb, head, path, status, today, base_pages, head_pages):
+    """单个页面：返回错误码列表（空 = 通过）。base_pages / head_pages 来自 rendered_pages。"""
     did = page_draft_id(path)
-    old = _show(repo, mb, path)
-    new = _show(repo, head, path)
+    published = path in base_pages
+    old = None if status == "A" else _show_required(repo, mb, path)
+    new = None if status == "D" else _show_required(repo, head, path)
     if new is None:
-        return ["E-SITE-PAGE-DELETED"] if old is not None and did else []
-    if did is None:
-        return []
+        return ["E-SITE-PAGE-DELETED"] if published else []
+    codes = []
+    if published and head_pages is not None and head_pages.get(path) != base_pages[path]:
+        codes.append("E-SITE-PAGE-DELETED")          # 不再生成或 URL 改变，等于删除原页面（r1 HIGH 2）
     try:
         fm, body = R.front_matter(new)
     except R.FrontMatterError:
-        return ["E-ROUTE-FRONT-MATTER"]
-    has = "corrects" in fm or "corrected_at" in fm
-    if not has:
-        return ["E-SITE-CORRECTION-MISSING"] if old is not None else []
+        return sorted(set(codes + ["E-ROUTE-FRONT-MATTER"]))
+    en = path.endswith(".en.md")
+    if published and old is not None and format_migration_only(old, new, en):
+        return sorted(set(codes))                     # 纯格式迁移不算新更正（Issue #71 例外）
+    if "corrects" not in fm and "corrected_at" not in fm:
+        if published:
+            codes.append("E-SITE-CORRECTION-MISSING")
+        return sorted(set(codes))                     # 未发布页面：首次发布前的修改，不查（r1 MEDIUM 3）
     if not fm.get("corrects") or not fm.get("corrected_at") \
             or not isinstance(fm["corrects"], str) or not isinstance(fm["corrected_at"], str):
-        return ["E-ROUTE-CORRECTION-INVALID"]
-    codes = []
-    if fm["corrects"] != did or old is None:
+        return sorted(set(codes + ["E-ROUTE-CORRECTION-INVALID"]))
+    if did is None or fm["corrects"] != did or not published:
         codes.append("E-ROUTE-CORRECTION-TARGET")
-    ofm = None
+    ofm, old_body = None, ""
     if old is not None:
         try:
-            ofm, _ = R.front_matter(old)
+            ofm, old_body = R.front_matter(old)
         except R.FrontMatterError:
             codes.append("E-ROUTE-CORRECTION-TARGET")
     od = R._orig_date_sgt(ofm.get("date")) if ofm is not None else None
     if ofm is not None and od is None:
         codes.append("E-ROUTE-CORRECTION-TARGET")
+    prev = ofm.get("corrected_at") if ofm is not None else None
     if not R.valid_date(fm["corrected_at"]):
         codes.append("E-ROUTE-CORRECTION-DATE")
     else:
         ca = dt.date.fromisoformat(fm["corrected_at"])
-        prev = ofm.get("corrected_at") if ofm is not None else None
         if ca > today \
                 or (od is not None and ca < dt.date.fromisoformat(od)) \
-                or (od is not None and R._orig_date_sgt(fm.get("date")) != od) \
+                or (ofm is not None and fm.get("date") != ofm.get("date")) \
                 or (isinstance(prev, str) and R.valid_date(prev) and ca < dt.date.fromisoformat(prev)):
-            codes.append("E-ROUTE-CORRECTION-DATE")
-    if not R.correction_heading_ok(body, fm["corrected_at"]):
+            codes.append("E-ROUTE-CORRECTION-DATE")     # date 按完整值比较（r1 MEDIUM 4）
+        elif isinstance(prev, str) and prev == fm["corrected_at"] and old != new and \
+                _corrections_dated(body, prev, en) <= _corrections_dated(old_body, prev, en):
+            codes.append("E-ROUTE-CORRECTION-NOTE")     # 同日再次更正须新增写有该日期的标题或条目（r1 HIGH 1）
+    if not R.correction_heading_ok(body, fm["corrected_at"], en=en):
         codes.append("E-ROUTE-CORRECTION-NOTE")
     return sorted(set(codes))
 
 
-def today_sgt():
-    return R._real_now().astimezone(R.SGT).date()
+def now_sgt():
+    return R._real_now().astimezone(R.SGT)
 
 
-def check_range(repo, base, head, today=None):
-    """检查 base..head（以 merge-base 为基线）改动的站点页面。返回结果 dict；ok=False 表示有页面不合规。"""
-    today = today or today_sgt()
+def check_range(repo, base, head, today=None, clock=None):
+    """检查 base..head（以 merge-base 为基线）改动的站点页面。返回结果 dict；ok=False 表示有页面不合规。
+    clock：判定“已发布”用的 Hugo 时钟（ISO 8601，默认当前时间）；today：corrected_at 上限（SGT 日期，默认今天）。"""
+    now = now_sgt()
+    today = today or now.date()
+    clock = clock or now.isoformat(timespec="seconds")
     head_sha = _git_ok(repo, "rev-parse", "--verify", head + "^{commit}").strip()
     base_sha = _git_ok(repo, "rev-parse", "--verify", base + "^{commit}").strip()
     mb, pairs = changed_pages(repo, base_sha, head_sha)
+    base_pages = head_pages = {}
+    if pairs:
+        base_pages = rendered_pages(repo, mb, clock)
+        # head 上改动页面的 front matter 先解析：有解析失败的，Hugo 也构建不了，直接按 E-ROUTE-FRONT-MATTER 报，
+        # 不再构建 head（此时结果必为不通过，其余页面不做“是否仍生成”的比较）。
+        broken = False
+        for st, path in pairs:
+            if st != "D":
+                try:
+                    R.front_matter(_show_required(repo, head_sha, path))
+                except R.FrontMatterError:
+                    broken = True
+        head_pages = None if broken else rendered_pages(repo, head_sha, clock)
     pages = []
     for st, path in pairs:
-        codes = check_page(repo, mb, head_sha, path, today)
-        pages.append({"path": path, "status": st, "draft_id": page_draft_id(path), "codes": codes})
-    return {"base": base_sha, "head": head_sha, "merge_base": mb, "today_sgt": today.isoformat(),
+        codes = check_page(repo, mb, head_sha, path, st, today, base_pages, head_pages)
+        pages.append({"path": path, "status": st, "draft_id": page_draft_id(path),
+                      "published_at_base": path in base_pages, "codes": codes})
+    return {"base": base_sha, "head": head_sha, "merge_base": mb, "today_sgt": today.isoformat(), "clock": clock,
             "pages": pages, "ok": all(not p["codes"] for p in pages)}
 
 
 def fetch_pr(repo, number):
-    """站点仓库 origin 须是 markjin-lab/markjin-lab.github.io；fetch main 与 PR head。返回 (base_ref, head_ref)。"""
+    """站点仓库 origin 须是 markjin-lab/markjin-lab.github.io；fetch main 与 PR head（会更新本地 Git 对象和引用）。"""
     u = R._git(repo, "remote", "get-url", "origin")
     if u.returncode != 0 or not R._site_remote_ok(u.stdout):
         raise SiteInputError("E-SITE-INPUT: 站点仓库 origin 不是 " + R.SITE_REMOTE)

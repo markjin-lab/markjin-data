@@ -2,6 +2,7 @@
 import datetime as dt
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,13 @@ from markjin.codes import ERROR_CODES
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts" / "check-site-corrections.py"
 TODAY = dt.date(2026, 10, 18)
+CLOCK = "2026-10-18T12:00:00+08:00"
+HAVE_HUGO = shutil.which("hugo") is not None
+HUGO_TOML = ('baseURL = "https://example.test/"\ndefaultContentLanguage = "zh"\n'
+             '[languages.zh]\nweight = 1\n[languages.en]\nweight = 2\n')
+LAYOUTS = {"layouts/_default/single.html": "<p>{{ .Title }}</p>{{ .Content }}\n",
+           "layouts/_default/list.html": "<p>{{ .Title }}</p>\n",
+           "layouts/index.html": "<p>home</p>\n"}
 P = "content/posts/daily/2026-10-16.md"
 PEN = "content/posts/daily/2026-10-16.en.md"
 
@@ -33,6 +41,9 @@ class SiteRepo:
     def __init__(self):
         self.d = Path(tempfile.mkdtemp())
         self.git("init", "-q", "-b", "main")
+        self.write("hugo.toml", HUGO_TOML)
+        for rel, body in LAYOUTS.items():
+            self.write(rel, body)
 
     def git(self, *a):
         r = subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *a],
@@ -54,6 +65,7 @@ class SiteRepo:
         return self.git("rev-parse", "HEAD")
 
 
+@unittest.skipUnless(HAVE_HUGO, "需要 hugo")
 class SiteCheckTest(unittest.TestCase):
     def setUp(self):
         self.s = SiteRepo()
@@ -66,7 +78,7 @@ class SiteCheckTest(unittest.TestCase):
 
     def run_check(self, today=TODAY):
         head = self.s.commit("head")
-        return S.check_range(str(self.s.d), self.base, head, today=today)
+        return S.check_range(str(self.s.d), self.base, head, today=today, clock=CLOCK)
 
     def codes(self, out, path=P):
         return next(p["codes"] for p in out["pages"] if p["path"] == path)
@@ -97,10 +109,28 @@ class SiteCheckTest(unittest.TestCase):
         self.assertEqual([p["path"] for p in out["pages"]], ["content/posts/daily/_index.md"])
         self.assertEqual(out["pages"][0]["codes"], [])
 
-    def test_second_correction_same_day_as_previous_passes(self):
+    def test_same_day_second_correction_with_new_heading_passes(self):
+        self.s.write(P, corr())
+        self.base = self.s.commit("first correction")
+        self.s.write(P, corr(body="第 2 条：再改。") + "\n## 更正 2026-10-17（二）：再次修订。\n")
+        self.assertTrue(self.run_check()["ok"])
+
+    def test_same_day_second_correction_reusing_old_heading_fails(self):
         self.s.write(P, corr())
         self.base = self.s.commit("first correction")
         self.s.write(P, corr(body="第 2 条：再改。"))
+        self.assertEqual(self.codes(self.run_check()), ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_next_day_correction_keeping_old_date_and_heading_fails(self):
+        self.s.write(P, corr(at="2026-10-17"))
+        self.base = self.s.commit("first correction")
+        self.s.write(P, corr(at="2026-10-17", body="第 2 条：次日再改。"))
+        self.assertEqual(self.codes(self.run_check(today=dt.date(2026, 10, 18))), ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_next_day_correction_with_new_date_and_heading_passes(self):
+        self.s.write(P, corr(at="2026-10-17"))
+        self.base = self.s.commit("first correction")
+        self.s.write(P, corr(at="2026-10-18", body="第 2 条：次日再改。"))
         self.assertTrue(self.run_check()["ok"])
 
     def test_uses_merge_base_when_main_advanced(self):
@@ -109,7 +139,7 @@ class SiteCheckTest(unittest.TestCase):
         self.s.git("checkout", "-q", "main")
         self.s.write("content/posts/daily/2026-10-18.md", ORIG.replace("10-16", "10-18"))
         main2 = self.s.commit("main advanced")
-        out = S.check_range(str(self.s.d), main2, head, today=TODAY)
+        out = S.check_range(str(self.s.d), main2, head, today=TODAY, clock=CLOCK)
         self.assertEqual(out["merge_base"], self.base)
         self.assertEqual([p["path"] for p in out["pages"]], [P])
         self.assertTrue(out["ok"])
@@ -197,6 +227,17 @@ class SiteCheckTest(unittest.TestCase):
         self.s.write(P, corr(date="2026-10-17T05:00:00+08:00"))
         self.assertEqual(self.codes(self.run_check()), ["E-ROUTE-CORRECTION-DATE"])
 
+    def test_page_date_same_day_other_time_or_zone(self):
+        for d in ("2026-10-16T06:00:00+08:00", "2026-10-15T21:00:00Z", "2026-10-16"):
+            self.s.write(P, corr(date=d))
+            self.assertEqual(self.codes(self.run_check()), ["E-ROUTE-CORRECTION-DATE"], d)
+
+    def test_plain_yaml_date_unchanged_passes(self):
+        self.s.write(P, ORIG.replace("date: 2026-10-16T05:00:00+08:00", "date: 2026-10-16"))
+        self.base = self.s.commit("plain date")
+        self.s.write(P, corr(date="2026-10-16"))
+        self.assertTrue(self.run_check()["ok"])
+
     def test_bad_front_matter(self):
         self.s.write(P, "---\ntitle: [unclosed\n---\nx\n")
         self.assertEqual(self.codes(self.run_check()), ["E-ROUTE-FRONT-MATTER"])
@@ -222,17 +263,211 @@ class SiteCheckTest(unittest.TestCase):
         self.assertEqual(self.codes(self.run_check(), "content/cards/c1.md"), ["E-SITE-CORRECTION-MISSING"])
 
 
+@unittest.skipUnless(HAVE_HUGO, "需要 hugo")
+class PublishStateTest(SiteCheckTest):
+    """r1 HIGH 2 / MEDIUM 3：“已发布”按 Hugo 实际构建判定。"""
+    UNPUB = ("draft: true\n", "publishDate: 2026-12-01T00:00:00+08:00\n", "expiryDate: 2026-10-01T00:00:00+08:00\n",
+             "build:\n  render: never\n")
+
+    def test_unpublishing_published_page_with_valid_correction_fields(self):
+        for extra in self.UNPUB + ("url: /moved/\n",):
+            self.s.write(P, corr(extra=extra))
+            self.assertIn("E-SITE-PAGE-DELETED", self.codes(self.run_check()), extra)
+
+    def test_future_date_unpublishes(self):
+        self.s.write(P, corr(date="2026-12-01T05:00:00+08:00"))
+        self.assertIn("E-SITE-PAGE-DELETED", self.codes(self.run_check()))
+
+    def test_unpublished_at_base_edit_without_correction_passes(self):
+        for extra in self.UNPUB:
+            self.s.git("checkout", "-q", "main")
+            self.s.write(P, ORIG.replace("---\n导语", extra + "---\n导语"))
+            self.base = self.s.commit("unpublished base")
+            self.s.git("checkout", "-q", "-B", "pr")
+            self.s.write(P, ORIG.replace("---\n导语", extra + "---\n导语").replace("旧句子", "新句子"))
+            out = self.run_check()
+            self.assertEqual(self.codes(out), [], extra)
+            self.assertFalse(next(p for p in out["pages"] if p["path"] == P)["published_at_base"])
+
+    def test_draft_first_publish_passes(self):
+        self.s.git("checkout", "-q", "main")
+        self.s.write(P, ORIG.replace("---\n导语", "draft: true\n---\n导语"))
+        self.base = self.s.commit("draft base")
+        self.s.git("checkout", "-q", "-B", "pr")
+        self.s.write(P, ORIG.replace("旧句子", "错字已改"))
+        self.assertTrue(self.run_check()["ok"])
+
+    def test_correction_of_page_unpublished_at_base(self):
+        self.s.git("checkout", "-q", "main")
+        self.s.write(P, ORIG.replace("---\n导语", "draft: true\n---\n导语"))
+        self.base = self.s.commit("draft base")
+        self.s.git("checkout", "-q", "-B", "pr")
+        self.s.write(P, corr())
+        self.assertIn("E-ROUTE-CORRECTION-TARGET", self.codes(self.run_check()))
+
+    def test_cascade_draft_from_section(self):
+        self.s.write("content/posts/daily/_index.md", "---\ntitle: daily\ncascade:\n  draft: true\n---\n")
+        self.s.write(P, corr())
+        self.assertIn("E-SITE-PAGE-DELETED", self.codes(self.run_check()))
+
+    def test_unmappable_published_page_edit(self):
+        bad = "content/posts/daily/2026-10-16-en.md"
+        self.s.git("checkout", "-q", "main")
+        self.s.write(bad, ORIG)
+        self.base = self.s.commit("odd name")
+        self.s.git("checkout", "-q", "-B", "pr")
+        self.s.write(bad, corr(did="daily-2026-10-16-en"))
+        self.assertIn("E-ROUTE-CORRECTION-TARGET", self.codes(self.run_check(), bad))
+
+
 class PageDraftIdTest(unittest.TestCase):
     def test_mapping_is_inverse_of_site_path(self):
         for did, en in (("daily-2026-10-16", False), ("daily-2026-10-16-en", True), ("digest-2026-10-16", False),
                         ("cards-c1", False), ("cards-c1-en", True), ("tongyi-a-b", False)):
             self.assertEqual(S.page_draft_id(R.site_path(did, en)), did)
 
+    def test_en_suffix_and_length(self):
+        self.assertEqual(S.page_draft_id("content/posts/daily/a.en.md"), "daily-a-en")
+        self.assertIsNone(S.page_draft_id("content/posts/daily/a-en.md"))
+        self.assertIsNone(S.page_draft_id("content/posts/daily/" + "a" * 60 + ".md"))
+        self.assertEqual(S.page_draft_id("content/posts/daily/" + "a" * 58 + ".md"), "daily-" + "a" * 58)
+
     def test_non_pages(self):
         for p in ("content/posts/daily/_index.md", "content/posts/x.md", "content/posts/a/b/c.md",
                   "content/posts/cards/c1.md", "content/posts/Daily/x.md", "content/posts/daily/X.md",
                   "content/posts/daily/a.html", "content/about.md", "content/cards/a/b.md"):
             self.assertIsNone(S.page_draft_id(p), p)
+
+
+class CorrectionSectionTest(unittest.TestCase):
+    """站点 Issue #71：新格式更正区。"""
+    ZH = "x\n\n## 更正\n\n**2026-10-12**：甲。\n**2026-10-17**：乙。\n\n本文不含投资建议。\n"
+    EN = "x\n\n## Corrections\n\n**2026-10-17**: a.\n**2026-10-18**: b.\n"
+
+    def test_new_format_ok(self):
+        self.assertTrue(R.correction_heading_ok(self.ZH, "2026-10-17", en=False))
+        self.assertTrue(R.correction_heading_ok(self.ZH, "2026-10-12", en=False))
+        self.assertTrue(R.correction_heading_ok(self.EN, "2026-10-18", en=True))
+        self.assertTrue(R.correction_heading_ok(self.ZH, "2026-10-17"))          # en=None 中英都认
+
+    def test_new_format_failures(self):
+        self.assertFalse(R.correction_heading_ok(self.ZH, "2026-10-18", en=False))   # 无该日期条目
+        self.assertFalse(R.correction_heading_ok(self.ZH, "2026-10-17", en=True))    # 语言不符
+        self.assertFalse(R.correction_heading_ok(self.EN, "2026-10-18", en=False))
+        self.assertFalse(R.correction_heading_ok(self.ZH + "\n## 更正\n\n**2026-10-18**：丙。\n", "2026-10-18", en=False))  # 两个标题
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-18**：后。\n**2026-10-17**：前。\n", "2026-10-17", en=False))  # 未按升序
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n## 别的\n\n**2026-10-17**：在别的标题下。\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n<!-- **2026-10-17**：注释里。 -->\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n```\n**2026-10-17**：代码块里。\n```\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n<div hidden>\n**2026-10-17**：隐藏。\n</div>\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n- **2026-10-17**：带列表符号。\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-17**:半角冒号。\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## Corrections\n\n**2026-10-17**：full-width.\n", "2026-10-17", en=True))
+
+    def test_mixing_old_heading_with_new_section_not_allowed(self):
+        b = "## 更正 2026-10-17：旧标题。\n\n## 更正\n\n**2026-10-12**：甲。\n"
+        self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False))
+
+    def test_level_and_exact_heading_text(self):
+        self.assertFalse(R.correction_heading_ok("### 更正\n\n**2026-10-17**：三级标题。\n", "2026-10-17", en=False))
+        self.assertFalse(R.correction_heading_ok("## 更正说明\n\n**2026-10-17**：标题字不同。\n", "2026-10-17", en=False))
+        self.assertTrue(R.correction_heading_ok("## 更正 ##\n\n**2026-10-17**：闭合井号。\n", "2026-10-17", en=False))
+
+    def test_old_format_still_accepted(self):
+        self.assertTrue(R.correction_heading_ok("## 更正 2026-10-17：本次修订的具体内容见下方更正说明。\n", "2026-10-17", en=False))
+        self.assertTrue(R.correction_heading_ok("## Correction 2026-10-17: The note below lists the changes.\n", "2026-10-17", en=True))
+
+
+OLD_SEC = ("---\ntitle: \"日报 2026-10-16\"\ndate: 2026-10-16T05:00:00+08:00\ncorrected_at: 2026-10-17\ncorrects: daily-2026-10-16\n---\n"
+           "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*\n\n导语。\n\n## 出处\n\n1. 来源\n\n"
+           "*更正说明（2026-10-16）：首次更正。*\n\n## 更正 2026-10-17：本次修订的具体内容见下方更正说明。\n\n"
+           "*更正说明（2026-10-17）：只改措辞。*\n\n本文不含投资建议。\n")
+NEW_SEC = ("---\ntitle: \"日报 2026-10-16\"\ndate: 2026-10-16T05:00:00+08:00\ncorrected_at: 2026-10-17\ncorrects: daily-2026-10-16\n---\n"
+           "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*\n\n导语。\n\n## 出处\n\n1. 来源\n\n"
+           "## 更正\n\n**2026-10-16**：首次更正。\n**2026-10-17**：只改措辞。\n\n本文不含投资建议。\n")
+OLD_SEC_EN = ("---\ntitle: \"Daily 2026-10-16\"\ndate: 2026-10-16T05:00:00+08:00\ncorrected_at: 2026-10-18\ncorrects: daily-2026-10-16-en\n---\n"
+              "*This article was corrected on 2026-10-17 and 2026-10-18; see the notes at the end.*\n\nLead.\n\n"
+              "## Correction 2026-10-17: The note below lists the changes in this revision.\n\n*Correction note (2026-10-17): a.*\n\n"
+              "## Correction 2026-10-18: The note below lists the changes in this revision.\n\n*Correction note (2026-10-18): b.*\n")
+NEW_SEC_EN = ("---\ntitle: \"Daily 2026-10-16\"\ndate: 2026-10-16T05:00:00+08:00\ncorrected_at: 2026-10-18\ncorrects: daily-2026-10-16-en\n---\n"
+              "*This article was corrected on 2026-10-17 and 2026-10-18; see the notes at the end.*\n\nLead.\n\n"
+              "## Corrections\n\n**2026-10-17**: a.\n**2026-10-18**: b.\n")
+
+
+class MigrationOnlyTest(unittest.TestCase):
+    """Issue #71 例外：只把旧格式更正区改成新格式、不动其他内容，不算新更正。"""
+    def test_pure_migration(self):
+        self.assertTrue(S.format_migration_only(OLD_SEC, NEW_SEC, False))
+        self.assertTrue(S.format_migration_only(OLD_SEC_EN, NEW_SEC_EN, True))
+
+    def test_top_line_whitelist(self):
+        self.assertTrue(S.format_migration_only(OLD_SEC, NEW_SEC.replace("说明见文末。", "说明见文末「更正」。"), False))
+        self.assertTrue(S.format_migration_only(OLD_SEC_EN, NEW_SEC_EN.replace("see the notes at the end", "see Corrections at the end"), True))
+        self.assertFalse(S.format_migration_only(OLD_SEC, NEW_SEC.replace("本文于 2026-10-16、2026-10-17 更正", "本文于 2026-10-17 更正"), False))
+        self.assertFalse(S.format_migration_only(OLD_SEC, NEW_SEC.replace("说明见文末。", "详见文末。"), False))
+
+    def test_not_migration(self):
+        bad = {
+            "正文改字": NEW_SEC.replace("导语。", "导语！"),
+            "front matter 改动": NEW_SEC.replace('title: "日报 2026-10-16"', 'title: "日报"'),
+            "corrected_at 改动": NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18"),
+            "说明改字": NEW_SEC.replace("只改措辞。", "只改措辞和标点。"),
+            "少一条": NEW_SEC.replace("**2026-10-16**：首次更正。\n", ""),
+            "多一条": NEW_SEC.replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：新。\n"),
+            "日期改动": NEW_SEC.replace("**2026-10-16**", "**2026-10-15**"),
+            "未按升序": NEW_SEC.replace("**2026-10-16**：首次更正。\n**2026-10-17**：只改措辞。",
+                                     "**2026-10-17**：只改措辞。\n**2026-10-16**：首次更正。"),
+            "更正区后正文改动": NEW_SEC.replace("本文不含投资建议。", "本文不构成投资建议。"),
+            "空行变化": NEW_SEC.replace("1. 来源\n\n## 更正", "1. 来源\n\n\n## 更正"),
+            "两个新标题": NEW_SEC.replace("\n本文不含", "\n## 更正\n\n本文不含"),
+        }
+        for k, v in bad.items():
+            self.assertFalse(S.format_migration_only(OLD_SEC, v, False), k)
+
+    def test_old_region_must_be_only_corrections(self):
+        old = OLD_SEC.replace("*更正说明（2026-10-16）：首次更正。*\n\n", "*更正说明（2026-10-16）：首次更正。*\n\n正文夹在中间。\n\n")
+        self.assertFalse(S.format_migration_only(old, NEW_SEC, False))
+
+    def test_no_old_notes(self):
+        self.assertFalse(S.format_migration_only(NEW_SEC, NEW_SEC, False))
+
+
+@unittest.skipUnless(HAVE_HUGO, "需要 hugo")
+class MigrationViaCheckTest(unittest.TestCase):
+    def setUp(self):
+        self.s = SiteRepo()
+        self.s.write(P, OLD_SEC)
+        self.s.write(PEN, OLD_SEC_EN)
+        self.base = self.s.commit("base")
+
+    def run_check(self):
+        head = self.s.commit("head")
+        return {p["path"]: p["codes"] for p in S.check_range(str(self.s.d), self.base, head, today=TODAY, clock=CLOCK)["pages"]}
+
+    def test_pure_migration_passes(self):
+        self.s.write(P, NEW_SEC); self.s.write(PEN, NEW_SEC_EN)
+        self.assertEqual(self.run_check(), {P: [], PEN: []})
+
+    def test_migration_with_body_edit_is_ordinary_correction(self):
+        self.s.write(P, NEW_SEC.replace("导语。", "导语！"))
+        self.assertEqual(self.run_check()[P], ["E-ROUTE-CORRECTION-NOTE"])     # 同日、未新增条目
+
+    def test_migration_with_note_edit_is_ordinary_correction(self):
+        self.s.write(PEN, NEW_SEC_EN.replace("**2026-10-18**: b.", "**2026-10-18**: b, reworded."))
+        self.assertEqual(self.run_check()[PEN], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_migration_plus_new_dated_entry_is_valid_correction(self):
+        self.s.write(PEN, NEW_SEC_EN.replace("corrected_at: 2026-10-18", "corrected_at: 2026-10-18")
+                     .replace("Lead.", "Lead, fixed.").replace("**2026-10-18**: b.\n", "**2026-10-18**: b.\n**2026-10-18**: lead fixed.\n"))
+        self.assertEqual(self.run_check()[PEN], [])
+
+    def test_new_format_next_correction(self):
+        self.s.write(P, NEW_SEC); self.base = self.s.commit("migrated")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n"))
+        self.assertEqual(self.run_check()[P], [])
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！"))
+        self.assertEqual(self.run_check()[P], ["E-ROUTE-CORRECTION-NOTE"])     # 新日期没有条目
 
 
 class HeadingHelperTest(unittest.TestCase):
@@ -255,6 +490,7 @@ class CliTest(unittest.TestCase):
                            capture_output=True, text=True, env={**os.environ})
         return r.returncode, json.loads(r.stdout)
 
+    @unittest.skipUnless(HAVE_HUGO, "需要 hugo")
     def test_pass_and_fail_exit_codes(self):
         self.s.write("content/posts/daily/2026-10-18.md", ORIG.replace("10-16", "10-18"))
         good = self.s.commit("new page")
@@ -275,10 +511,58 @@ class CliTest(unittest.TestCase):
         rc, out = self.cli("--pr", "1")
         self.assertEqual(rc, 1); self.assertEqual(out["codes"], ["E-SITE-INPUT"])
 
-    def test_pr_and_head_are_exclusive(self):
-        r = subprocess.run([sys.executable, str(CLI), "--site-repo", str(self.s.d), "--pr", "1", "--head", "x"],
-                           capture_output=True, text=True)
-        self.assertEqual(r.returncode, 2)
+    def test_argument_errors_are_json_input_errors(self):
+        for args in (["--site-repo", str(self.s.d), "--pr", "1", "--head", "x"], ["--head", "x"], []):
+            r = subprocess.run([sys.executable, str(CLI), *args], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 1, args)
+            self.assertEqual(json.loads(r.stdout)["codes"], ["E-SITE-INPUT"], args)
+
+    def test_head_base_mode_does_not_change_refs(self):
+        before = self.s.git("for-each-ref")
+        self.s.write(P, ORIG.replace("旧", "新"))
+        head = self.s.commit("edit")
+        before = self.s.git("for-each-ref")
+        self.cli("--base", self.base, "--head", head)
+        self.assertEqual(self.s.git("for-each-ref"), before)
+
+    def test_non_utf8_path_is_input_error(self):
+        name = b"content/posts/daily/\xff.md"
+        (self.s.d / os.fsdecode(name)).parent.mkdir(parents=True, exist_ok=True)
+        (self.s.d / os.fsdecode(name)).write_text("x\n")
+        head = self.s.commit("bad name")
+        rc, out = self.cli("--base", self.base, "--head", head)
+        self.assertEqual(rc, 1); self.assertEqual(out["codes"], ["E-SITE-INPUT"])
+
+    def test_non_utf8_content_is_input_error(self):
+        (self.s.d / P).write_bytes(b"---\ntitle: x\n---\n\xff\xfe\n")
+        head = self.s.commit("bad content")
+        rc, out = self.cli("--base", self.base, "--head", head)
+        self.assertEqual(rc, 1); self.assertEqual(out["codes"], ["E-SITE-INPUT"])
+
+    def test_missing_hugo_is_input_error(self):
+        self.s.write(P, ORIG.replace("旧", "新"))
+        head = self.s.commit("edit")
+        r = subprocess.run([sys.executable, str(CLI), "--site-repo", str(self.s.d), "--base", self.base, "--head", head],
+                           capture_output=True, text=True, env={**os.environ, "MARKJIN_HUGO": "/nonexistent/hugo"})
+        self.assertEqual(r.returncode, 1); self.assertEqual(json.loads(r.stdout)["codes"], ["E-SITE-INPUT"])
+
+    @unittest.skipUnless(HAVE_HUGO, "需要 hugo")
+    def test_hugo_version_must_match_deploy_workflow(self):
+        self.s.write(".github/workflows/hugo.yml", "env: {HUGO_VERSION: 0.1.0}\n")
+        self.base = self.s.commit("wf")
+        self.s.write(P, ORIG.replace("旧", "新"))
+        head = self.s.commit("edit")
+        rc, out = self.cli("--base", self.base, "--head", head)
+        self.assertEqual(rc, 1); self.assertEqual(out["codes"], ["E-SITE-INPUT"])
+
+
+class ReadFailureTest(unittest.TestCase):
+    def test_modified_page_unreadable_fails_closed(self):
+        s = SiteRepo(); s.write(P, ORIG); base = s.commit("b"); s.write(P, corr()); head = s.commit("h")
+        with self.assertRaises(S.SiteInputError):
+            S.check_page(str(s.d), base, "0" * 40, P, "M", TODAY, {P: "/posts/daily/2026-10-16/"}, {})
+        with self.assertRaises(S.SiteInputError):
+            S.check_page(str(s.d), "0" * 40, head, P, "M", TODAY, {}, {})
 
 
 class CodesTest(unittest.TestCase):

@@ -1795,6 +1795,28 @@ class FinalR1(FromMain):
         self.write(f"approvals/codex/{dr['content_sha256']}.json", json.dumps(codex(dr, reviewed_at="2026-01-06T09:30:00+08:00")))
         self.commit("corr")
 
+    def test_correction_new_section_format_in_route_correction(self):
+        """站点 Issue #71（Grok Bot 2026-10-18）：route._correction 认「## 更正」+「**YYYY-MM-DD**：说明」条目，条目日期须等于 corrected_at。
+        （直接测 _correction：带日期的更正说明行在 selfcheck 里本来就算无来源断言，与格式无关，route_pr 端到端另有旧格式测试。）"""
+        later = dt.datetime(2026, 1, 6, 10, 0, tzinfo=SGT)
+        head = "---\ncorrects: daily-2026-01-05-d1\ncorrected_at: 2026-01-06\n---\n" + INFER
+        cases = (("\n## 更正\n\n**2026-01-05**：首次更正。\n**2026-01-06**：改了一处。\n", None),
+                 ("\n## 更正\n\n**2026-01-05**：只有旧条目。\n", "E-ROUTE-CORRECTION-NOTE"),
+                 ("\n## Corrections\n\n**2026-01-06**: wrong language.\n", "E-ROUTE-CORRECTION-NOTE"),
+                 ("\n## 更正\n\n**2026-01-06**：后写。\n**2026-01-05**：先写。\n", "E-ROUTE-CORRECTION-NOTE"),
+                 ("\n## 更正 2026-01-06：旧格式仍接受。\n", None))
+        o = R._site_remote_ok; R._site_remote_ok = lambda u: True
+        try:
+            site = self._site()
+            for body, code in cases:
+                r = R._correction("daily/2026-01-05-d1.md", head + body + DISC, "daily-2026-01-05-d1", "2026-01-05", later, site)
+                if code is None:
+                    self.assertIsInstance(r, dict, (body, r))
+                else:
+                    self.assertEqual(r, code, body)
+        finally:
+            R._site_remote_ok = o
+
     def test_correction_end_to_end_via_route_pr(self):
         self._correction_pr()
         later = dt.datetime(2026, 1, 6, 10, 0, tzinfo=SGT)

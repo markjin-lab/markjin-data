@@ -267,7 +267,8 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
   - `corrects` 必须等于本稿 draft_id（与原稿 section、name 一致）。**“已发布”的凭据（王总 r15 定）：站点仓库 origin/main 上确实有这篇**——按 section、name 映射到站点 `content/posts/<section>/<name>[.en].md`，用 `git show origin/main:<路径>` 查；本地站点 origin/main 须等于远端当前 main；查不到、没给站点仓库（CLI `--site-repo`）或内容未变 → `E-ROUTE-CORRECTION-TARGET`。不用发布状态里的记录，不重跑自检。
   - 原稿的日期和类别取站点 main 上那一版的 front matter 和路径：front matter 无合法 `date` → `E-ROUTE-CORRECTION-TARGET`；`date` 须等于 `--date`；路径 section 为 macro / tongyi / cards，或 front matter 的 categories / tags / type / series 含宏观、医疗、中医、佛学、宗教、tongyi、信号卡等 → 仍须王总批准（v2 记录）。本稿自检命中宏观/医疗/宗教同样须王总批准。
   - `corrected_at` 不早于原稿日期、不晚于实际发布当天（SGT）→ 否则 `E-ROUTE-CORRECTION-DATE`；Codex `reviewed_at` 不得早于 `corrected_at`。
-  - 标题行（如 `## 更正 YYYY-MM-DD`）渲染后可见的文字里须出现 `corrected_at` 日期（链接目标、图片、HTML 属性里的日期不算；整体验收 r2/r3） → 否则 `E-ROUTE-CORRECTION-NOTE`。
+  - **更正区格式（站点 Issue #71，Grok Bot 2026-10-18 批准）**：每页一个「## 更正」（英文稿 `## Corrections`）标题，下面每次更正一行「`**YYYY-MM-DD**：说明`」（英文 `**YYYY-MM-DD**: …`，半角冒号加空格），按日期升序，其他行（如 2026-10-12 日报的正文免责声明）可以跟在后面。判定：只认渲染后可见的行（注释、代码块、隐藏元素里的不算），恰好一个该标题（二级、文字完全一致，中文稿认「更正」、英文稿认 "Corrections"），其下（到下一个标题为止）的条目按日期升序，且有日期等于 `corrected_at` 的条目 → 否则 `E-ROUTE-CORRECTION-NOTE`。页面里出现了新格式标题就按新格式判，不能与旧格式混用。
+  - **过渡期旧格式仍接受**：没有新格式标题时，标题行（如 `## 更正 YYYY-MM-DD：…`）渲染后可见的文字里出现 `corrected_at` 日期即可（链接目标、图片、HTML 属性里的日期不算；整体验收 r2/r3） → 否则 `E-ROUTE-CORRECTION-NOTE`。实现：`route.correction_heading_ok`（route_pr 与站点页面检查共用）。
   - 免责声明（日报类更正稿：原稿日期早于 2026-10-13 的都查正文免责声明；2026-10-13 起只用站点页脚，不查正文）、自检、配对审查、`codex_in_production` 照常；只跳过 06:55 / 07:00 的截止与顺延（以及 Mac 心跳/在岗检查）。`codex_in_production` 为真时只 HOLD（`E-ROUTE-CORRECTION` + `A-NO-REVIEW-PATH`），不归档已发布的原稿。
   - 获批 → `APPROVED` + `I-CORRECTION`；未获批 → `NEEDS_REVIEW`，不顺延、不归档。
 - markjin-data #31（10-10 更正稿）由 Grok Bot 破例处理，不等本脚本。
@@ -387,17 +388,25 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
 
 ## 站点 PR 页面检查（Grok Bot 2026-10-18）
 
-`route_pr` 只看数据仓库顶层的 `daily/`、`digest/` 等稿件；站点 PR 直接改 `content/posts/`（或 `content/cards/`）页面时，更正规则原先没人检查。`scripts/check-site-corrections.py` 补上这一处，判断复用 route.py 的同一份逻辑（front matter 解析、日期解析、`correction_heading_ok` 标题行可见文字）。只读，不写文件。
+`route_pr` 只看数据仓库顶层的 `daily/`、`digest/` 等稿件；站点 PR 直接改 `content/posts/`（或 `content/cards/`）页面时，更正规则原先没人检查。`scripts/check-site-corrections.py` 补上这一处，判断复用 route.py 的同一份逻辑（front matter 解析、日期解析、`correction_heading_ok` 更正区判定）。`--head/--base` 只读取仓库；`--pr` 会 fetch 并更新本地 Git 对象和引用，不改站点工作树或远端。需要本机 hugo（版本与站点部署一致）。
 
-- 用法：`python3 scripts/check-site-corrections.py --site-repo <站点克隆> --pr <编号>`（origin 须为 `markjin-lab/markjin-lab.github.io`，fetch main 与 `refs/pull/N/head`），或 `--head <ref> [--base <ref>]`（默认 base `origin/main`）。输出 JSON，退出码 0 通过、1 不通过或输入无效（`E-SITE-INPUT`）。
+- 用法：`python3 scripts/check-site-corrections.py --site-repo <站点克隆> --pr <编号>`（origin 须为 `markjin-lab/markjin-lab.github.io`，fetch main 与 `refs/pull/N/head`），或 `--head <ref> [--base <ref>]`（默认 base `origin/main`）。输出 JSON，退出码 0 通过、1 不通过或输入无效（`E-SITE-INPUT`，含参数错误、读取失败、非 UTF-8 路径或内容、hugo 缺失或版本不符、构建失败）。
 - 范围：`merge-base(base, head)..head` 中改动的 `content/posts/<section>/<name>[.en].md` 与 `content/cards/<name>[.en].md`；列表页（`_index.md`）、模板、配置、静态文件不查。改名按删除 + 新增处理。
 - 新增页面（base 上没有）且不带更正字段：不查，新稿走日报流程。
 - 删除或改名 base 上已有的页面 → `E-SITE-PAGE-DELETED`。
 - 改动 base 上已有的页面（包括只改 front matter）：front matter 必须有 `corrects` 和 `corrected_at`，否则 `E-SITE-CORRECTION-MISSING`。
+- “已发布”按 Hugo 判定（PR #52 r1）：把 merge-base 与 head 各自导出（`git archive`，不动工作树），用站点部署所用版本的 Hugo（须与站点 `.github/workflows/hugo.yml` 的 `HUGO_VERSION` 一致，否则 `E-SITE-INPUT`）以同一时钟（默认当前时间）构建；`hugo list published` 里 kind=page、且构建输出里确有对应 HTML 的页面才算已发布。草稿、未来 `date`/`publishDate`、过期 `expiryDate`、`build.render: never` 以及 cascade 继承的同类设置都不算已发布。
+- base 上未发布的页面（含首次发布前的草稿、未来稿）不带更正字段时不查；带了更正字段 → `E-ROUTE-CORRECTION-TARGET`。
+- base 上已发布的页面在 head 上不再生成或 permalink 改变（例如加 `draft: true`、改 `url`），与删除同样判 `E-SITE-PAGE-DELETED`。
 - 带更正字段的页面，规则与 route 的更正稿相同：
   - 缺一项、为空或不是字符串 → `E-ROUTE-CORRECTION-INVALID`；
-  - `corrects` 必须等于由路径推出的 draft_id（`<section>-<name>[-en]`，卡片为 `cards-<name>[-en]`），页面在 base 上已存在，且 base 版有合法 `date`，否则 → `E-ROUTE-CORRECTION-TARGET`；
-  - `corrected_at` 不是 YYYY-MM-DD、早于页面日期、晚于今天（SGT）、早于 base 版已有的 `corrected_at`，或者 head 版 `date` 与 base 版不同 → `E-ROUTE-CORRECTION-DATE`；
-  - `corrected_at` 必须出现在某个标题行渲染后可见的文字里（链接目标、图片、注释、代码块、隐藏元素里的不算），否则 → `E-ROUTE-CORRECTION-NOTE`。
-- 再次更正同一页面时，`corrected_at` 要改成本次日期，并为本次加一个写有该日期的标题行；只保留旧日期的标题会判 `E-ROUTE-CORRECTION-NOTE`。脚本不判断 `corrected_at` 有没有更新：沿用旧日期不会被拦，由审查确认。
+  - `corrects` 必须等于由路径推出的 draft_id（`<section>-<name>[-en]`，卡片为 `cards-<name>[-en]`；`a-en.md` 这类推不出合法 draft_id 的路径不算），页面在 base 上已发布，且 base 版有合法 `date`，否则 → `E-ROUTE-CORRECTION-TARGET`；
+  - `corrected_at` 不是 YYYY-MM-DD、早于页面日期、晚于今天（SGT）、早于 base 版已有的 `corrected_at`，或者 head 版 `date` 与 base 版不完全相同（同日改时间、改时区写法都算） → `E-ROUTE-CORRECTION-DATE`；
+  - 更正区须符合上文「更正区格式」（新格式，或过渡期旧格式），否则 → `E-ROUTE-CORRECTION-NOTE`；
+  - 再次更正：跨日的，`corrected_at` 要改成本次日期并有对应条目（或旧格式标题）；同日的（`corrected_at` 与 base 版相同），写有该日期的更正次数必须比 base 多（新格式数条目，旧格式取带该日期的标题数与更正说明行数中较大者），沿用旧条目或旧标题 → `E-ROUTE-CORRECTION-NOTE`。
+- **纯格式迁移例外（Grok Bot 2026-10-18，Issue #71）**：只把旧格式更正区改成新格式、不动其他内容的改动，不算新更正，不要求 `corrected_at` 变化或新增条目。脚本 `sitecheck.format_migration_only` 逐项核对，任何一项不满足就按普通更正处理（通常因同日未新增条目判 `E-ROUTE-CORRECTION-NOTE`）：
+  - front matter 原文逐字节相同；
+  - 旧版更正区：从第一条到最后一条旧格式更正行（`*更正说明（YYYY-MM-DD）：…*` / `*Correction note (YYYY-MM-DD): …*` 与 `## 更正 YYYY-MM-DD…` / `## Correction YYYY-MM-DD…` 标题），中间只能有这两种行和空行；新版更正区：唯一的 `## 更正` / `## Corrections` 标题及紧随其后的条目行和空行；两个更正区以外的正文逐字节相同；
+  - 旧版每条更正说明的（日期, 说明文字）与新版条目一一对应、文字完全相同，新版条目按日期升序；
+  - 页首一行的白名单：只允许在「`*本文于 <日期列表> 更正，说明见文末。*`」与「`*本文于 <日期列表> 更正，说明见文末「更正」。*`」之间互换，英文稿在「`… see the note(s) at the end.*`」与「`… see Corrections at the end.*`」之间互换；日期列表必须一字不差。
 - 这个脚本不接 CI，也不替代 `route_pr`、Codex 审查或站点 smoke；审查站点 PR 时与 smoke、pytest 一起运行。

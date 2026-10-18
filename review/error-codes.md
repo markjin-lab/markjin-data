@@ -61,11 +61,11 @@
 | `E-ROUTE-CORRECTION-INVALID` | 更正稿 front matter 的 corrects / corrected_at 缺一或为空 |
 | `E-ROUTE-CORRECTION-TARGET` | 更正稿的 corrects 与本稿 draft_id 不一致，或站点仓库 origin/main 上查不到原稿（未发布）、原稿 front matter 无日期、内容未变 |
 | `E-ROUTE-CORRECTION-DATE` | corrected_at 不是 YYYY-MM-DD，或早于原稿日期、晚于实际发布当天（SGT） |
-| `E-ROUTE-CORRECTION-NOTE` | 更正稿的标题行（渲染后可见文字，链接目标、图片、HTML 属性不算）没有注明 corrected_at 更正日期 |
+| `E-ROUTE-CORRECTION-NOTE` | 更正区不合格式：新格式（Issue #71）须恰好一个「## 更正」/「## Corrections」标题、其下条目按日期升序且有日期等于 corrected_at 的「**YYYY-MM-DD**：说明」条目；过渡期旧格式须有标题行（渲染后可见文字，链接目标、图片、HTML 属性不算）注明 corrected_at；同日再次更正未新增条目或标题 |
 | `E-ROUTE-CORRECTION` | 更正稿被拦住（如 codex_in_production 为真），不归档原稿 |
-| `E-SITE-CORRECTION-MISSING` | 站点 PR 改动了 base 上已发布的 content/posts 或 content/cards 页面，但 front matter 没有 corrects / corrected_at（改已发布页面一律按更正处理） |
-| `E-SITE-PAGE-DELETED` | 站点 PR 删除或改名了 base 上已发布的 content/posts 或 content/cards 页面 |
-| `E-SITE-INPUT` | 站点页面检查的输入无效：站点仓库 remote 不对、取不到 PR 或 base/head 提交、git 失败 |
+| `E-SITE-CORRECTION-MISSING` | 站点 PR 改动了 base 上已发布（按 Hugo 实际构建判定）的 content/posts 或 content/cards 页面，但 front matter 没有 corrects / corrected_at（改已发布页面一律按更正处理） |
+| `E-SITE-PAGE-DELETED` | 站点 PR 删除、改名了 base 上已发布的 content/posts 或 content/cards 页面，或使其不再生成、permalink 改变（按 Hugo 实际构建判定） |
+| `E-SITE-INPUT` | 站点页面检查的输入无效：参数错误、站点仓库 remote 不对、取不到 PR 或 base/head 提交、git 读取失败、非 UTF-8 路径或内容、hugo 缺失或版本与站点部署不符、构建失败 |
 | `I-CORRECTION` | 更正稿：不受 06:55 / 07:00 与顺延限制，其余检查照常 |
 | `E-ROUTE-RECORD-INVALID` | approvals/ 记录文件解析失败或有行不符合严格 schema（整份文件不采信） |
 | `E-ROUTE-RECORD-MISMATCH` | 批准记录与稿件不符：draft_id 不一致，或渠道不符合要求（信号卡、tongyi 只接受 direct） |

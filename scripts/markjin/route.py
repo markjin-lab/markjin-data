@@ -565,10 +565,49 @@ def _heading_shown(ln):
     return t
 
 
-def correction_heading_ok(body, corrected_at):
-    """整体验收 r2/r3/r6：corrected_at 须出现在某个标题行（# … 行）渲染后可见的文字里。
-    route_pr（数据仓库稿件）与 sitecheck（站点 PR 的 content/ 页面）共用这一份判断。"""
-    return any(re.match(r"^[ ]{0,3}#{1,6}[ \t]", ln) and corrected_at in _heading_shown(ln)
+# 更正区格式（站点 Issue #71，Grok Bot 2026-10-18 批准）：每页一个「## 更正」（英文 "## Corrections"）标题，
+# 下面每次更正一行「**YYYY-MM-DD**：说明」（英文 "**YYYY-MM-DD**: …"），按日期升序。
+# 过渡期旧格式（每次一个「## 更正 YYYY-MM-DD：…」/「## Correction YYYY-MM-DD: …」标题）仍接受。
+CORRECTION_HEADING = {False: "更正", True: "Corrections"}
+CORRECTION_ENTRY_RE = {False: re.compile(r"^\*\*(\d{4}-\d{2}-\d{2})\*\*：[ \t]*(\S.*)$"),
+                       True: re.compile(r"^\*\*(\d{4}-\d{2}-\d{2})\*\*:[ \t]+(\S.*)$")}
+_HEADING_LINE_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]")
+_HEADING_PARTS_RE = re.compile(r"^[ ]{0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
+
+
+def correction_section(body, en=None):
+    """新格式更正区（只看渲染后可见的行）：返回 (「## 更正」/「## Corrections」标题个数, [(日期, 说明), …])。
+    条目是该标题之后、下一个标题之前，符合「**YYYY-MM-DD**：说明」（英文「**YYYY-MM-DD**: …」）的行；其他行不算条目。
+    en=None 时中英两种写法都认；en=True/False 只认对应语言。"""
+    langs = (False, True) if en is None else (bool(en),)
+    heads, entries, inside = 0, [], None
+    for ln in visible_text(body).splitlines():
+        if _HEADING_LINE_RE.match(ln):
+            inside = None
+            m = _HEADING_PARTS_RE.match(_heading_shown(ln))
+            if m and len(m.group(1)) == 2:
+                for lg in langs:
+                    if m.group(2) == CORRECTION_HEADING[lg]:
+                        heads += 1
+                        inside = lg
+            continue
+        if inside is not None:
+            e = CORRECTION_ENTRY_RE[inside].match(ln)
+            if e:
+                entries.append((e.group(1), e.group(2)))
+    return heads, entries
+
+
+def correction_heading_ok(body, corrected_at, en=None):
+    """E-ROUTE-CORRECTION-NOTE 的判断，route_pr（数据仓库稿件）与 sitecheck（站点 PR 的 content/ 页面）共用。
+    新格式（Issue #71）：恰好一个「## 更正」/「## Corrections」标题，其下条目按日期升序，且有日期等于 corrected_at 的条目。
+    出现了新格式标题就按新格式判（不能新旧混用来凑）。
+    过渡期旧格式（整体验收 r2/r3/r6）：corrected_at 出现在某个标题行渲染后可见的文字里。"""
+    heads, entries = correction_section(body, en)
+    if heads:
+        dates = [d for d, _ in entries]
+        return heads == 1 and dates == sorted(dates) and corrected_at in dates
+    return any(_HEADING_LINE_RE.match(ln) and corrected_at in _heading_shown(ln)
                for ln in visible_text(body).splitlines())
 
 
@@ -615,7 +654,7 @@ def _correction(rel, text, did, date, now, site_repo):
         return "E-ROUTE-CORRECTION-DATE"             # 不早于原稿日期，不晚于实际发布当天（SGT）
     if orig == text:
         return "E-ROUTE-CORRECTION-TARGET"
-    if not correction_heading_ok(body, fm["corrected_at"]):
+    if not correction_heading_ok(body, fm["corrected_at"], en=did.endswith(EN_SUFFIX)):
         return "E-ROUTE-CORRECTION-NOTE"             # 整体验收 r2（王总定）：更正日期须出现在标题行（# … 行）里
     sec = did.split("-", 1)[0]
     return {"corrected_at": ca, "wang": _orig_needs_wang(sec, ofm)}
