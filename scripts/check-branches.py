@@ -13,7 +13,9 @@
   |now − registered_at| ≤ 6 小时，且 now 早于 window_start（当日 00:00 SGT）。
 - 可信合并时间（--main-ref + --push-runs）：每条登记行和登记更正行 = head_sha 恰为其首次进入 main 的提交的最早 push 运行的
   created_at，必须早于 window_start。查不到判“时间未知”，不顺延。时间相关问题只输出 warn，不改退出码；
-  晚合并组自动排除，时间未知或缺 --main-ref / 运行记录时 gate_count / stats 输出 INVALID。计数只是预估，以人工核对为准。
+  晚合并组自动排除，时间未知或缺 --main-ref / 运行记录（含运行列表为空）时 gate_count / stats 输出 INVALID。计数只是预估，以人工核对为准。
+- VOID 相关问题只警告，范围见 downgradable()；E-BR-FIRST-ROW、E-BR-GROUP-LATE 永不降级。
+- GitHub Actions 中另输出 ::error / ::warning / ::notice 注释。
 输出只含行号、提交短 SHA、错误码与计数。退出码 0=通过，1=不通过。
 """
 import argparse, json, re, subprocess, sys
@@ -24,6 +26,23 @@ from markjin import branches  # noqa: E402
 
 MAX_SKEW = timedelta(hours=6)
 VOID_CODES = {"E-BR-VOID-PARTIAL", "E-BR-VOID-FILLED", "E-BR-AFTER-VOID", "E-BR-VOID-SPLIT", "E-BR-VOID-UNVERIFIED"}
+# r9（r8 MEDIUM 2）：作废行、撤销作废行上只有这几项“作废留痕本身写得不对”的问题降为警告；
+# 其余一律照常报错。E-BR-FIRST-ROW、E-BR-GROUP-LATE 永不降级（首行必须是 PENDING 登记行、组成员登记时固定）。
+VOID_LINE_CODES = {"E-BR-CORRECTS-TARGET", "E-BR-PREREG-CHANGED", "E-BR-CORRECTION-REASON"}
+NEVER_DOWNGRADE = {"E-BR-FIRST-ROW", "E-BR-GROUP-LATE"}
+
+
+def downgradable(code, on_void_line):
+    if code in NEVER_DOWNGRADE:
+        return False
+    return code in VOID_CODES or (on_void_line and code in VOID_LINE_CODES)
+
+
+def gha(level, msg):
+    """GitHub Actions 注释（::warning / ::notice / ::error）。只在 Actions 里输出，本机运行不加。"""
+    import os
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::{level}::{msg}")
 
 
 def _dt(ts):
@@ -97,7 +116,9 @@ def trust_check(repo, rows, main_ref, runs):
     # 登记行（每支第一行）和登记更正行，各用自己首次进入 main 的时间核对
     regs = [(ln, r) for ln, r in rows if r["check_result"] == "PENDING" and r["row_id"] in present
             and (r["corrects_row_id"] or r["row_id"].endswith("-r1"))]
-    if regs and runs is None:
+    # r9（r8 MEDIUM 1）：没有运行记录（未传 --push-runs、读不出或列表为空）时一律不给有效计数，
+    # 不论 main 上是否已有登记行：PR 新增的登记行同样无法核对合并时间。
+    if not runs:
         warns.append((0, "W-BR-PUSH-TIME-UNAVAILABLE")); valid = False
     unknown = set()
     for ln, r in regs:
@@ -118,7 +139,7 @@ def trust_check(repo, rows, main_ref, runs):
             warns.append((first[g], "W-BR-LATE-UNHANDLED"))
     for ln, r in branches.active_voids(rows):
         g = branches.group_key(r)
-        if g in unknown or (regs and runs is None):
+        if g in unknown or (regs and not runs):
             warns.append((ln, "W-BR-VOID-UNVERIFIABLE")); valid = False
         elif g not in late or run_ids(r["reason"]) != {late_run[g]}:
             warns.append((ln, "E-BR-VOID-UNVERIFIED")); valid = False
@@ -221,21 +242,24 @@ def main(argv=None):
         except branches.GitError:
             print(f"E-BR-BASE-UNREADABLE 基线 {a.base} 不存在或无法读取（fail-closed）")
             return 1
-    # 自动排除与 VOID 相关的问题一律只警告（main 和 PR 都一样），不改退出码，但计数输出 INVALID
+    # VOID 相关问题只警告（main 和 PR 都一样），不改退出码，但计数输出 INVALID；
+    # 降级范围见 downgradable()：E-BR-FIRST-ROW、E-BR-GROUP-LATE 及作废行上的其他问题照常报错
     void_lines = {str(ln) for ln, r in rows if r["check_result"] in ("VOID", "VOID_REVOKED")}
     keep = []
     for x in out:
         code = x.rsplit(": ", 1)[-1]
         ln = x.split("line ", 1)[-1].split(":", 1)[0]
-        if code in VOID_CODES or ln in void_lines:
+        if downgradable(code, ln in void_lines):
             warns.append((ln, code)); valid = False
         else:
             keep.append(x)
     out = keep
     for x in out:
         print(x)
-    for ln, code in warns:   # 时间相关问题只作警告输出，不改变退出码
+        gha("error", f"ledger {x}")
+    for ln, code in warns:   # 时间相关、VOID 相关问题只作警告输出，不改变退出码
         print(f"warn line {ln}: {code}")
+        gha("warning", f"ledger line {ln}: {code}")
     # 检查失败、缺 main 引用或运行记录、时间未知时，不输出看起来有效的计数；有效时也只是预估，以人工核对为准
     ok = not out and valid
     if a.count_gate:
@@ -243,6 +267,9 @@ def main(argv=None):
         print(f"gate_count {n} (cutoff {a.cutoff}, domain {a.domain or 'all'}; 预估，以人工核对为准)")
     if a.stats:
         print("stats " + (json.dumps(branches.hit_stats(rows, late), ensure_ascii=False, sort_keys=True) if ok else "INVALID"))
+    if a.count_gate or a.stats:
+        gha("notice", "门禁数仅为预估，须由审查与治理 bot 人工核对登记 PR 的合并时间（须早于 window_start）"
+            + ("" if ok else "；本次计数为 INVALID"))
     print("PASS" if not out else f"FAIL ({len(out)})")
     return 0 if not out else 1
 

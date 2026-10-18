@@ -802,6 +802,8 @@ class R6Trust(unittest.TestCase):
 
     def test_not_on_main_yet(self):  # PR 阶段：组还没进 main，不做合并时间判定
         r1, r2, _ = self.grp()
+        base = self.g("rev-parse", "HEAD").stdout.strip()
+        self.push(base, "2026-10-01T00:00:00Z", 100)   # r9：须有运行记录，计数才有效
         self.commit(csv_of(r1, r2), "pr rows")
         p = self.cli(main_ref="HEAD~1")
         self.assertEqual(p.returncode, 0, p.stdout); self.assertIn("gate_count 2", p.stdout)
@@ -913,6 +915,96 @@ class R8VoidWarnOnly(R6Trust):
     def test_non_void_errors_still_fail(self):
         self.commit(csv_of(row(trigger_condition="x > 100"), sibling(row())), "bad")
         self.assertEqual(self.cli().returncode, 1)
+
+
+class R9Review(R6Trust):
+    """r9：r8 审查的 MEDIUM 1、MEDIUM 2 与 LOW。"""
+
+    def run_cli(self, *extra, env=None, runs=True, main_ref="HEAD~1"):
+        import os
+        a = ["--repo", str(self.d), "--main-ref", main_ref, "--count-gate", "--stats", *extra]
+        if runs is not None:
+            f = self.d / "runs.json"; f.write_text(json.dumps(self.runs)); a += ["--push-runs", str(f)]
+        e = {k: v for k, v in os.environ.items() if k != "GITHUB_ACTIONS"}
+        e.update(env or {})
+        return subprocess.run(["python3", str(self.script), *a], capture_output=True, text=True, env=e)
+
+    # MEDIUM 1：main 上还没有任何登记行、又没有运行记录时，PR 新增登记行不得得出有效计数
+    def test_M1_empty_main_no_push_runs_arg(self):
+        r1, r2, _ = self.grp()
+        self.commit(csv_of(r1, r2), "pr rows")           # main（HEAD~1）只有表头
+        p = self.run_cli(runs=None)                        # 未传 --push-runs
+        self.assertIn("W-BR-PUSH-TIME-UNAVAILABLE", p.stdout)
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("stats INVALID", p.stdout)
+        self.assertNotIn("gate_count 2", p.stdout)
+
+    def test_M1_empty_main_empty_run_list(self):
+        r1, r2, _ = self.grp()
+        self.commit(csv_of(r1, r2), "pr rows")
+        p = self.run_cli()                                 # 运行列表为空 []
+        self.assertIn("W-BR-PUSH-TIME-UNAVAILABLE", p.stdout)
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("stats INVALID", p.stdout)
+
+    def test_M1_trust_check_valid_false_without_runs(self):
+        r1, r2, _ = self.grp()
+        self.commit(csv_of(r1, r2), "pr rows")
+        rs, _ = B.parse(csv_of(r1, r2))
+        cb = cb_module()
+        for runs in (None, []):
+            _, warns, _, valid = cb.trust_check(str(self.d), rs, "HEAD~1", runs)
+            self.assertFalse(valid, runs); self.assertIn((0, "W-BR-PUSH-TIME-UNAVAILABLE"), warns)
+
+    # MEDIUM 2：作废行上的 E-BR-FIRST-ROW、E-BR-GROUP-LATE 不得降为警告
+    def test_M2_all_void_first_rows_fail(self):
+        r1, r2, _ = self.grp()
+        v1 = dict(r1, check_result="VOID", corrects_row_id=r1["row_id"], reason="x run:21")
+        v2 = dict(r2, check_result="VOID", corrects_row_id=r2["row_id"], reason="x run:21")
+        c = self.commit(csv_of(v1, v2), "void-only group"); self.push(c, "2026-10-13T00:00:00Z", 21)
+        p = self.run_cli(main_ref="HEAD")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertRegex(p.stdout, r"(?m)^line \d+: E-BR-FIRST-ROW$")
+        self.assertNotRegex(p.stdout, r"warn line \S+: E-BR-FIRST-ROW")
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("FAIL", p.stdout)
+
+    def test_M2_group_late_on_void_line_fails(self):
+        r1, r2, _ = self.grp()
+        c = self.commit(csv_of(r1, r2), "in time"); self.push(c, "2026-10-13T00:00:00Z", 22)
+        late3 = rid(dict(r1, branch_order="3", check_result="VOID", corrects_row_id=r1["row_id"], reason="x run:22"), 1)
+        self.commit(csv_of(r1, r2, late3), "late branch as VOID")
+        p = self.run_cli("--base", "HEAD~1", main_ref="HEAD~1")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertRegex(p.stdout, r"(?m)^(commit \S+ )?line \d+: E-BR-GROUP-LATE$")
+        self.assertNotRegex(p.stdout, r"warn line \S+: E-BR-GROUP-LATE")
+        self.assertRegex(p.stdout, r"(?m)^line \d+: E-BR-FIRST-ROW$")
+
+    def test_M2_downgrade_scope(self):
+        cb = cb_module()
+        for code in ("E-BR-FIRST-ROW", "E-BR-GROUP-LATE"):
+            self.assertFalse(cb.downgradable(code, True)); self.assertFalse(cb.downgradable(code, False))
+        for code in ("E-BR-ROW-ID", "E-BR-DUPLICATE", "E-BR-PRIVATE-TEXT:reason", "E-BR-REGISTERED-DATE"):
+            self.assertFalse(cb.downgradable(code, True), code)   # 作废行上的其他问题照常报错
+        for code in cb.VOID_CODES:
+            self.assertTrue(cb.downgradable(code, False), code)
+        self.assertTrue(cb.downgradable("E-BR-CORRECTS-TARGET", True))
+        self.assertFalse(cb.downgradable("E-BR-CORRECTS-TARGET", False))
+
+    # LOW：GitHub Actions 中输出 ::warning 与 ::notice；本机不输出
+    def test_LOW_actions_annotations(self):
+        r1, r2, _ = self.grp()
+        c = self.commit(csv_of(r1, r2), "old"); self.push(c, "2026-10-15T01:00:00Z", 31)   # 晚合并
+        p = self.run_cli(main_ref="HEAD", env={"GITHUB_ACTIONS": "true"})
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("PASS", p.stdout)
+        self.assertRegex(p.stdout, r"(?m)^::warning::ledger line \S+: W-BR-LATE-UNHANDLED$")
+        self.assertRegex(p.stdout, r"(?m)^::notice::门禁数仅为预估.*人工核对登记 PR 的合并时间")
+        local = self.run_cli(main_ref="HEAD")
+        self.assertNotIn("::warning::", local.stdout); self.assertNotIn("::notice::", local.stdout)
+
+    def test_LOW_actions_error_annotation(self):
+        self.commit(csv_of(row(trigger_condition="x > 100"), sibling(row())), "bad")
+        p = self.run_cli(main_ref="HEAD", env={"GITHUB_ACTIONS": "true"})
+        self.assertEqual(p.returncode, 1); self.assertIn("::error::ledger line", p.stdout)
+        self.assertIn("本次计数为 INVALID", p.stdout)
 
 
 if __name__ == "__main__":
