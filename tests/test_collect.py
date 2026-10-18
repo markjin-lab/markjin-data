@@ -230,8 +230,9 @@ class FetchT(unittest.TestCase):
         self.assertEqual(f2.opener.calls, [])
         f3, _ = mk({"https://a.org/x": Resp(200, b"ok"), "https://a.org/y": Resp(200, b"ok")},
                    state=collect.SourceHealth(p), round_id="2026-10-12/r2")
-        self.assertEqual(f3.get("https://a.org/x", sid="s1").error, "url_cooldown")   # 被拒 URL 下一轮仍在冷却
-        self.assertTrue(f3.get("https://a.org/y", sid="s1").ok)                      # 下一轮同主机别的 URL 照常
+        self.assertEqual(f3.get("https://a.org/x", sid="s3").error, "url_cooldown")   # 被拒 URL 下一轮仍在冷却（别的源也不请求）
+        self.assertEqual(f3.get("https://a.org/y", sid="s1").error, "source_blocked")  # 来源级冷却：s1 下一轮整源不请求
+        self.assertTrue(f3.get("https://a.org/y", sid="s3").ok)                      # 下一轮同主机别的 URL、别的源照常
 
     def test_challenge_page_disables(self):
         p = Path(tempfile.mkdtemp()) / "state.json"
@@ -1766,14 +1767,14 @@ class BlockRule1522(unittest.TestCase):
                                ("2026-10-13/r2", 24.1, None)):
             t[0] = 1_000_000.0 + dt_h * 3600
             f, _ = mk({"https://a.org/x": Resp(200, b"ok")}, state=hs(), round_id=rid)
-            r = f.get("https://a.org/x", sid="s")
+            r = f.get("https://a.org/x", sid="s2")                 # 别的源：只看 URL 冷却（来源级冷却另见 R15Fixes）
             self.assertEqual(r.error, exp, rid)
 
     def test_r14_5_backfill_r1_does_not_clear_r2_records(self):
         p = self.tmpdir() / "st.json"
         r2, r1 = "2026-10-12/r2", "2026-10-12/r1"
         mk({"https://a.org/A": Resp(403)}, state=collect.SourceHealth(p), round_id=r2)[0].get("https://a.org/A", sid="s")
-        mk({"https://b.org/B": Resp(403)}, state=collect.SourceHealth(p), round_id=r1)[0].get("https://b.org/B", sid="s")
+        mk({"https://b.org/B": Resp(403)}, state=collect.SourceHealth(p), round_id=r1)[0].get("https://b.org/B", sid="t")
         d = collect.SourceHealth(p).data
         self.assertEqual(sorted(d["urls"]), [r1, r2])                                   # 两轮的记录都在
         self.assertIn("a.org", d["host_stops"][r2])
@@ -1791,7 +1792,7 @@ class BlockRule1522(unittest.TestCase):
         self.assertIn(collect.url_key("https://a.org/p"), d["urls"][ROUND])             # 起点也写进持久状态
         self.assertIn(collect.url_key("https://b.org/q"), d["urls"][ROUND])
         f2, _ = mk({"https://a.org/p": Resp(200, b"ok")}, state=collect.SourceHealth(p), round_id="2026-10-12/r2")
-        self.assertEqual(f2.get("https://a.org/p", sid="s").error, "url_cooldown")      # 新进程、下一轮：起点直接不请求
+        self.assertEqual(f2.get("https://a.org/p", sid="s2").error, "url_cooldown")     # 新进程、下一轮：起点直接不请求
         self.assertEqual(f2.opener.calls, [])
 
     def test_r14_8_url_normalization(self):
@@ -1805,8 +1806,8 @@ class BlockRule1522(unittest.TestCase):
         mk({"https://a.org/x": Resp(403)}, state=collect.SourceHealth(p))[0].get("https://a.org/x", sid="s")
         f, _ = mk({"https://A.org:443/x": Resp(200, b"ok"), "https://a.org/x/": Resp(200, b"ok")},
                   state=collect.SourceHealth(p), round_id="2026-10-12/r2")
-        self.assertEqual(f.get("https://A.org:443/x#top", sid="s").error, "url_cooldown")   # 等价写法同样冷却
-        self.assertTrue(f.get("https://a.org/x/", sid="s").ok)                              # 尾斜杠是不同资源
+        self.assertEqual(f.get("https://A.org:443/x#top", sid="s2").error, "url_cooldown")  # 等价写法同样冷却
+        self.assertTrue(f.get("https://a.org/x/", sid="s2").ok)                             # 尾斜杠是不同资源
 
     def test_r14_4_same_url_two_processes_one_request(self):
         import multiprocessing as mp
@@ -2438,6 +2439,91 @@ class R15Fixes(unittest.TestCase):
             self.assertEqual(rec["status"], "ok" if pending_at is None else "pending-disable", pat)
             self.assertEqual(hs.report()[0]["window"], 5)
             self.assertEqual(len(hs.report()[0]["recent"]), min(5, len(pat)))
+
+    # ---- 补充（来源级冷却，待审查确认的口径）：来源有未到期 URL 冷却 → 下一轮整个来源不请求
+    def test_r15_source_level_cooldown_next_round_whole_source(self):
+        t = [2_000_000.0]
+        d = self.tmpdir()
+        hs = lambda: collect.SourceHealth(d / "st.json", clock=lambda: t[0])
+        routes = {"https://a.org/x": Resp(403), "https://b.org/other": Resp(200, b"ok"), "https://a.org/z": Resp(200, b"ok")}
+
+        def fx(rid):
+            return collect.Fetcher(hs(), opener=FakeOpener(routes), sleep=lambda w: None, clock=lambda: t[0],
+                                   resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=rid)
+        f = fx(ROUND)
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "http_403")
+        self.assertTrue(f.get("https://b.org/other", sid="s").ok)           # 触发的那一轮：别的主机照常（只停 a.org）
+        for rid, dt_h, blocked in (("2026-10-12/r2", 6, True), ("2026-10-13/r1", 23.9, True), ("2026-10-13/r2", 24.1, False)):
+            t[0] = 2_000_000.0 + dt_h * 3600
+            f = fx(rid)
+            r = f.get("https://b.org/other", sid="s")                       # 同一来源、别的主机、别的 URL
+            self.assertEqual(r.error, "source_blocked" if blocked else None, rid)
+            if blocked:
+                self.assertEqual(r.detail, "source cooldown:http_403")
+                self.assertEqual(f.opener.calls, [], rid)                   # 整个来源一个请求都不发（含 robots）
+            self.assertTrue(f.get("https://a.org/z", sid="t").ok, rid)      # 别的来源不受影响
+        st = collect.SourceHealth(d / "st.json", clock=lambda: 2_000_000.0 + 3600)   # 跨运行持久：新实例同样拦
+        self.assertEqual(st.blocked("s", "2026-10-12/r2"), "source cooldown:http_403")
+        self.assertIsNone(st.blocked("s", ROUND))
+        self.assertTrue(st.blocked("s"))                                    # 没有轮次上下文：保守拒绝
+
+    def test_r15_source_level_cooldown_capture_skips_source(self):
+        base = self.tmpdir()
+        B = BlockRule1522()
+        multi = [dict(B.S, id="feed", url="https://f.org/rss")]
+        B.run_round(base, "2026-10-12", 1, {"https://f.org/rss": Resp(403)}, sources=multi)
+        moved = [dict(B.S, id="feed", url="https://h.org/rss")]                # 同一来源换了地址，下一轮仍整源不请求
+        rc, err, calls = B.run_round(base, "2026-10-12", 2, {"https://h.org/rss": B.RSS}, sources=moved)
+        self.assertEqual(calls, [])
+        self.assertIn("SKIP feed source_blocked: source cooldown:http_403", err)
+        rc, err, calls = B.run_round(base, "2026-10-13", 2, {"https://h.org/rss": B.RSS}, sources=moved)   # 31 小时后
+        self.assertIn("https://h.org/rss", calls)
+
+    # ---- 补充：200 登录墙用结构特征判定（title / 密码框 / form action / 表单内文字），不做全文单词匹配
+    LOGIN = (b'<html><head><title>Sign in - Example</title></head><body><form method="post" action="/session">'
+             b'<label>Email</label><input name="u"><input type="password" name="p"><button>Continue</button></form></body></html>')
+    LOGIN_NO_TITLE = (b'<html><head><title>Example</title></head><body><form action="/users/sign_in" method="post">'
+                      b'<h2>Log in to continue</h2><input name="u"><input type="password" name="p">'
+                      b'<input type="submit" value="Log in"></form></body></html>')
+    SSO_STEP1 = (b'<html><head><title>Login | Portal</title></head><body><form action="https://accounts.example.com/sso">'
+                 b'<input name="email"><button>Next</button></form></body></html>')
+    FRED_LIKE = (b'<html><head><title>Federal Funds Effective Rate (FEDFUNDS) | FRED</title></head><body>'
+                 b'<div id="signin-wrap" class="signin"><a href="/login">Sign In</a> <a href="/register">Register</a></div>'
+                 b'<form action="/searchresults"><input name="st" placeholder="Search"></form>'
+                 b'<h1>Federal Funds Effective Rate</h1><p>' + b"Observation data and notes. " * 80 + b'</p></body></html>')
+    ARTICLE_SIDEBAR = (b'<html><head><title>Quarterly report on payrolls</title></head><body><article><p>'
+                       + b"Employment rose in most sectors this quarter. " * 60 + b'</p></article><aside>'
+                       b'<form action="/login"><label>Log in</label><input name="u"><input type="password" name="p">'
+                       b'<button>Sign in</button></form></aside></body></html>')
+    PASSWORD_ARTICLE = (b'<html><head><title>How to choose a strong password</title></head><body><p>'
+                        + b"Use a long passphrase. " * 50 + b'</p></body></html>')
+
+    def test_r15_login_wall_structural_features(self):
+        H = "text/html"
+        for name in ("LOGIN", "LOGIN_NO_TITLE", "SSO_STEP1"):
+            self.assertTrue(collect.login_page(H, getattr(self, name), "https://a.org/p"), name)
+        for name in ("FRED_LIKE", "ARTICLE_SIDEBAR", "PASSWORD_ARTICLE"):
+            self.assertFalse(collect.login_page(H, getattr(self, name), "https://a.org/p"), name)
+        self.assertFalse(collect.login_page("application/json", b'{"title":"Sign in","password":1}'))
+        self.assertFalse(collect.login_page(H, b"<title>Sign in</title><p>no form here</p>"))      # 没有 form 不算
+        for st in (200, 404, 500):
+            self.assertEqual(collect.Fetcher._classify(st, {"Content-Type": H}, self.LOGIN, "https://a.org/p"), "login_wall", st)
+        self.assertIsNone(collect.Fetcher._classify(200, {"Content-Type": H}, self.FRED_LIKE, "https://a.org/p"))
+
+    def test_r15_200_login_wall_stops_host_and_cools_url(self):
+        d = self.tmpdir()
+        st = collect.SourceHealth(d / "st.json")
+        f = self.fetcher(d, {"https://a.org/data": Resp(200, self.LOGIN, {"Content-Type": "text/html"}),
+                             "https://a.org/other": Resp(200, b"ok"),
+                             "https://b.org/fred": Resp(200, self.FRED_LIKE, {"Content-Type": "text/html"})}, state=st)
+        r = f.get("https://a.org/data", sid="s")
+        self.assertEqual(r.error, "login_wall")
+        self.assertFalse(r.body)                                             # 登录页正文不交给调用方
+        stops = collect.SourceHealth(d / "st.json").data["host_stops"][ROUND]
+        self.assertEqual({h: v["reason"] for h, v in stops.items()}, {"a.org": "login_wall"})   # 主机本轮停止（持久）
+        self.assertEqual(f.get("https://a.org/other", sid="t").error, "host_stopped_this_round")
+        self.assertTrue(collect.SourceHealth(d / "st.json").url_cooling("https://a.org/data", time.time() + 23 * 3600))
+        self.assertTrue(f.get("https://b.org/fred", sid="t").ok)             # FRED 式页面（id="signin-wrap"）不误伤
 
 
 if __name__ == "__main__":

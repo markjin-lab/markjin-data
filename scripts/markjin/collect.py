@@ -319,23 +319,93 @@ def classify_page(ctype, body, headers=None, url=None):
     return "phrase" if (v == "suspect" or phrase_hit(body)) else None
 
 
-# r15（#60）HIGH：返回 200（或其他非跳转状态）、不跳转的登录页也是登录墙。证据须同时满足（收紧，防误判普通文章）：
-# HTML 形态；<title> 以登录字样为主（Sign in / Log in / Login / Sign on / 登录 / 登入）；页面里有 <form> 且有密码输入框。
-_LOGIN_TITLE = re.compile(r"(?:^|[\s|:\-\u2013\u2014\u00b7,(\[])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on)(?:$|[\s|:\-\u2013\u2014\u00b7!.,)\]])"
-                          r"|登录|登入|ログイン", re.I)
-_PASSWORD_INPUT = re.compile(rb"<input\b[^>]*\btype\s*=\s*[\"']?password\b", re.I)
-_FORM_TAG = re.compile(rb"<form\b", re.I)
-LOGIN_TITLE_MAX = 120
+# 不跳转的登录墙（任何非 3xx 状态，含 200）：只看结构特征，不对全文做单词匹配（FRED 等正常页面有 id="signin-wrap"
+# 之类的属性或页眉「Sign in」链接，不能误伤）。特征：
+#   T  <title> 含 sign in / log in / login / password（或 登录 / 登入）
+#   P  <form> 里有密码输入框 <input type=password>
+#   A  某个 <form> 的 action 指向登录路径（is_login_url：/login、/signin、/auth、/sso… 或 login./accounts. 主机）
+#   F  <form> 内可见文字（含 label、button、submit 的 value）含上述登录词
+# 判定：P 且 T；或 T 且 A；或 P 且 A 且 F 且表单外可见文字很短（≤ LOGIN_OUTSIDE_MAX，整页基本就是登录表单）。
+# 侧栏 / 页眉里带登录框的普通文章（标题不是登录、正文很长）不算。
+_LOGIN_WORDS = re.compile(r"(?<![a-z])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on|password)(?![a-z])|登录|登入|ログイン", re.I)
+LOGIN_OUTSIDE_MAX = 600
 
 
-def login_page(ctype, body):
-    """不跳转的登录页：HTML、标题是登录字样（标题不超过 LOGIN_TITLE_MAX 字符）、含 <form> 与密码输入框。"""
+def _login_features(text, base=None):
+    from html.parser import HTMLParser
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.title, self.in_title, self.skip, self.form = [], False, 0, 0
+            self.pw = self.action = self.has_form = False
+            self.form_text, self.outside = [], 0
+
+        def handle_starttag(self, tag, attrs):
+            a = {}
+            for k, v in attrs:
+                a.setdefault(k, v or "")
+            if tag == "title":
+                self.in_title = True
+            elif tag in ("script", "style", "noscript", "template"):
+                self.skip += 1
+            elif tag == "form":
+                self.form += 1; self.has_form = True
+                act = a.get("action", "").strip()
+                if act:
+                    try:
+                        full = urljoin(base, act) if base else act
+                        self.action = self.action or is_login_url(full if urlsplit(full).scheme else "https://x" + (
+                            full if full.startswith("/") else "/" + full))
+                    except ValueError:
+                        pass
+            elif tag == "input" and self.form:
+                typ = a.get("type", "").strip().lower()
+                if typ == "password":
+                    self.pw = True
+                if typ in ("submit", "button") and a.get("value"):
+                    self.form_text.append(a["value"])
+
+        def handle_startendtag(self, tag, attrs):
+            self.handle_starttag(tag, attrs)
+
+        def handle_endtag(self, tag):
+            if tag == "title":
+                self.in_title = False
+            elif tag in ("script", "style", "noscript", "template") and self.skip:
+                self.skip -= 1
+            elif tag == "form" and self.form:
+                self.form -= 1
+
+        def handle_data(self, d):
+            if self.in_title:
+                self.title.append(d)
+            elif self.skip:
+                return
+            elif self.form:
+                self.form_text.append(d)
+            else:
+                self.outside += len(" ".join(d.split()))
+    p = P()
+    try:
+        p.feed(text); p.close()
+    except Exception:
+        pass
+    title = " ".join("".join(p.title).split())
+    return {"T": bool(title) and len(title) <= 160 and bool(_LOGIN_WORDS.search(title)), "P": p.pw, "A": p.action,
+            "F": bool(_LOGIN_WORDS.search(" ".join(p.form_text))), "form": p.has_form, "outside": p.outside}
+
+
+def login_page(ctype, body, url=None):
+    """不跳转的登录页（结构特征，见上）。只判 HTML 形态。"""
     if not body or not htmlish(ctype, body):
         return False
-    head = body[:200000] if isinstance(body, bytes) else body[:200000].encode("utf-8", "replace")
-    title, _ = visible_text(head)
-    return bool(title) and len(title) <= LOGIN_TITLE_MAX and bool(_LOGIN_TITLE.search(title)) and \
-        bool(_FORM_TAG.search(head)) and bool(_PASSWORD_INPUT.search(head))
+    t = body[:200000].decode("utf-8", "replace") if isinstance(body, bytes) else body[:200000]
+    f = _login_features(t, url)
+    if not f["form"]:
+        return False
+    return (f["P"] and f["T"]) or (f["T"] and f["A"]) or \
+        (f["P"] and f["A"] and f["F"] and f["outside"] <= LOGIN_OUTSIDE_MAX)
 
 
 def is_challenge(body, ctype="", headers=None, url=None):
@@ -709,6 +779,7 @@ def ext_for(ctype, body):
 # 15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。现行细则：
 #  1. 单次可疑（401/403、429、验证页、登录墙；robots.txt 同样）→ 该主机本轮全部停止（跨进程、跨源生效），429 不重试。
 #  2. 被拒的 URL（含跳转起点）至少冷却 COOLDOWN_SECONDS（24 小时）；失败记录按轮次分别保存，补跑旧轮不清新轮的记录。
+#     来源级扩展（补充口径，待审查确认）：来源只要还有未到期的 URL 冷却，从下一轮起整个来源都不请求（source cooldown）。
 #     本轮停止的只是返回可疑响应的那一跳的主机；跳转起点只冷却该 URL，起点主机不停（r15 ⑤）。
 #  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
@@ -1003,11 +1074,24 @@ class SourceHealth:
         if bad:
             return f"source health invalid ({bad}); refusing requests"
         rec = self.data["sources"].get(sid) if sid else None
-        if not rec or rec["status"] == "ok":
+        if rec and rec["status"] != "ok" and not (rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]):
+            return f"source {status_code(rec)}"          # r15 ⑦：只写固定代码，不写 status_reason 原文
+        return self.source_cooling(sid, rid)             # 触发 pending 的那一轮照常跑完（但仍受来源冷却约束）
+
+    def source_cooling(self, sid, rid, now=None):
+        """来源级冷却（补充口径，待审查确认）：该来源在别的轮次被拒、且仍有未到期（≥24 小时）的 URL 冷却记录 →
+        下一轮起整个来源都不请求（不只那个 URL），直到最晚的那条记录到期。触发的那一轮不受此限（同主机已按规则 1 停止）；
+        没有轮次上下文时保守拒绝。只看持久状态（跨运行生效）。返回固定代码或 None。"""
+        if not sid:
             return None
-        if rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]:
-            return None                                    # 触发 pending 的那一轮照常跑完
-        return f"source {status_code(rec)}"              # r15 ⑦：只写固定代码，不写 status_reason 原文
+        t = self.clock() if now is None else now
+        for r in sorted(self.data["urls"], reverse=True):
+            if r == rid:
+                continue
+            for u in self.data["urls"][r].values():
+                if u["sid"] == sid and u["until"] > t:
+                    return f"source cooldown:{public_code(u['reason'])}"
+        return None
 
     def host_blocked(self, host):
         """旧表迁移来的停用主机（或状态文件损坏）→ 拒绝原因；否则 None。对这些主机不发任何请求（含 robots.txt）。"""
@@ -1554,7 +1638,7 @@ class Fetcher:
     @staticmethod
     def _classify(st, h, body, url, robots=False):
         """可疑分类：401/403/429 先按状态码；再看验证页（vendor / phrase，任何状态含 200）；跳转到登录页，或不跳转的
-        登录页（登录标题 + 密码表单，含 200）→ login_wall。"""
+        登录页（结构特征，见 login_page，含 200）→ login_wall。"""
         pre = "robots_" if robots else ""
         if st in (401, 403, 429):
             return f"{pre}http_{st}"
@@ -1565,8 +1649,8 @@ class Fetcher:
             return f"{pre}suspected_challenge"
         if st in REDIRECT_CODES and (h or {}).get("Location") and is_login_url(urljoin(url, h["Location"])):
             return f"{pre}login_wall"
-        if st not in REDIRECT_CODES and login_page((h or {}).get("Content-Type") or "", body):
-            return f"{pre}login_wall"          # 200 不跳转的登录页（登录标题 + 密码表单）同样是登录墙
+        if st not in REDIRECT_CODES and login_page((h or {}).get("Content-Type") or "", body, url):
+            return f"{pre}login_wall"          # 不跳转的登录页（含 200）：结构特征命中同样是登录墙
         return None
 
     # -- robots.txt（每个 scheme://host 一份；robots 自身请求同样限速、同样受主机停止与 URL 冷却约束）
