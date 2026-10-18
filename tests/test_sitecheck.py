@@ -654,6 +654,27 @@ class R3FormatTest(unittest.TestCase):
         bare = head + "导语。\n\n## 更正 2026-10-17\n"
         self.assertFalse(S.format_migration_only(bare, new, False))
 
+    def test_setext_heading_ends_section(self):
+        b = "## 更正\n\n其他说明\n---\n**2026-10-18**：说明。\n"
+        self.assertFalse(R.correction_heading_ok(b, "2026-10-18", en=False))
+        self.assertEqual(R.correction_section(b, False), (1, []))
+        b2 = "## 更正\n\n**2026-10-18**：说明。\n\n---\n\n本文不含投资建议。\n"       # 空行后的 --- 是分隔线，不是标题
+        self.assertTrue(R.correction_heading_ok(b2, "2026-10-18", en=False))
+
+    def test_r7_entry_like_boundaries(self):
+        for ok in ("**2026-10-18**以来，数据持续上升。", "**2026-10-18**，数据持续上升。", "**2026年10月以来**，数据持续上升。",
+                   "2026-10-18 的数据仍待核。", "2026年10月以来，数据持续上升。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n\n" + ok + "\n"
+            self.assertTrue(R.correction_heading_ok(b, "2026-10-17", en=False), ok)
+        for bad in ("**2026-10**：漏写日。", "**2026年10月**：漏写日。", "- [ ] **2026-10-18**：遗漏。", "**2026-10-18*：畸形。", "**2026-10-18**"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n"
+            self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), bad)
+
+    def test_unchanged_code_sample_keeps_migration(self):
+        for sample in ("## 更正", "*更正说明（2026-10-18）：样本。*"):
+            tail = "\n```\n" + sample + "\n```\n"
+            self.assertTrue(S.format_migration_only(OLD_SEC + tail, NEW_SEC + tail, False), sample)
+
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
         old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")
@@ -712,6 +733,33 @@ class R3CheckTest(unittest.TestCase):
         self.s.write(P, head + "导语。\n\n## 更正 2026-10-17：修正一处错字。\n"); base = self.s.commit("base")
         self.s.write(P, head + "导语。\n\n## 更正\n\n**2026-10-17**：修正一处错字。\n")
         self.assertEqual(self.check(base)[P], [])
+
+    def test_setext_section_end_via_check(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n\n其他说明\n---\n**2026-10-18**：导语改标点。\n"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_unchanged_code_sample_migration_via_check(self):
+        tail = "\n```\n## 更正\n```\n"
+        self.s.write(P, OLD_SEC + tail); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC + tail)
+        self.assertEqual(self.check(base)[P], [])
+
+    def test_hugo_version_from_yaml_not_comment(self):
+        self.s.write(".github/workflows/hugo.yml", f"# HUGO_VERSION: 0.1.0\njobs:\n  build:\n    env: {{HUGO_VERSION: {HUGO_VER}}}\n")
+        ref = self.s.commit("wf")
+        self.assertEqual(S.required_hugo_version(str(self.s.d), ref), HUGO_VER)
+        self.s.write(".github/workflows/hugo.yml", f"# HUGO_VERSION: {HUGO_VER}\njobs:\n  build:\n    env: {{HUGO_VERSION: 0.1.0}}\n")
+        ref = self.s.commit("wf2")
+        self.assertEqual(S.required_hugo_version(str(self.s.d), ref), "0.1.0")
+
+    def test_head_changes_hugo_version_fails_closed(self):
+        self.s.write(P, ORIG); base = self.s.commit("base")
+        self.s.write(".github/workflows/hugo.yml", "jobs:\n  build:\n    env: {HUGO_VERSION: 9.9.9}\n")
+        head = self.s.commit("bump")
+        with self.assertRaises(S.SiteInputError):
+            S.check_range(str(self.s.d), base, head, today=TODAY, clock=CLOCK)
 
     def test_old_format_unrelated_dated_heading_same_day(self):
         self.s.write(P, corr()); base = self.s.commit("base")

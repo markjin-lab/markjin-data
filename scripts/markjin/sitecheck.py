@@ -35,6 +35,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import uuid
 from collections import Counter
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
@@ -43,7 +44,6 @@ from . import route as R
 
 SITE_PAGE_ROOTS = (R.SITE_CONTENT + "/", R.SITE_CARDS + "/")
 DEPLOY_WORKFLOW = ".github/workflows/hugo.yml"
-_HUGO_VERSION_RE = re.compile(r"HUGO_VERSION\s*:\s*['\"]?v?(\d+\.\d+\.\d+)")
 _HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]")
 
 
@@ -124,12 +124,34 @@ def changed_pages(repo, base, head):
 
 
 def required_hugo_version(repo, ref):
-    """站点部署工作流（.github/workflows/hugo.yml）里的 HUGO_VERSION；缺失或读不出 → E-SITE-INPUT（PR #52 r2 LOW 6）。"""
+    """站点部署工作流（.github/workflows/hugo.yml）按 YAML 解析出的 jobs.build.env.HUGO_VERSION（没有则取顶层 env.HUGO_VERSION）；
+    注释里的同形文字不算。缺失或读不出 → E-SITE-INPUT（PR #52 r2 LOW 6、r7 MEDIUM 4）。"""
+    import yaml
     r = R._git(repo, "show", f"{ref}:{DEPLOY_WORKFLOW}")
-    m = _HUGO_VERSION_RE.search(r.stdout) if r.returncode == 0 else None
+    version = None
+    try:
+        wf = yaml.safe_load(r.stdout) if r.returncode == 0 else None
+        if isinstance(wf, dict):
+            job_env = ((wf.get("jobs") or {}).get("build") or {}).get("env") or {}
+            top_env = wf.get("env") or {}
+            version = job_env.get("HUGO_VERSION") if isinstance(job_env, dict) and "HUGO_VERSION" in job_env \
+                else (top_env.get("HUGO_VERSION") if isinstance(top_env, dict) else None)
+    except (yaml.YAMLError, AttributeError, TypeError):
+        version = None
+    m = re.fullmatch(r"v?(\d+\.\d+\.\d+)", version) if isinstance(version, str) else None
     if not m:
         raise SiteInputError("E-SITE-INPUT: 无法从站点部署工作流确定 Hugo 版本")
     return m.group(1)
+
+
+def _visible_candidate_indices(lines, indices):
+    """indices 里渲染后可见的那些行号（代码块、注释、隐藏元素里的不算；PR #52 r7 MEDIUM 2）。"""
+    token = uuid.uuid4().hex
+    probe = list(lines)
+    for i in indices:
+        probe[i] += f"\ue000{token}:{i}\ue001"
+    shown = R.visible_text("\n".join(probe), body_only=True)
+    return [i for i in indices if f"\ue000{token}:{i}\ue001" in shown]
 
 
 def check_hugo(want):
@@ -212,7 +234,7 @@ def format_migration_only(old, new, en):
     if not mo or not mn or mo.group(0) != mn.group(0):
         return False
     ol, nl = old[mo.end():].split("\n"), new[mn.end():].split("\n")
-    oidx = [i for i, ln in enumerate(ol) if _OLD_NOTE_RE[en].match(ln) or _OLD_HEAD_RE[en].match(ln)]
+    oidx = _visible_candidate_indices(ol, [i for i, ln in enumerate(ol) if _OLD_NOTE_RE[en].match(ln) or _OLD_HEAD_RE[en].match(ln)])
     if not oidx:
         return False
     o0, o1 = oidx[0], oidx[-1]
@@ -241,7 +263,7 @@ def format_migration_only(old, new, en):
         else:
             notes.append((d, expl))
     notes.sort()
-    hidx = [i for i, ln in enumerate(nl) if ln == _NEW_HEAD[en]]
+    hidx = _visible_candidate_indices(nl, [i for i, ln in enumerate(nl) if ln == _NEW_HEAD[en]])
     if len(hidx) != 1:
         return False
     n0, eidx, j = hidx[0], [], hidx[0] + 1
@@ -355,7 +377,10 @@ def check_range(repo, base, head, today=None, clock=None):
     # 任何文件有改动就构建两版并比较全部已发布页面：只改 _index.md 的 cascade、配置或模板也可能让已发布页面消失（PR #52 r2 HIGH 1）
     changed_any = bool(_git_ok(repo, "diff", "--name-only", mb, head_sha, text=False).strip())
     if changed_any:
-        exe = check_hugo(required_hugo_version(repo, mb))   # 两版都用 base（已部署）那一版的 Hugo 版本构建
+        want = required_hugo_version(repo, mb)
+        if required_hugo_version(repo, head_sha) != want:     # PR 改部署 Hugo 版本：失败关闭，另行验证升级（PR #52 r7 MEDIUM 4）
+            raise SiteInputError("E-SITE-INPUT: PR 更改了站点部署的 Hugo 版本，须另行验证两版构建")
+        exe = check_hugo(want)                              # 两版都用 base（已部署）那一版的 Hugo 版本构建
         base_pages = rendered_pages(repo, mb, clock, exe)
         # head 上改动页面的 front matter 先解析：有解析失败的，Hugo 也构建不了，直接按 E-ROUTE-FRONT-MATTER 报，
         # 不再构建 head（此时结果必为不通过，其余页面不做“是否仍生成”的比较）。

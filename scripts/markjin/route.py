@@ -572,6 +572,13 @@ CORRECTION_HEADING = {False: "更正", True: "Corrections"}
 CORRECTION_ENTRY_RE = {False: re.compile(r"^\*\*(\d{4}-\d{2}-\d{2})\*\*：[ \t]*(\S.*)$"),
                        True: re.compile(r"^\*\*(\d{4}-\d{2}-\d{2})\*\*:[ \t]+(\S.*)$")}
 _HEADING_LINE_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]")
+_SETEXT_RE = re.compile(r"^[ ]{0,3}(?:=+|-+)[ \t]*$")
+
+
+def _setext_title(lines, i):
+    """lines[i] 是 Setext 标题的文字行（下一行是 ===/---）→ True。更正区遇到它就结束（PR #52 r7 MEDIUM 1）。"""
+    return bool(i + 1 < len(lines) and lines[i].strip() and not _HEADING_LINE_RE.match(lines[i])
+                and not _SETEXT_RE.fullmatch(lines[i]) and _SETEXT_RE.fullmatch(lines[i + 1]))
 _HEADING_PARTS_RE = re.compile(r"^[ ]{0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
 
 
@@ -581,7 +588,13 @@ def correction_section(body, en=None):
     en=None 时中英两种写法都认；en=True/False 只认对应语言。"""
     langs = (False, True) if en is None else (bool(en),)
     heads, entries, inside = 0, [], None
-    for ln in visible_text(body, body_only=True).splitlines():
+    lines = visible_text(body, body_only=True).splitlines()
+    for i, ln in enumerate(lines):
+        if _setext_title(lines, i):
+            inside = None
+            continue
+        if i and _setext_title(lines, i - 1):
+            continue
         if _HEADING_LINE_RE.match(ln):
             inside = None
             m = _HEADING_PARTS_RE.match(_heading_shown(ln))
@@ -604,14 +617,15 @@ _OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?
 # 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：…，以及前面带列表、引用符号的写法），都要过严格
 # 条目校验；「2026年之后…」「* 1. 免责声明」这类普通文字不算（PR #52 r3 MEDIUM 4、r4 MEDIUM 1）
 # r5：任务列表前缀也算；不加粗的日期只有紧跟 ** 或冒号时才算（「2026-10-18 的数据仍待核。」这类叙述不算，PR #52 r5 MEDIUM 1）
-# r6：加粗的也须是完整年月日形态才算（「**2026年10月以来**，…」这类叙述不算，PR #52 r6 MEDIUM 3）
+# r7：加粗日期后紧跟冒号或行尾、或不加粗日期后紧跟冒号才算条目形态；缺日的年月（**2026-10**：、**2026年10月**：）也算；
+# 「**2026-10-18**以来，…」「**2026-10-18**，…」这类叙述不算（PR #52 r5–r7）
 _ENTRY_LIKE_RE = re.compile(
     r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)*"
     r"(?:\*{1,2}[ \t]*\d{4}"
-    r"(?:[-/.]\d{1,2}[-/.]\d{1,2}|年\d{1,2}月\d{1,2}日?)"
-    r"(?:\*{1,2}|[ \t]*[：:]|$)"
-    r"|\d{4}(?:[-/.]\d{1,2}[-/.]\d{1,2}|年\d{1,2}月\d{1,2}日?)"
-    r"(?:\*{1,2}|[ \t]*[：:]))"
+    r"(?:[-/.]\d{1,2}(?:[-/.]\d{1,2})?|年\d{1,2}月(?:\d{1,2}日?)?)"
+    r"(?:\*{1,2}[ \t]*(?:[：:]|$)|[ \t]*[：:]|$)"
+    r"|\d{4}(?:[-/.]\d{1,2}(?:[-/.]\d{1,2})?|年\d{1,2}月(?:\d{1,2}日?)?)"
+    r"(?:\*{1,2}[ \t]*[：:]|[ \t]*[：:]))"
 )
 
 
@@ -627,9 +641,15 @@ def old_correction_heading_dates(body):
 
 
 def _section_malformed(body):
-    """新格式更正区里任何以「**YYYY-MM-DD**」开头、却不合本区语言条目格式或日期不是真实日期的行 → True（PR #52 r2 MEDIUM 2）。"""
+    """新格式更正区里任何形如日期条目（_ENTRY_LIKE_RE）、却不合本区语言条目格式或日期不是真实日期的行 → True（PR #52 r2 MEDIUM 2）。"""
     lang = None
-    for ln in visible_text(body, body_only=True).splitlines():
+    lines = visible_text(body, body_only=True).splitlines()
+    for i, ln in enumerate(lines):
+        if _setext_title(lines, i):
+            lang = None
+            continue
+        if i and _setext_title(lines, i - 1):
+            continue
         if _HEADING_LINE_RE.match(ln):
             m = _HEADING_PARTS_RE.match(_heading_shown(ln))
             lang = next((lg for lg in (False, True)
@@ -644,7 +664,7 @@ def _section_malformed(body):
 def correction_heading_ok(body, corrected_at, en=None):
     """E-ROUTE-CORRECTION-NOTE 的判断，route_pr（数据仓库稿件）与 sitecheck（站点 PR 的 content/ 页面）共用。
     新格式（Issue #71）：全页（不分语言）恰好一个「## 更正」/「## Corrections」标题，且是本稿语言的那个；不得同时有旧格式
-    带日期的更正标题；更正区里以「**YYYY-MM-DD**」开头的行都须是本语言的合法条目、日期真实；条目按日期升序，且有日期等于
+    带日期的更正标题；更正区（ATX 或 Setext 标题为界）里形如日期条目的行（_ENTRY_LIKE_RE）都须是本语言的合法条目、日期真实；条目按日期升序，且有日期等于
     corrected_at 的条目。出现了新格式标题就按新格式判（不能新旧混用来凑）。
     过渡期旧格式（整体验收 r2/r3/r6）：有渲染后可见的旧格式更正标题「## 更正 YYYY-MM-DD…」/「## Correction YYYY-MM-DD…」，
     其日期等于 corrected_at；带日期的其他标题不算（PR #52 r3 MEDIUM 3）。"""
