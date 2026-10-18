@@ -622,16 +622,15 @@ _OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?
 # 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：…，以及前面带列表、引用符号的写法），都要过严格
 # 条目校验；「2026年之后…」「* 1. 免责声明」这类普通文字不算（PR #52 r3 MEDIUM 4、r4 MEDIUM 1）
 # r5：任务列表前缀也算；不加粗的日期只有紧跟 ** 或冒号时才算（「2026-10-18 的数据仍待核。」这类叙述不算，PR #52 r5 MEDIUM 1）
-# r8：日期各段位数放宽（**2026-10-018**、**2026-10-18-1** 也算条目形态，交给严格条目正则判畸形）；
-# r7：加粗日期后紧跟冒号或行尾、或不加粗日期后紧跟冒号才算条目形态；缺日的年月（**2026-10**：、**2026年10月**：）也算；
-# 「**2026-10-18**以来，…」「**2026-10-18**，…」这类叙述不算（PR #52 r5–r7）
+# r9：宽松识别疑似日期条目：年份后跟 -/. 或「年」的任何非空白、非冒号、非 * 后缀都算形态（**2026-10-18-1-2**、**2026-10-18x**、
+# **2026-10-018**、**2026-10**、**2026年10月** 等），严格验收仍由 CORRECTION_ENTRY_RE 做；加粗日期后须紧跟冒号或行尾、
+# 不加粗日期后须紧跟冒号才算，「**2026-10-18**以来，…」这类叙述不算（PR #52 r5–r9）
+_DATE_SHAPE = r"\d{4}(?:[-/.]\d+|年\d+月?)[^*：:\s]*"
 _ENTRY_LIKE_RE = re.compile(
     r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)*"
-    r"(?:\*{1,2}[ \t]*\d{4}"
-    r"(?:[-/.]\d+(?:[-/.]\d+){0,2}|年\d+月(?:\d+日?)?)"
+    rf"(?:\*{{1,2}}[ \t]*{_DATE_SHAPE}"
     r"(?:\*{1,2}[ \t]*(?:[：:]|$)|[ \t]*[：:]|$)"
-    r"|\d{4}(?:[-/.]\d+(?:[-/.]\d+){0,2}|年\d+月(?:\d+日?)?)"
-    r"(?:\*{1,2}[ \t]*[：:]|[ \t]*[：:]))"
+    rf"|{_DATE_SHAPE}(?:\*{{1,2}}[ \t]*[：:]|[ \t]*[：:]))"
 )
 
 
@@ -646,13 +645,27 @@ def old_correction_heading_dates(body):
     return out
 
 
+_CONTAINER_RE = re.compile(r"^[ ]{0,3}(?:[-+*]|\d{1,9}[.)]|>)(?:[ \t]|$)")
+
+
 def _section_malformed(body):
     """新格式更正区里任何形如日期条目（_ENTRY_LIKE_RE）、却不合本区语言条目格式或日期不是真实日期的行 → True（PR #52 r2 MEDIUM 2）。"""
     lang = None
     lines = visible_text(body, body_only=True, correction_syntax=True).splitlines()
+    indented_code = in_container = False
     for i, ln in enumerate(lines):
+        if not ln.strip():
+            continue
+        # 缩进代码块（空行后、或接续缩进代码的 4 空格/Tab 缩进行）不是条目；列表、引用之后的缩进行可能是其续行，照常校验
+        # （PR #52 r9 MEDIUM 3）
+        if ln.startswith(("    ", "\t")) and not in_container and (indented_code or i == 0 or not lines[i - 1].strip()):
+            indented_code = True
+            continue
+        indented_code = False
+        in_container = bool(_CONTAINER_RE.match(ln))
         if _setext_title(lines, i):
             lang = None
+            in_container = False
             continue
         if i and _setext_title(lines, i - 1):
             continue
@@ -847,9 +860,29 @@ def visible_text(text, *, body_only=False, correction_syntax=False):
         except FrontMatterError:
             m = _FM_RE.match(text)                    # 解析失败的稿件在 _route_one 已判失败；这里只为诊断
             body = text[m.end():] if m else text
-    return _hide_html(_FENCE_RE.sub("", _COMMENT_RE.sub("", body)), correction_syntax=correction_syntax)
+    if not correction_syntax:
+        return _hide_html(_FENCE_RE.sub("", _COMMENT_RE.sub("", body)))
+    # 读更正区语法时：注释与围栏换成等量空行（保持行号），去掉隐藏元素后，再把 CommonMark HTML 块（以行首 HTML 标签开头，
+    # 到下一个空行为止）整段清空——其中的「## 更正」、条目都不是 Markdown（PR #52 r8 MEDIUM 1、r9 MEDIUM 1）。
+    # 行数对不上（标签跨行等）时返回空串，失败关闭。
+    keep_nl = lambda m: "\n" * m.group(0).count("\n")
+    prepped = _FENCE_RE.sub(keep_nl, _COMMENT_RE.sub(keep_nl, body))
+    raw = prepped.split("\n")
+    shown = _hide_html(prepped, correction_syntax=True).split("\n")
+    if len(shown) != len(raw):
+        return ""
+    in_block = False
+    for i, ln in enumerate(raw):
+        if not ln.strip():
+            in_block = False
+            continue
+        if in_block or _HTML_BLOCK_START_RE.match(ln):
+            in_block = True
+            shown[i] = ""
+    return "\n".join(shown)
 
 
+_HTML_BLOCK_START_RE = re.compile(r"^[ ]{0,3}</?[A-Za-z][A-Za-z0-9-]*(?:[ \t/>]|$)")
 _VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
 

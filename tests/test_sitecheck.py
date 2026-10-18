@@ -693,6 +693,25 @@ class R3FormatTest(unittest.TestCase):
             self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), bad)
         self.assertTrue(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n\n**2026-10-18**以来，数据上升。\n", "2026-10-17", en=False))
 
+    def test_html_block_boundaries(self):
+        f = lambda b: R.correction_heading_ok(b, "2026-10-17", en=False)
+        self.assertFalse(f("<div>\n</div>\n## 更正\n\n**2026-10-17**：伪。\n"))
+        self.assertFalse(f("<span>## 更正</span>\n\n**2026-10-17**：伪。\n"))
+        self.assertTrue(f("<div>x</div>\n\n## 更正\n\n**2026-10-17**：真。\n"))
+        self.assertTrue(f("## <span>更正</span>\n\n**2026-10-17**：真。\n"))
+        self.assertFalse(f("<div hidden>\n\n## 更正\n\n**2026-10-17**：隐藏。\n\n</div>\n"))
+
+    def test_r9_date_shapes_malformed(self):
+        for bad in ("**2026-10-18-1-2**：畸形。", "**2026-10-18x**：畸形。"):
+            self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n", "2026-10-17", en=False), bad)
+        self.assertTrue(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n\n**2026-10-18**以来，数据上升。\n", "2026-10-17", en=False))
+
+    def test_indented_code_dates_not_entries(self):
+        for code in ("    **2026-10-17**：代码示例。", "\t**2026-10-17**：代码示例。", "    **2026-10-018**：代码。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n\n" + code + "\n"
+            self.assertTrue(R.correction_heading_ok(b, "2026-10-17", en=False), code)
+        self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n\n- 列表\n\n    **2026-10-018**：畸形。\n", "2026-10-17", en=False))
+
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
         old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")
@@ -796,6 +815,21 @@ class R3CheckTest(unittest.TestCase):
         self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
                      .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n**2026-10-018**：畸形。\n"))
         self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_html_block_tail_heading_via_check(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        self.s.write(P, NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("## 更正\n\n**2026-10-16**", "<div>\n</div>\n## 更正\n\n**2026-10-16**")
+                     .replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_r9_malformed_and_indented_via_check(self):
+        self.s.write(P, NEW_SEC); base = self.s.commit("base")
+        good = NEW_SEC.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+        self.s.write(P, good.replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n**2026-10-18x**：畸形。\n"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+        self.s.write(P, good.replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：导语改标点。\n\n    **2026-10-17**：代码示例。\n"))
+        self.assertEqual(self.check(base)[P], [])
 
     def test_old_format_unrelated_dated_heading_same_day(self):
         self.s.write(P, corr()); base = self.s.commit("base")
