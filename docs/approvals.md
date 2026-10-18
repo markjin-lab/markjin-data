@@ -354,7 +354,7 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
 ### 其他
 
 - **可见性（BLOCKER）**：`route.visible_text` 先去注释与围栏代码块，再用 HTML 解析器（`html.parser`）按整篇正文追踪隐藏范围：hidden、aria-hidden="true"、style、class 属性的元素及 template/script/style/noscript 等不渲染元素，其整个子树（可跨多行）不算可见；未闭合的隐藏元素隐藏到文末。免责声明与更正标题日期只在可见文本里认。日报与更正稿均有经 `route_pr` 的测试。
-- **数字核对范围**：只在被引用的那一条（arXiv/X 条目 id 及版本；FRED 按 series_id 绑定的单一系列文件）里核对。
+- **数字核对范围**：只在被引用的那一条（arXiv/X 条目 id 及版本；FRED 按 series_id 绑定的单一系列文件）里核对。（FRED 已于 2026-10-18 停用，改从原始机构取数；FRED 部分为历史口径。）
 - **check-public**：不带参数只查 HEAD 提交对象；全史审计用 `--rev`。
 - 算式（第二段格式错误）与 FRED 重复键均补了经 `route_pr` 的测试。
 
@@ -374,7 +374,7 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
 
 ### 数字核对范围
 
-- FRED：断言写明观测日期（YYYY-MM-DD 或 YYYY-MM）时，只用该日期的观测值核对；同时带 `realtime_start`/`realtime_end` 的存档，断言写了 vintage 日期则只用该 vintage 内的观测。没写日期 → 不算“来源支持”（`R-SUPPORT-UNVERIFIED`）。
+- FRED（历史口径：FRED 已于 2026-10-18 停用，改从原始机构取数，FRED 原始文件及两份含 FRED 数值的年度对账表已由 data PR #87 撤回；登记见 raw/2026-10-10/ 至 raw/2026-10-18/ 各日期的 RETRACTIONS.md）：断言写明观测日期（YYYY-MM-DD 或 YYYY-MM）时，只用该日期的观测值核对；同时带 `realtime_start`/`realtime_end` 的存档，断言写了 vintage 日期则只用该 vintage 内的观测。没写日期 → 不算“来源支持”（`R-SUPPORT-UNVERIFIED`）。
 - 其他来源入口（带来源段落、非结构化行）调用 `check_pair` 时一律带上断言原文。
 
 ## 整体验收 r15 修复（审查与治理 bot 定的技术方案）

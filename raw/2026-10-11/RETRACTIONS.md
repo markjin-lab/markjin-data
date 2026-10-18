@@ -36,3 +36,5 @@ MANIFEST.sha256 中的原登记行按只追加原则保留不改；scripts/verif
 | raw/2026-10-11/nbs-gdp/annual-reconciliation.md | 无（本地衍生文件，所用 FRED 值来自 https://fred.stlouisfed.org/graph/fredgraph.csv?id=CHNGDPNQDSMEI） | c9e83c3c7bf0cee34102db3a6f7ab421fcb26d1240113d2c8089497bc59f0cc5 | 2026-10-18 18:27 SGT (UTC+8) | FRED 条款第 (p) 项与原样存档要求冲突；王总 2026-10-18 18:13 SGT 决定停用 FRED 渠道、改从原始发布机构取数，按 RETRACTIONS 撤回 |
 
 批准：王总 2026-10-18 18:13 SGT 决定撤回 FRED 文件（经 Grok Bot 转达）；撤回范围延伸至两份含 FRED 数值的年度对账表由 Grok Bot 决定。王总批准记录见 approvals/wang（绑定本 PR 最终 head）。同目录 PROVENANCE.md、query-log.jsonl、README.md 保留不改。复核与合并状态见 markjin-data PR #83。
+
+2026-10-18 勘误：上文两处「复核与合并状态见 markjin-data PR #83」应为 markjin-data PR #87（取代 #85、#83），合并提交 c0d788c；PR #83、#85 均已关闭、未合并。上文「见 PR 描述」与「绑定本 PR 最终 head」中的「PR」同样指 PR #87。原句按只追加原则保留不改。
