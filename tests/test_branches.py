@@ -807,6 +807,7 @@ class R6Trust(unittest.TestCase):
         self.commit(csv_of(r1, r2), "pr rows")
         p = self.cli(main_ref="HEAD~1")
         self.assertEqual(p.returncode, 0, p.stdout); self.assertIn("gate_count 2", p.stdout)
+        self.assertNotIn("W-BR-PUSH-TIME-UNKNOWN", p.stdout)
 
 
 class R7Review(R6Trust):
@@ -916,6 +917,24 @@ class R8VoidWarnOnly(R6Trust):
         self.commit(csv_of(row(trigger_condition="x > 100"), sibling(row())), "bad")
         self.assertEqual(self.cli().returncode, 1)
 
+    def test_cli_void_prereg_changed_is_warn(self):   # 作废行改了事先登记字段：作废留痕写错，只警告、计数 INVALID
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "late"); self.push(c, "2026-10-15T00:00:00Z", 15)
+        self.commit(csv_of(r1, r2, dict(v(r1, "x run:15"), unit="pp"), v(r2, "x run:15")), "void")
+        p = self.cli()
+        self.assert_warn(p, "E-BR-PREREG-CHANGED")
+        self.assertNotRegex(p.stdout, r"(?m)^line \d+: E-BR-PREREG-CHANGED$")
+
+    def test_cli_void_row_id_error_still_fails(self):   # 作废行上的非作废类问题（row_id 不对）照常报错
+        r1, r2, v = self.grp()
+        c = self.commit(csv_of(r1, r2), "late"); self.push(c, "2026-10-15T00:00:00Z", 16)
+        self.commit(csv_of(r1, r2, dict(v(r1, "x run:16"), row_id=r1["row_id"][:-1] + "9"), v(r2, "x run:16")), "void")
+        p = self.cli()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertRegex(p.stdout, r"(?m)^line \d+: E-BR-ROW-ID$")
+        self.assertNotRegex(p.stdout, r"warn line \S+: E-BR-ROW-ID")
+        self.assertIn("gate_count INVALID", p.stdout); self.assertIn("FAIL", p.stdout)
+
 
 class R9Review(R6Trust):
     """r9：r8 审查的 MEDIUM 1、MEDIUM 2 与 LOW。"""
@@ -999,6 +1018,29 @@ class R9Review(R6Trust):
         self.assertRegex(p.stdout, r"(?m)^::notice::门禁数仅为预估.*人工核对登记 PR 的合并时间")
         local = self.run_cli(main_ref="HEAD")
         self.assertNotIn("::warning::", local.stdout); self.assertNotIn("::notice::", local.stdout)
+
+    def test_LOW_early_exit_errors_annotated(self):   # r9 LOW：五种提前退出的错误在 Actions 中也输出 ::error::
+        import os
+        r1, r2, _ = self.grp()
+        self.commit(csv_of(r1, r2), "rows")
+        (self.d / B.LEDGER_PATH).unlink(); self.g("add", "-A"); self.g("commit", "-qm", "rm ledger")
+        cases = {
+            "E-BR-NOW": ["--ref", "HEAD~1", "--now", "2026-10-15 09:00"],
+            "E-BR-GIT": ["--ref", "no-such-ref"],
+            "E-BR-MISSING": ["--ref", "HEAD"],
+            "E-BR-MAIN-REF": ["--ref", "HEAD~1", "--main-ref", "no-such-ref"],
+            "E-BR-BASE-UNREADABLE": ["--ref", "HEAD~1", "--base", "no-such-ref"],
+        }
+        base_env = {k: v for k, v in os.environ.items() if k != "GITHUB_ACTIONS"}
+        for code, args in cases.items():
+            cmd = ["python3", str(self.script), "--repo", str(self.d), *args]
+            gh = subprocess.run(cmd, capture_output=True, text=True, env={**base_env, "GITHUB_ACTIONS": "true"})
+            self.assertEqual(gh.returncode, 1, (code, gh.stdout))
+            self.assertRegex(gh.stdout, r"(?m)^" + code + r" ", code)
+            self.assertRegex(gh.stdout, r"(?m)^::error::ledger " + code + r" ", code)
+            local = subprocess.run(cmd, capture_output=True, text=True, env=base_env)
+            self.assertEqual(local.returncode, 1, code)
+            self.assertIn(code, local.stdout); self.assertNotIn("::error::", local.stdout)
 
     def test_LOW_actions_error_annotation(self):
         self.commit(csv_of(row(trigger_condition="x > 100"), sibling(row())), "bad")

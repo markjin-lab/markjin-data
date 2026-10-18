@@ -146,6 +146,13 @@ def trust_check(repo, rows, main_ref, runs):
     return errs, warns, late, valid
 
 
+def early_exit(msg):
+    """提前退出的错误（E-BR-NOW / GIT / MISSING / MAIN-REF / BASE-UNREADABLE）：照常打印，Actions 中另输出 ::error::。"""
+    print(msg)
+    gha("error", f"ledger {msg}")
+    return 1
+
+
 def history_errors(repo, base, ref, now=None):
     errs = []
     # base 必须是 ref 的祖先（非快进的 push 一律拒绝），并直接比较 base 与 ref 两个版本：只追加
@@ -216,21 +223,19 @@ def main(argv=None):
     a = ap.parse_args(argv)
     for v in (a.now,):
         if v and not branches._ts(v):
-            print("E-BR-NOW 时间格式不对"); return 1
+            return early_exit("E-BR-NOW 时间格式不对")
     try:
         new = branches.git_show(a.repo, a.ref)
     except branches.GitError:
-        print(f"E-BR-GIT 无法读取 {a.ref}（fail-closed）")
-        return 1
+        return early_exit(f"E-BR-GIT 无法读取 {a.ref}（fail-closed）")
     if new is None:
-        print(f"E-BR-MISSING {branches.LEDGER_PATH} 不在 {a.ref}")
-        return 1
+        return early_exit(f"E-BR-MISSING {branches.LEDGER_PATH} 不在 {a.ref}")
     rows, errs = branches.parse(new, branches.manifest_from_git(a.repo, a.ref))
     out = [f"line {ln}: {code}" for ln, code in errs]
     warns, late, valid = [], set(), True
     if a.main_ref:
         if not branches.commit_exists(a.repo, a.main_ref):
-            print(f"E-BR-MAIN-REF {a.main_ref} 不是可读的提交"); return 1
+            return early_exit(f"E-BR-MAIN-REF {a.main_ref} 不是可读的提交")
         t_errs, warns, late, valid = trust_check(a.repo, rows, a.main_ref, load_runs(a.push_runs))
         out += [f"line {ln}: {code}" for ln, code in t_errs]
     else:
@@ -240,8 +245,7 @@ def main(argv=None):
             branches.git_show(a.repo, a.base)
             out += [f"commit {c} line {ln}: {code}" for c, ln, code in history_errors(a.repo, a.base, a.ref, a.now)]
         except branches.GitError:
-            print(f"E-BR-BASE-UNREADABLE 基线 {a.base} 不存在或无法读取（fail-closed）")
-            return 1
+            return early_exit(f"E-BR-BASE-UNREADABLE 基线 {a.base} 不存在或无法读取（fail-closed）")
     # VOID 相关问题只警告（main 和 PR 都一样），不改退出码，但计数输出 INVALID；
     # 降级范围见 downgradable()：E-BR-FIRST-ROW、E-BR-GROUP-LATE 及作废行上的其他问题照常报错
     void_lines = {str(ln) for ln, r in rows if r["check_result"] in ("VOID", "VOID_REVOKED")}

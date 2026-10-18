@@ -86,7 +86,7 @@
    - **作废行（整组，只留痕）。** VOID 不再决定排不排除。组内每一支各追加一条：check_result 为 `VOID`，corrects_row_id 指向该支第一行，reason 必填并写明 `run:<运行 ID>`（即使该组判为晚合并的那次 push 运行；脚本先解析出完整 ID 再精确比较，run:9010 不等于 run:901），事先登记字段照抄，对账字段（含 checked_by、checked_at）全空（E-BR-VOID-FILLED）；全组作废行必须连续、在同一个提交里完成（E-BR-VOID-PARTIAL / E-BR-VOID-SPLIT）。组不是晚合并、或 reason 里的运行 ID 不对，报 E-BR-VOID-UNVERIFIED。作废后该组不能再追加对账行（E-BR-AFTER-VOID）。
    - **撤销作废。** 已经落地的无效 VOID 只能追加 `VOID_REVOKED` 行撤销：corrects_row_id 指向那条 VOID，reason 必填，事先登记字段照抄，对账字段全空；每条 VOID 只能撤销一次。撤销后的 VOID 不再生效，CI 可恢复通过。
    - **检查失败时**，`--count-gate` 和 `--stats` 输出 `INVALID`，不给出看起来有效的计数。
-   - **Actions 注释。** 在 GitHub Actions 中（GITHUB_ACTIONS=true），每条错误另输出 `::error::`，每条警告（含晚合并、时间未知、VOID 相关）另输出 `::warning::`；给出计数时另输出 `::notice::`，写明“门禁数仅为预估，须由审查与治理 bot 人工核对登记 PR 的合并时间”，计数无效时注明 INVALID。本机运行不输出这些注释。
+   - **Actions 注释。** 在 GitHub Actions 中（GITHUB_ACTIONS=true），每条错误（含提前退出的 E-BR-NOW、E-BR-GIT、E-BR-MISSING、E-BR-MAIN-REF、E-BR-BASE-UNREADABLE）另输出 `::error::`，每条警告（含晚合并、时间未知、VOID 相关）另输出 `::warning::`；给出计数时另输出 `::notice::`，写明“门禁数仅为预估，须由审查与治理 bot 人工核对登记 PR 的合并时间”，计数无效时注明 INVALID。本机运行不输出这些注释。
 2. **登记行。** check_result 必须是 `PENDING`，quarter_readings 为空；registered_at 的日期等于 publish_date，并早于观测开始（window_start 至少是发布次日）；lu_basis_date 和 lu_evidence 里每个读数的 vintage 都不得晚于 registered_at。
 3. **不可改字段**：全部事先登记字段，加上 registered_at。对账行和结论更正行里，这些字段必须与当前登记（登记行，或最近一条登记更正行）完全一致。
 4. **对账行**：window_end 之后追加，事先登记字段照抄，再填对账字段，checked_at 晚于 window_end。DATA_UNAVAILABLE 可以等数据发布后再追加一行。每个分支只能有一个最终结论（HIT、MISS、NONE_HIT、MULTI_HIT、TRIGGER_UNOBSERVABLE）；要改只能走结论更正。TRIGGER_UNOBSERVABLE 的 actual_value 必须为空（E-BR-TU-VALUE）；区间组只要有数值读数，就照常按共同读数判定。
