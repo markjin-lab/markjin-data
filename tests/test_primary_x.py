@@ -1501,6 +1501,28 @@ class BlockRule1522Primary(unittest.TestCase):
         self.assertEqual(h["retest"]["s-news"]["status"], "approved")       # 批准没被根页用掉
         self.assertEqual(h["retest_log"], [])                                # 没有任何重测请求
 
+    def test_r17_scraper_list_page_retest_requests_list_page_once(self):
+        """采集 bot 自加：scraper 列表页本身被拒、到期获批（绑定列表页）→ 下一次运行确实请求列表页（robots ≤1 + 正文 1）。"""
+        import yaml
+        root = "https://s.org/sitemap.xml"
+        urlset = b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'><url><loc>https://www.anthropic.com/news/a</loc></url></urlset>"
+        src = self.base / "s.yaml"
+        src.write_text(yaml.safe_dump({"sources": [{"id": "s-news", "method": "scraper", "scraper": "anthropic_sitemap",
+                                                    "url": root, "enabled": True, "approval_status": "approved",
+                                                    "approval_basis": "b", "license": "url+hash-only"}]}), encoding="utf-8")
+        args = lambda d: ["--sources", str(src), "--date", d, "--round", "1", "--out-root", str(self.out),
+                          "--private-root", str(self.priv)]
+        rc, err, calls = self._patched({root: Resp(403)}, lambda: CS.main(args("2026-10-12")), now=self.T0)
+        self.assertEqual(calls.count(root), 1)
+        now = self.T0 + self.DAY
+        rc, err, calls = self._patched({root: Resp(200, urlset)}, lambda: CS.main(args("2026-10-13")), now=now)
+        self.assertEqual(calls, [])
+        self.approve_pending("lp", now, url=root)
+        rc, err, calls = self._patched({root: Resp(200, urlset)}, lambda: CS.main(args("2026-10-13")), now=now + 60)
+        self.assertEqual([u for u in calls if not u.endswith("/robots.txt")], [root])
+        self.assertLessEqual(len(calls), 2)
+        self.assertEqual([e["kind"] for e in self.health().data["retest_log"]], ["robots", "body"])
+
     def test_r17_primary_pseudo_source_retest_bound_to_url(self):
         """r17 反例（伪源 primary:<主机>）：同主机文章 A 被拒、到期获批（绑定 A）后，同一轮线索里同主机的文章 B 不能借这次
         批准被请求，A 成功也只清 A 的记录。"""

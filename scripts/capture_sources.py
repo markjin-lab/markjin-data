@@ -213,7 +213,7 @@ def main(argv=None):
         t0 = collect.now()
         raws = []
         if s["method"] == "scraper":
-            why = health.blocked(sid, rid)
+            why = health.blocked(sid, rid, url=url)   # r18：重测门禁按列表页 URL 判（批准绑定 URL）
             pre = ("source_blocked", why) if why else fetcher.precheck(url)
             if pre:     # 源停用 / 状态损坏 / 旧表停用主机 / 本轮主机已停 / 列表页冷却：不发请求，列入跳过，不计入可疑轮数
                 skipped[where].append({"id": sid, "url": purl, "reason": pre[0], "detail": pre[1]})
