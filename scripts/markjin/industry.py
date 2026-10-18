@@ -38,9 +38,17 @@ CANDIDATE_HOSTS = ("eia.gov", "bea.gov", "sec.gov", "fda.gov", "clinicaltrials.g
 # 文字引用：新数据机构名称（或公司月度营收）与“数据/统计/显示/据…”等引用语境同现。只出现机构名（如新闻里的监管动作）不算引用数据。
 _CAND_NAMES = (r"EIA|美国能源信息署|BEA|美国经济分析局|EDGAR|openFDA|ClinicalTrials\.gov|国家统计局|统计局|"
                r"中国人民银行|人民银行|央行金融统计|海关总署|海关统计|财政部|World\s*Bank|世界银行|"
-               r"月度营收|月营收|monthly\s+(?:revenue|sales)")
+               r"月度营收|月营收|monthly\s+(?:revenue|sales)|"
+               r"Energy\s+Information\s+Administration|Bureau\s+of\s+Economic\s+Analysis|"
+               r"National\s+Bureau\s+of\s+Statistics|NBS|People'?s\s+Bank\s+of\s+China|PBOC|PBoC|"
+               r"General\s+Administration\s+of\s+Customs|China\s+Customs|Ministry\s+of\s+Finance|"
+               r"Securities\s+and\s+Exchange\s+Commission\s+filings?|SEC\s+filings?")
 _CAND_NAME_RE = re.compile(r"(?<![A-Za-z])(?:" + _CAND_NAMES + r")(?![A-Za-z])", re.I)
-_REVENUE_RE = re.compile(r"(?:\d{1,2}\s*月(?:份)?|月度|月|单月|monthly)\s*(?:营收|营业收入|销售额|revenue|sales)", re.I)
+_REVENUE_RE = re.compile(r"(?:\d{1,2}\s*月(?:份)?|月度|月|单月|monthly|month-on-month|"
+                         r"(?:january|february|march|april|may|june|july|august|september|october|november|december)(?:'s)?)"
+                         r"\s*(?:营收|营业收入|销售额|revenue|sales|net\s+sales)", re.I)
+# 公司月度营收页面的链接（路径或文字里带月营收字样）
+_REVENUE_URL_RE = re.compile(r"monthly[-_]?(?:revenue|sales)|revenue[-_]?monthly|月(?:度)?营收", re.I)
 _CITE_PREFIX = re.compile(r"(?:据|根据|来自|数据来自|引用|according\s+to|data\s+from|figures\s+from|sources?\s*[:：])", re.I)
 _DATA_WORD = re.compile(r"数据|数字|统计|data|figures|statistics", re.I)
 # 日期写法（年、月、日、YYYY-MM-DD、英文月份年份）不算数值语境：“财政部宣布 2027 年起实施”不是引用数据
@@ -118,8 +126,8 @@ def candidate_text(line):
             continue
         if _CAND_NAME_RE.search(c) and (_numeric(c) or (_CITE_PREFIX.search(c) and _DATA_WORD.search(c))):
             return True
-        if _REVENUE_RE.search(c) and _numeric(_REVENUE_RE.sub(" ", c)):
-            return True
+        if _REVENUE_RE.search(c) and (_numeric(_URL_RE.sub(" ", _REVENUE_RE.sub(" ", c))) or _URL_RE.search(c)):
+            return True                               # 公司月营收 + 数值，或 + 链接（“月度营收见 <链接>”）
     return False
 
 
@@ -130,10 +138,17 @@ def candidate_link(line):
         h = _host(u)
         if any(h == c or h.endswith("." + c) for c in CANDIDATE_HOSTS):
             return True
+        if _REVENUE_URL_RE.search(unquote_url(u)):
+            return True                               # 公司月度营收页面
     for m in _RAW_RE.finditer(t):
         if m.group(3) not in REGULAR_RAW_KINDS:
             return True
     return False
+
+
+def unquote_url(u):
+    from urllib.parse import unquote
+    return unquote(u)
 
 
 # —— 内部分类标签的通用写法（具体标签词不在此处，见模块说明）
@@ -172,13 +187,20 @@ def load_private_terms(path=None, repo=None):
         return "skipped", []
     except OSError as e:
         raise PrivateTermsError("unreadable") from e
-    ap = Path(os.path.normpath(os.path.abspath(p)))
+    raw = p if p.is_absolute() else Path.cwd() / p
+    if any(part in ("..", ".") for part in raw.parts):
+        raise PrivateTermsError("relative component")   # 不接受 . / .. 分量（避免消去被跳过的符号链接分量）
+    cur = Path(raw.parts[0])
+    for part in raw.parts[1:]:                          # 逐分量检查原始路径：任一分量是符号链接 → fail-closed
+        cur = cur / part
+        if cur.is_symlink():
+            raise PrivateTermsError("symlink in path")
     try:
-        rp = ap.resolve(strict=True)
+        rp = raw.resolve(strict=True)
     except (OSError, RuntimeError) as e:
         raise PrivateTermsError("unreadable") from e
-    if stat.S_ISLNK(st.st_mode) or rp != ap:
-        raise PrivateTermsError("symlink in path")   # 清单路径本身或任一目录分量是符号链接 → fail-closed
+    if rp != raw:
+        raise PrivateTermsError("symlink in path")
     if not stat.S_ISREG(st.st_mode):
         raise PrivateTermsError("not a regular file")
     if _in_git_repo(rp.parent):
@@ -267,9 +289,20 @@ def _aggregate(s):
     return any(re.search(r"(?<![A-Za-z0-9_])" + c + r"(?![A-Za-z0-9_])", s, re.I) for c in AGGREGATE_SERIES)
 
 
+# 可复算的端点算法只认两类写法（其余一律不登记，交登记前人工核对）：
+# 1) 统计方法 + 取数窗口：分位数/均值/中位数/标准差/最大/最小 与 “近 N 期/个月/季度”“last N months/quarters/observations”；
+# 2) 算式：括号或运算符连接的、带操作数说明的式子（如 “上期读数 × (1 + 2%)”“(前值 + 均值)/2”）。
+_EP_METHOD = re.compile(r"\d{1,3}\s*%?\s*分位数|分位数|均值|平均值|中位数|标准差|最大值|最小值|percentile|quantile|mean|average|median|"
+                        r"standard\s+deviation|maximum|minimum", re.I)
+_EP_WINDOW = re.compile(r"近\s*\d{1,3}\s*(?:期|个月|月|个季度|季度|年)|过去\s*\d{1,3}\s*(?:期|个月|月|个季度|季度|年)|"
+                        r"(?:last|past|trailing)\s+\d{1,3}\s+(?:months|quarters|years|observations|periods)", re.I)
+_EP_FORMULA = re.compile(r"[\u4e00-\u9fffA-Za-z]{2,}[^=＝，,;；。]*?[×*/÷+−\-][^=＝，,;；。]*?(?:[\u4e00-\u9fffA-Za-z]{2,}|\d)")
+
+
 def _endpoint_ok(text):
     rhs = [m.group(1) for m in _ENDPOINT_RHS.finditer(text)]
-    return bool(rhs) and all(re.search(r"\d", r) and len(re.findall(r"[\u4e00-\u9fff]|[A-Za-z]{2,}", r)) >= 2 for r in rhs)
+    return bool(rhs) and all(re.search(r"\d", r) and ((_EP_METHOD.search(r) and _EP_WINDOW.search(r)) or _EP_FORMULA.search(r))
+                             for r in rhs)
 
 
 def _real_date_in(text):
@@ -286,7 +319,7 @@ def _real_date_in(text):
 def check_branch(row, repo):
     """产业分段分支登记前核对。row 字段：observed_variable、unit、data_source（台账同名字段）；
     endpoint_method（端点算法，须写出含等号与数字的计算式）、input_version（输入数据版本：realtime_start/vintage/版本/发布 + YYYY-MM-DD）、raw_sha256（raw/ 原件 sha256，字符串或字符串列表）
-    ——后三项按第六节写在稿件正文与 digest 产业链接表，接入台账时按此传入；可选 date（登记日，YYYY-MM-DD）限定只认不晚于该日的存档。
+    ——后三项按第六节写在稿件正文与 digest 产业链接表，接入台账时按此传入；date（登记日，必填，真实日期 YYYY-MM-DD）限定只认不晚于该日的存档。
     repo：仓库根目录（必填），raw_sha256 须能在 repo 的 raw/<日期>/MANIFEST.sha256 里对上该序列的存档。
     返回排序后的错误码列表（空 = 可登记）。"""
     codes = set()
@@ -313,8 +346,9 @@ def check_branch(row, repo):
         codes.add("E-BRANCH-METHOD-MISSING")
     else:
         # 输入原件绑定：每个 raw_sha256 都须是 repo 中该序列已登记、逐字节一致的 FRED 存档（与 E-FRED-NOT-ARCHIVED 同一口径）
-        from .selfcheck import fred_archive_shas
-        valid = fred_archive_shas(repo, sm.group(1), date=_s(row, "date") or None)
+        from .selfcheck import fred_archive_shas, valid_date
+        reg = _s(row, "date")
+        valid = fred_archive_shas(repo, sm.group(1), date=reg) if valid_date(reg) else set()   # 登记日必填且须为真实日期
         if not valid or not set(shas) <= valid:
             codes.add("E-BRANCH-METHOD-MISSING")
     if _aggregate(ov) or _aggregate(src):
@@ -330,8 +364,8 @@ def strained_count(result_text):
     """返回 Codex 结果里登记的牵强计数；没有该行或出现多行且数值不一致 → None（不记台账，由人工核对）。"""
     if not isinstance(result_text, str):
         return None
-    vals = {int(v) for v in _STRAINED_LINE.findall(result_text)}
-    return vals.pop() if len(vals) == 1 else None
+    vals = _STRAINED_LINE.findall(result_text)
+    return int(vals[0]) if len(vals) == 1 else None   # 恰好一行；多行（哪怕数值相同）→ 不记，交人工核对
 
 
 def record_strained(repo, date, result_text):

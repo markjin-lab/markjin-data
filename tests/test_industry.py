@@ -112,7 +112,9 @@ class Candidate(unittest.TestCase):
 
     def test_text_citation(self):
         for ln in ("据 EIA 数据，样例库存上升。", "国家统计局公布10月样例增加值为6.5%。", "According to BEA figures, the sample rose.",
-                   "样例公司月度营收为 10 亿元。", "样例公司8月营收同比增长20%。"):
+                   "样例公司月度营收为 10 亿元。", "样例公司8月营收同比增长20%。",
+                   "The National Bureau of Statistics reported sample output of 6.5%.", "The sample firm posted August revenue of 6.5 billion.",
+                   "样例公司月度营收见 https://example.com/ir/monthly-revenue-2026-08 。", "详见 https://example.com/ir/monthly_sales"):
             self.assertIn("E-CANDIDATE-DATA-CITED", codes(run(TITLE + quote_line() + "\n" + ln)), ln)
             # 与正常来源配对的结构化断言同样拦
             self.assertIn("E-CANDIDATE-DATA-CITED", codes(run(TITLE + arxiv_line(ln))), ln)
@@ -209,7 +211,8 @@ class InternalTerm(unittest.TestCase):
         d = Path(tempfile.mkdtemp())
         (d / "link.txt").symlink_to(real)
         (d / "dirlink").symlink_to(real.parent, target_is_directory=True)
-        for p in (d / "link.txt", d / "dirlink" / "terms.txt"):
+        for p in (d / "link.txt", d / "dirlink" / "terms.txt", d / "dirlink" / ".." / Path(d.name) / "link.txt",
+                  real.parent / ".." / real.parent.name / "terms.txt"):
             r = run(TITLE + quote_line(), private_terms=str(p))
             self.assertIn("E-INTERNAL-TERM-LIST", codes(r), p)
             self.assertEqual(r["internal_term_check"], "error")
@@ -247,7 +250,7 @@ def branch(**kw):
     row = {"observed_variable": "IPG2211S 2026 年 10 月读数的同比（%，(本期/上年同期−1)×100，保留两位小数，季调序列）",
            "unit": "%", "data_source": "FRED IPG2211S",
            "endpoint_method": "a = 近 12 期同比的 25% 分位数，b = 近 12 期同比的 75% 分位数",
-           "input_version": "realtime_start 2026-10-17", "raw_sha256": [ARCH_SHA]}
+           "input_version": "realtime_start 2026-10-17", "raw_sha256": [ARCH_SHA], "date": DATE}
     row.update(kw)
     return row
 
@@ -278,6 +281,13 @@ class Branch(unittest.TestCase):
         self.assertIn("E-BRANCH-METHOD-MISSING", cb(None))
         self.assertIn("E-BRANCH-METHOD-MISSING", cb(branch(), repo=make_repo()))          # 仓库里没有该序列存档
         self.assertIn("E-BRANCH-METHOD-MISSING", cb(branch(date="2026-01-01")))           # 只有晚于登记日的存档
+        for d in (None, "", "bogus", "2026-99-99"):                                         # 登记日缺失或无效
+            row = branch(); row.pop("date") if d is None else row.update(date=d)
+            self.assertIn("E-BRANCH-METHOD-MISSING", cb(row), d)
+        for ep in ("a = 样例方法 1", "a = 样例方法 1，b = 样例方法 2", "a = 近 12 期同比的 25% 分位数，b = 样例方法 2"):
+            self.assertIn("E-BRANCH-METHOD-MISSING", cb(branch(endpoint_method=ep)), ep)
+        for ep in ("a = 上期读数 × (1 + 2%)", "a = last 12 months mean minus 1.5 standard deviation"):
+            self.assertEqual(cb(branch(endpoint_method=ep)), [], ep)
 
     def test_aggregate(self):
         for kw in (dict(data_source="FRED INDPRO"),
@@ -292,6 +302,7 @@ class Strained(unittest.TestCase):
         self.assertEqual(industry.strained_count("VERDICT zh: APPROVED\nR-INDUSTRY-STRAINED: 2\n"), 2)
         self.assertIsNone(industry.strained_count("VERDICT zh: APPROVED\n"))
         self.assertIsNone(industry.strained_count("R-INDUSTRY-STRAINED: 1\nR-INDUSTRY-STRAINED: 3"))
+        self.assertIsNone(industry.strained_count("R-INDUSTRY-STRAINED: 2\nR-INDUSTRY-STRAINED: 2"))
         self.assertIsNone(industry.strained_count(None))
 
     def test_record_to_ledger(self):

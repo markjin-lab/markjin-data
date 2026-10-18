@@ -1404,14 +1404,16 @@ def _fred_archived(ctx, code):
 
 
 def fred_archive_shas(repo, code, date=None):
-    """供 industry.check_branch 用：repo 中 FRED 代码的有效存档 sha256 集合（date 给出时只认不晚于该日的存档）。"""
+    """供 industry.check_branch 用：repo 中 FRED 代码不晚于 date 的有效存档 sha256 集合；date 必须是真实日期。"""
     try:
         r = Path(repo)
     except TypeError:
         return set()
     if not r.is_dir():
         return set()
-    return _fred_archive_shas_ctx(_Ctx(r, date if valid_date(date) else "9999-12-31"), code)
+    if not valid_date(date):
+        return set()                                   # 登记日缺失或无效 → 不认任何存档（fail-closed）
+    return _fred_archive_shas_ctx(_Ctx(r, date), code)
 
 
 def _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms, verified_quotes):
