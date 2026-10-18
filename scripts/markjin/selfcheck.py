@@ -1001,7 +1001,7 @@ def _neg_state(seg):
 
 
 def _neg_parity_ok(claim, loc, kind=None):
-    """#32 r4/r5/r6：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
+    """#32 r4–r7：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
     1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
        原文有、断言没写同样的短语 → 提示 support_scope（R-SUPPORT-SCOPE，人工必查：断言是否写成了相反前提，
        如原文 without fine-tuning、断言“经过微调”）。
@@ -1010,7 +1010,9 @@ def _neg_parity_ok(claim, loc, kind=None):
        窗口不唯一或找不到 → 错配（不退回整段，避免把 A 的否定配给 B）。
        不含数字和代号的分句逐句配对（r6，审查 r5 HIGH）：在原文去掉已配对窗口后的剩余分句里按普通词与对象词
        （不含否定词、审慎说法）重合度找最高分候选；最高分候选的否定/审慎状态都相同才可比，否则判错配；
-       剩余分句状态不一时，只重合 1 个词不算配上。
+       剩余分句状态不一时，只重合 1 个词不算配上；r7（审查 HIGH）：剩余分句状态不一时，先看断言分句命中了哪些原文分句
+       的区分词（只出现在该分句、不出现在其他剩余分句的配对词）：命中的分句状态不一 → 错配；只命中状态一致的分句 →
+       只在这些分句里配对。
     3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、从未、hardly、yet to 等计为否定）。
        审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed…）不计否定，出现就提示 support_hedge
        （R-SUPPORT-HEDGE）；但配对的原文窗口带审慎说法而整条断言没有，或断言分句带审慎说法而整个片段没有 → 错配；“难以置信”“无与伦比”“从未如此”“never before”等固定说法不算否定（r5，审查 r4 MEDIUM）。"""
@@ -1055,9 +1057,20 @@ def _neg_parity_ok(claim, loc, kind=None):
     if rest_claim:
         lrest = [c for c in (numnorm.clauses(rest_loc) or []) if re.search(r"[A-Za-z0-9\u4e00-\u9fff]", c)]
         states = {_neg_state(c) for c in lrest} or {(0, False)}
+        lw = [_pair_words(c) for c in lrest]
+        # r7：各剩余原文分句的区分词（只出现在该分句里的配对词）
+        dist = [w - set().union(*(lw[:i] + lw[i + 1:])) for i, w in enumerate(lw)]
         for cc in rest_claim:
             cw = _pair_words(cc)
-            scored = sorted(((len(cw & _pair_words(lc)), lc) for lc in lrest), key=lambda t: -t[0])
+            pool = lrest
+            hit = [i for i, d in enumerate(dist) if cw & d]
+            if len(states) > 1 and hit:
+                # r7（审查 HIGH）：断言同时命中两个对象分句的区分词（如 baseline 与 new method 分句里的 long documents）
+                # 且二者否定/审慎状态不一 → 分不清对象；否则只在命中的分句里配对，不让共享的谓语词把断言拉向另一对象
+                if len({_neg_state(lrest[i]) for i in hit}) > 1:
+                    return False, hints
+                pool = [lrest[i] for i in hit]
+            scored = sorted(((len(cw & _pair_words(lc)), lc) for lc in pool), key=lambda t: -t[0])
             cstate = _neg_state(cc)
             top = [lc for n, lc in scored if scored[0][0] > 0 and n == scored[0][0]]
             if top and (scored[0][0] < 2 and len(states) > 1 or len({_neg_state(lc) for lc in top}) != 1):
