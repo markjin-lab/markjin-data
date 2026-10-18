@@ -60,6 +60,8 @@ ERROR_CODES = {
     "R-SUPPORT-REVIEW": "断言的原文支持位置已通过机器核对（连续子串、数字、单位、否定、代号）；语义是否支持仍须 Codex 逐条确认（#32）",
     "R-LOCATOR-SHORT": "原文支持位置片段过短（少于 20 个非空白字符），容易断章取义（#32）",
     "R-SUPPORT-ENTITY": "断言含中文对象名或单大写字母专名（如 Llama）且未在支持位置中逐字出现，对象是否被替换机器核不了，须 Codex 核对（#32）",
+    "R-SUPPORT-SCOPE": "支持位置含 without/无需 这类只否定某个前提的短语，断言没有写出同样的短语；人工必查：断言是否写成了相反前提（如原文 without fine-tuning、断言“经过微调”），机器只核主干（#32）",
+    "R-SUPPORT-HEDGE": "断言或支持位置含审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed、subject to revision 等），机器不按否定计；须 Codex 核对两边的审慎程度是否一致（#32）",
     "R-X-ONLY": "只有 X 来源（日报断言另判 E-X-ONLY 硬拦；此标记仍用于纯来源链接行与信号卡）",
     # —— 路由（#10）
     "E-ROUTE-UNCLEAR": "分类不明，当天不发布",

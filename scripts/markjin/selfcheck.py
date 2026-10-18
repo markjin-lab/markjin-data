@@ -350,7 +350,7 @@ HARD_SOFT_PREFIX = "R-"   # R-* 为审查原因（不 FAIL，但不是低风险�
 FLAG_KEYS = ("has_inference", "inference_unclear", "macro", "medical", "religion", "internal", "x_only",
              "signal_card", "free_text", "unstructured", "unsupported", "link_unchecked", "link_unreachable",
              "structure_other", "quote_unverified", "stock",
-             "support_review", "locator_short", "entity_unchecked",
+             "support_review", "locator_short", "entity_unchecked", "support_scope", "support_hedge",
              "quote_numeric", "quote_comparative", "quote_modal", "quote_entity", "translation")
 COUNT_KEYS = ("assertions", "structured", "replayable", "x_sourced", "macro", "inference",
               "unclear", "free_text", "quotes", "source_links", "other")
@@ -948,35 +948,88 @@ def _has_word(w, s):
     return re.search(r"(?<![A-Za-z0-9])" + re.escape(w) + r"(?![A-Za-z0-9])", s) is not None
 
 
-def _neg_parity_ok(claim, loc):
-    """#32 r4：按具体说法核对否定，不整行判断。
+def _clause_spans(s):
+    """按 numnorm.CLAUSE_RE 切分句，返回各分句在 s 中的 (起, 止)。"""
+    spans, start = [], 0
+    for m in numnorm.CLAUSE_RE.finditer(s):
+        if s[start:m.start()].strip():
+            spans.append((start, m.start()))
+        start = m.end()
+    if s[start:].strip():
+        spans.append((start, len(s)))
+    return spans
+
+
+def _min_windows(s, ok):
+    """r5：含全部关键项的最小连续分句窗口。从 1 个分句起逐步加宽，返回第一档宽度下所有符合的窗口文本。"""
+    spans = _clause_spans(s)
+    for k in range(1, len(spans) + 1):
+        hits = [s[spans[i][0]:spans[i + k - 1][1]] for i in range(len(spans) - k + 1)
+                if ok(s[spans[i][0]:spans[i + k - 1][1]])]
+        if hits:
+            return hits
+    return []
+
+
+def _neg_main(s):
+    """挖掉 without/无需 短语与审慎说法后的主干，及挖掉的审慎说法个数。"""
+    main, _ = numnorm.strip_scoped(s)
+    main, nh = numnorm.strip_hedges(main)
+    return main, nh
+
+
+def _neg_parity_ok(claim, loc, kind=None):
+    """#32 r4/r5：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
     1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
-       原文有、断言省略 → 不算否定（主干照常比）。
-    2. 断言每个含数字、代号或对象词的分句，要先按对象配对：原文里同时含这些数字、代号和对象词的分句必须恰好一句；
-       配出多句（如两句都含“90% 和 MMLU”且无法分辨对象）→ 错配；没有单句含全部关键项时按整个片段比。其余分句与整个片段比。
-    3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、尚待、hardly、yet to 等计为否定）。"""
+       原文有、断言没写同样的短语 → 提示 support_scope（R-SUPPORT-SCOPE，人工必查：断言是否写成了相反前提，
+       如原文 without fine-tuning、断言“经过微调”）。
+    2. 断言每个含数字、代号或对象词的分句，先按对象配对：
+       - 普通文本（r5，审查 r4 HIGH）：在原文里找同时含这些数字、代号和对象词的最小连续分句窗口；
+         窗口不唯一或找不到 → 错配（不再退回整段，避免把 A 的否定配给 B）；
+       - FRED（kind == "fred"）：片段是“字段,数值”式，仍允许没有单句含全部关键项时按整个片段比较；多句都配得上 → 错配。
+       其余分句与整个片段比。
+    3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、从未、hardly、yet to 等计为否定）。
+       审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed…）不计否定，出现就提示 support_hedge
+       （R-SUPPORT-HEDGE）；但配对的原文窗口带审慎说法而整条断言没有，或断言分句带审慎说法而整个片段没有 → 错配；“难以置信”“无与伦比”“从未如此”“never before”等固定说法不算否定（r5，审查 r4 MEDIUM）。"""
+    hints = set()
     loc_main, loc_scoped = numnorm.strip_scoped(loc)
-    if numnorm.strip_scoped(claim)[1] > loc_scoped:
-        return False
+    claim_scoped = numnorm.strip_scoped(claim)[1]
+    if claim_scoped > loc_scoped:
+        return False, hints
+    if loc_scoped > claim_scoped:
+        hints.add("support_scope")
+    claim_hedged, loc_hedged = numnorm.strip_hedges(claim)[1] > 0, numnorm.strip_hedges(loc)[1] > 0
+    if claim_hedged or loc_hedged:
+        hints.add("support_hedge")
     lclauses = numnorm.clauses(loc) or [loc]
     for cc in numnorm.clauses(claim) or [claim]:
         keys_n = numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(cc)[0]))
         keys_t = [t.lower() for t in claim_terms(cc)]
         objs = [w for w in _OBJ_RE.findall(cc) if _has_word(w, loc)]
-        if keys_n or keys_t:
-            cands = [lc for lc in lclauses
-                     if keys_n <= numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(lc)[0]))
-                     and all(t in lc.lower() for t in keys_t) and all(_has_word(w, lc) for w in objs)]
+        def has_all(seg):
+            return (keys_n <= numbers(numnorm.bp_to_pp(numnorm.normalize_numbers(seg)[0]))
+                    and all(t in seg.lower() for t in keys_t) and all(_has_word(w, seg) for w in objs))
+        if not (keys_n or keys_t):
+            target = loc
+        elif kind == "fred":
+            cands = [lc for lc in lclauses if has_all(lc)]
             if len(cands) > 1:
-                return False          # 多句都配得上，分不清对象 → 错配
-            # 没有单个分句同时含全部关键项（如 FRED 片段“日期,数值”被逗号分开）：关键项分散在片段里，
-            # 不存在可混淆的候选句，按整个片段比较
+                return False, hints          # 多句都配得上，分不清对象 → 错配
             target = cands[0] if cands else loc
         else:
-            target = loc
-        if numnorm.neg_count(numnorm.strip_scoped(cc)[0]) % 2 != numnorm.neg_count(numnorm.strip_scoped(target)[0]) % 2:
-            return False
-    return True
+            wins = _min_windows(loc, has_all)
+            if len(wins) != 1:
+                return False, hints          # 配不上或配出多个窗口，分不清对象 → 错配
+            target = wins[0]
+        cc_main, cc_h = _neg_main(cc)
+        tg_main, tg_h = _neg_main(target)
+        if numnorm.neg_count(cc_main) % 2 != numnorm.neg_count(tg_main) % 2:
+            return False, hints
+        # 审慎说法不计否定，但不能凭空丢掉或加上：配对的原文窗口带审慎说法而整条断言没有（“尚待验证”写成“已经验证”），
+        # 或断言分句带审慎说法而整个片段没有 → 错配
+        if tg_h and not claim_hedged or cc_h and not loc_hedged:
+            return False, hints
+    return True, hints
 
 
 def support_at(scopes, kind, claim, loc, fred_units=None):
@@ -989,7 +1042,8 @@ def support_at(scopes, kind, claim, loc, fred_units=None):
          须登记在 MANIFEST）核对，拿不到单位时带单位的断言不成立；
       4. 否定按对象配对分句后核对（见 _neg_parity_ok）；基点按 100 bp = 1 个百分点换算；
       5. 断言中的指标/对象代号（两个以上大写字母或含数字，如 MMLU、GSM8K、GPT-4）全部出现在片段里。
-    提示（R-*，不硬拦，交 Codex 逐条核对）：support_review（每条通过的断言都带）、locator_short、entity_unchecked。"""
+    提示（R-*，不硬拦，交 Codex 逐条核对）：support_review（每条通过的断言都带）、locator_short、entity_unchecked、
+    support_scope（原文 without/无需 短语断言没写，人工必查）、support_hedge（审慎/待定说法不计否定）。"""
     hints = set()
     if not quote_in_source(scopes, loc):
         return False, hints
@@ -1017,12 +1071,14 @@ def support_at(scopes, kind, claim, loc, fred_units=None):
                 for u in us - {None}:
                     if u not in lu.get(n, set()):
                         return False, hints
-    if not _neg_parity_ok(c, norm(loc)):
+    ok_neg, neg_hints = _neg_parity_ok(c, norm(loc), kind)
+    if not ok_neg:
         return False, hints
     lt = norm(loc).lower()
     if not all(t.lower() in lt for t in claim_terms(c)):
         return False, hints
     hints.add("support_review")
+    hints |= neg_hints
     if len(compact(loc)) < LOC_SHORT:
         hints.add("locator_short")
     if _CJK_RE.search(c) or any(t.lower() not in lt for t in _CAP_NAME_RE.findall(c)):
@@ -1240,6 +1296,7 @@ SOFT = {
     "link_unreachable": "R-LINK-UNREACHABLE",
     "structure_other": "R-STRUCTURE", "quote_unverified": "R-QUOTE-UNVERIFIED",
     "support_review": "R-SUPPORT-REVIEW", "locator_short": "R-LOCATOR-SHORT", "entity_unchecked": "R-SUPPORT-ENTITY",
+    "support_scope": "R-SUPPORT-SCOPE", "support_hedge": "R-SUPPORT-HEDGE",
 }
 
 

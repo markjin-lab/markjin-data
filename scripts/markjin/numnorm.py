@@ -118,11 +118,14 @@ def normalize_numbers(s):
 # —— 否定（按分句、计奇偶）
 NEG_ZH = ("难以", "尚待", "有待", "未曾", "从未", "未能", "尚未", "并非", "不是", "无法", "不能", "不会", "无需", "无须", "不必", "不用", "没有", "未", "没", "不", "非", "无")
 NOT_NEG_ZH = ("不变", "不同", "不断", "不少", "不仅", "不久", "不过", "不论", "无论", "非常", "并且", "无人机", "非洲",
-              "持平", "不等", "不止")
+              "持平", "不等", "不止",
+              # r5（审查 r4 MEDIUM）：含否定字但不否定谓语的固定说法——程度、评价、比较，不是“没有做到”
+              "难以置信", "难以想象", "难以言喻", "难以言表", "无与伦比", "无可比拟", "从未如此", "从未这么", "从未这样",
+              "前所未有", "史无前例", "毫无疑问", "无疑")
 # r4：no longer 是否定（“no longer reaches”≠“仍达到”）；隐性否定 hardly/barely/scarcely/yet to/remain(s) to be 硬拦
 NEG_EN = re.compile(r"\b(?:no\s+longer|not|no|never|cannot|without|unable|neither|nor|hardly|barely|scarcely|"
                     r"yet\s+to|remains?\s+to\s+be|fail(?:s|ed|ing)?\s+to)\b|n't", re.I)
-NOT_NEG_EN = re.compile(r"\bno\.\s*\d|\bnot only\b", re.I)
+NOT_NEG_EN = re.compile(r"\bno\.\s*\d|\bnot only\b|\b(?:like\s+)?never[\s\-]+before\b|\bnever\s+(?:been\s+)?seen\s+before\b", re.I)
 CLAUSE_RE = re.compile(r"[，；;。！？、]|,(?!\d{3})|[.!?](?=\s|$)")
 
 
@@ -167,3 +170,25 @@ _BP_RE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:个基点|基点|basis\s+po
 
 def bp_to_pp(s):
     return _BP_RE.sub(lambda m: _fmt(Decimal(m.group(1)) / 100) + " 个百分点", s)
+
+
+# —— r5（审查 r4 MEDIUM）：审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed、subject to revision…）
+#    说的是“结论或数据的状态”，不是“没做到某件事”。机器不按否定计，挖掉后再比主干；出现过就给人工提示
+#    （R-SUPPORT-HEDGE），由 Codex 核对断言与原文的审慎程度是否一致。“难以达到”“从未达到”“yet to reach”等真否定照旧硬拦。
+_HEDGE_OBJ_ZH = r"(?:同行评审|评审|审查|审核|核实|核准|证实|验证|确认|检验|修订|修正|观察|批准)"
+_HEDGE_ZH = re.compile(r"(?:有待|尚待|仍待|尚需|仍需|尚未经过|尚未经|未经过|未经)(?:进一步|正式|独立)?" + _HEDGE_OBJ_ZH)
+_HEDGE_EN = re.compile(r"\b(?:(?:has|have|is|are)\s+)?(?:yet\s+to\s+be|remains?\s+to\s+be|not\s+yet|subject\s+to)\s+"
+                       r"(?:independently\s+|formally\s+|further\s+)?(?:peer[\s\-]+)?"
+                       r"(?:review(?:ed)?|verif(?:y|ied)|confirm(?:ed)?|validat(?:e|ed)|revis(?:ed|ion)|approv(?:ed|al)|seen|determined)\b", re.I)
+
+
+def strip_hedges(s):
+    """返回 (挖掉审慎/待定说法后的文本, 挖掉的个数)。"""
+    n = 0
+    def f(m):
+        nonlocal n
+        n += 1
+        return " "
+    s = _HEDGE_EN.sub(f, s)
+    s = _HEDGE_ZH.sub(f, s)
+    return s, n
