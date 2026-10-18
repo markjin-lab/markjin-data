@@ -231,7 +231,11 @@ def main(argv=None):
             def sink(body, st, ctype, _ar=raw_ar, _sid=sid, _acc=hop_raws):   # 每一跳原字节先私有存档
                 rel_h, sha_h = _ar.put_raw(sub, _sid, body, collect.ext_for(ctype, body))
                 _acc.append({"raw": rel_h, "sha256": sha_h, "status": st})
-            r = collect.Result(False, error=cred_err) if cred_err else fetcher.get(req_url, sid=sid, raw_sink=sink)
+            def validate(ctype, body, _s=s):     # r15 ④：rss/api 格式校验与停止写入在 URL 锁（及站点限速锁）内完成
+                return collect.content_suspect(_s["method"], {"Content-Type": ctype}, body, _s.get("format"),
+                                               _s.get("xml_roots"))
+            r = collect.Result(False, error=cred_err) if cred_err else \
+                fetcher.get(req_url, sid=sid, raw_sink=sink, validate=validate)
             if r.error == "not_configured":   # 例如 SEC 未设 MARKJIN_SEC_USER_AGENT：不发请求、不停用，记为未配置
                 skipped[where].append({"id": sid, "url": purl, "reason": "not_configured", "detail": r.detail})
                 print(f"SKIP {sid} not_configured: {r.detail}", file=sys.stderr)
@@ -245,13 +249,8 @@ def main(argv=None):
             rec = {"id": sid, "theme": s.get("theme"), "url": purl, "query_param_count": collect.query_count(url), "round": a.round,
                    "fetched_at": t0, "http_status": r.status, "bytes": len(r.body), "sha256": r.sha256,
                    "license": lic, "content_type": r.ctype, "redirects": len(r.hops)}
+            # 格式校验不通过（suspected_challenge:<原因>）已在 fetcher.get 的锁内判定并写停止，这里 r.ok 为 False
             kind = parse_ok(r.body) if r.ok else None
-            suspect = collect.content_suspect(s["method"], {"Content-Type": r.ctype}, r.body,
-                                              s.get("format"), s.get("xml_roots")) if r.ok else None
-            if suspect:      # 格式校验不通过：算可疑（该主机本轮停止、URL 冷却），不写成功索引
-                kind = None
-                r.error = f"suspected_challenge:{suspect}"
-                fetcher.mark_failed(r.final_url or req_url, sid, r.error, also=(req_url,))   # 该主机本轮也停止
             if r.ok:   # 每个成功响应的原字节都先私有存档（不论能否解析）
                 ext = collect.ext_for(r.ctype, r.body)
                 rel, sha = raw_ar.put_raw(sub, sid, r.body, ext)

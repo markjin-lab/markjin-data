@@ -2171,21 +2171,16 @@ class LegacyHosts(unittest.TestCase):
         with contextlib.redirect_stderr(q), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(SH.main(["enable", "--host", "b.org", "--reason", "x", *args]), 2)   # bot_check
             self.assertEqual(SH.main(["enable", "--host", "c.org", "--reason", "x", *args]), 2)   # login
-            self.assertEqual(SH.main(["enable", "--host", "c.org", "--allow-unrecoverable", *args]), 2)  # 无依据
             self.assertEqual(SH.main(["enable", "--id", "feedx", *args]), 2)                      # 旧表 login 源
             self.assertEqual(SH.main(["enable", "--host", "a.org", *args]), 2)                    # 403 也须写依据
         self.assertIn("unrecoverable", q.getvalue())
         self.assertEqual(len(collect.SourceHealth(st).data["hosts"]), 5)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(SH.main(["enable", "--host", "a.org", "--reason", "reviewed by Grok Bot", *args]), 0)
-            self.assertEqual(SH.main(["enable", "--host", "b.org", "--allow-unrecoverable",
-                                      "--reason", "vendor whitelisted us, confirmed by Grok Bot", *args]), 0)
-            self.assertEqual(SH.main(["enable", "--id", "feedx", "--allow-unrecoverable",
-                                      "--reason", "confirmed by Grok Bot", *args]), 0)
         hs = collect.open_source_health(base / "priv")                      # 旧文件还在，也不会再迁移回去
-        self.assertEqual(sorted(hs.data["hosts"]), ["c.org", "d.org", "f.org"])
+        self.assertEqual(sorted(hs.data["hosts"]), ["b.org", "c.org", "d.org", "f.org"])
         self.assertIsNone(hs.host_blocked("a.org"))
-        self.assertIsNone(hs.blocked("feedx"))
+        self.assertTrue(hs.blocked("feedx"))
 
     def test_legacy_category_from_original_reason(self):
         for reason, cat in (("HTTP 403", "http_403"), ("HTTP 401", "login"), ("robots.txt HTTP 401", "login"),
@@ -2194,6 +2189,255 @@ class LegacyHosts(unittest.TestCase):
                             ("network", "other")):
             self.assertEqual(collect.legacy_category(reason), cat, reason)
 
+
+
+class R15Fixes(unittest.TestCase):
+    """审查 r15（#53 评论）逐条：全部离线（假 opener），状态与锁都在临时目录，不碰真实私有目录。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup); return Path(d.name)
+
+    def fetcher(self, d, routes, sleep=None, state=None, **kw):
+        t = [1000.0]
+
+        def _sleep(w):
+            t[0] += w
+            if sleep:
+                sleep(w)
+        f = collect.Fetcher(state or collect.SourceHealth(d / "st.json"), opener=FakeOpener(routes), sleep=_sleep,
+                            clock=lambda: t[0], resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=ROUND, **kw)
+        return f
+
+    # ---- HIGH ①：站点限速锁里等待之后重跑完整预检
+    def test_r15_1_wait_then_recheck_full_precheck(self):
+        cases = {
+            "host_stop": (lambda p: collect.SourceHealth(p).stop(["https://a.org/other"], ROUND, "t", "http_403"),
+                          "host_stopped_this_round"),
+            "url_cooldown": (lambda p: collect.SourceHealth(p).stop(["https://a.org/x"], "2026-10-11/r2", "t", "http_403"),
+                             "url_cooldown"),
+            "source_disabled": (lambda p: collect.SourceHealth(p).set_status("s", "disabled", "x"), "source_blocked"),
+        }
+        for name, (other_process, err) in cases.items():
+            d = self.tmpdir()
+            done = []
+
+            def sleep(w, _o=other_process, _p=d / "st.json"):
+                if not done:                    # 等待期间「另一个进程」写下停止 / 冷却 / 停用
+                    done.append(1); _o(_p)
+            f = self.fetcher(d, {"https://a.org/x": Resp(200, b"ok")}, sleep=sleep)
+            r = f.get("https://a.org/x", sid="s")
+            self.assertEqual(done, [1], name)
+            self.assertEqual(r.error, err, name)
+            self.assertEqual([u for u, _ in f.opener.calls], ["https://a.org/robots.txt"], name)   # 等待后不再发出
+
+    def test_r15_1_stop_written_while_site_lock_held(self):
+        import fcntl
+        for robots in (False, True):
+            d = self.tmpdir()
+            hs = collect.SourceHealth(d / "st.json")
+            held, orig = [], hs.stop
+
+            def stop(*a, _orig=orig, **k):
+                with open(d / "locks" / "rate-site-a.org.lock", "a+") as fh:
+                    try:
+                        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        fcntl.flock(fh, fcntl.LOCK_UN); held.append(False)
+                    except BlockingIOError:
+                        held.append(True)
+                return _orig(*a, **k)
+            hs.stop = stop
+            routes = {"https://a.org/robots.txt": Resp(403 if robots else 404), "https://a.org/x": Resp(403)}
+            f = self.fetcher(d, routes, state=hs)
+            self.assertIn(f.get("https://a.org/x", sid="s").error, ("http_403", "robots_http_403"))
+            self.assertEqual(held, [True], robots)          # 写停止时仍持有站点限速锁：与同站发请求互斥
+
+    # ---- HIGH ②：因验证页或登录墙停的主机 / 源不恢复，没有 --allow-unrecoverable
+    def test_r15_2_unrecoverable_never_reenabled_no_override(self):
+        import contextlib, inspect, io
+        import source_health as SH
+        L = LegacyHosts()
+        base = self.tmpdir()
+        st = base / "priv" / "state"; st.mkdir(parents=True)
+        (st / "collector-hosts.json").write_text(json.dumps(L.LEGACY))
+        args = ["--private-root", str(base / "priv"), "--out-root", str(base / "pub")]
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["migrate", *args]), 0)
+        for extra in (["--host", "b.org"], ["--host", "c.org"], ["--host", "d.org"], ["--id", "feedx"]):
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:          # 开关已删除：argparse 直接拒绝
+                    SH.main(["enable", *extra, "--allow-unrecoverable", "--reason", "reviewed by Grok Bot", *args])
+            self.assertEqual(cm.exception.code, 2, extra)
+        self.assertNotIn("allow_unrecoverable", inspect.signature(collect.SourceHealth.enable_host).parameters)
+        self.assertNotIn("allow_unrecoverable", inspect.signature(collect.SourceHealth.set_status).parameters)
+        hs = collect.open_source_health(base / "priv")
+        for h in ("b.org", "c.org", "d.org"):
+            with self.assertRaises(collect.ConfigError):
+                hs.enable_host(h, "reviewed by Grok Bot, vendor whitelisted us")
+        with self.assertRaises(collect.ConfigError):
+            hs.set_status("feedx", "ok", "reviewed by Grok Bot")
+        hs = collect.open_source_health(base / "priv")
+        self.assertEqual(sorted(hs.data["hosts"]), ["a.org", "b.org", "c.org", "d.org", "f.org"])
+        self.assertTrue(hs.blocked("feedx"))
+
+    # ---- HIGH ③：超过大小上限的 401/403/429 先判可疑、停主机，再判大小
+    def test_r15_3_oversized_401_403_429_suspicious_before_size(self):
+        big = b"x" * 100
+        for st in (401, 403, 429):
+            for robots in (False, True):
+                d = self.tmpdir()
+                routes = {"https://a.org/x": Resp(st, big), "https://a.org/y": Resp(200, b"ok"),
+                          "https://a.org/robots.txt": Resp(st, big) if robots else Resp(404)}
+                f = self.fetcher(d, routes, max_bytes=16)
+                r = f.get("https://a.org/x", sid="s")
+                self.assertEqual(r.error, f"{'robots_' if robots else ''}http_{st}", (st, robots))
+                self.assertTrue(collect.is_suspicious(r.error))
+                self.assertEqual(f.get("https://a.org/y", sid="t").error, "host_stopped_this_round", (st, robots))
+                self.assertIn("a.org", collect.SourceHealth(d / "st.json").data["host_stops"][ROUND])
+                self.assertEqual([e["reason"] for e in f.suspicious["s"]], [r.error])
+        d = self.tmpdir()
+        f = self.fetcher(d, {"https://a.org/x": Resp(200, big), "https://a.org/y": Resp(200, b"ok")}, max_bytes=16)
+        self.assertEqual(f.get("https://a.org/x", sid="s").error, "too_large")     # 200 超大：仍只是 too_large，不算可疑
+        self.assertTrue(f.get("https://a.org/y", sid="s").ok)
+
+    # ---- HIGH ④：capture_sources 的 rss/api 格式可疑校验与停止写入在 URL 锁内
+    def test_r15_4_capture_format_check_and_stop_inside_url_lock(self):
+        import fcntl
+        from unittest import mock
+        base = self.tmpdir()
+        B = BlockRule1522()
+        bad = Resp(200, b"<html><body>hello</body></html>", {"Content-Type": "text/html"})
+        lockf = base / "priv" / "state" / "locks" / "urls" / f"{collect.url_key('https://f.org/rss')[:40]}.lock"
+        seen = {"check": [], "stop": []}
+
+        def held():
+            with open(lockf, "a+") as fh:
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB); fcntl.flock(fh, fcntl.LOCK_UN); return False
+                except BlockingIOError:
+                    return True
+        orig_cs, orig_stop = collect.content_suspect, collect.SourceHealth.stop
+
+        def cs(*a, **k):
+            seen["check"].append(held()); return orig_cs(*a, **k)
+
+        def stop(self_, *a, **k):
+            seen["stop"].append(held()); return orig_stop(self_, *a, **k)
+        with mock.patch.object(collect, "content_suspect", cs), mock.patch.object(collect.SourceHealth, "stop", stop):
+            rc, err, calls = B.run_round(base, "2026-10-12", 1, {"https://f.org/rss": bad, "https://f.org/rss3": B.RSS},
+                                         sources=[B.S, B.S3])
+        self.assertIn("suspected_challenge:html", err)
+        self.assertEqual(seen["check"], [True])
+        self.assertEqual(seen["stop"], [True])
+        self.assertNotIn("https://f.org/rss3", calls)                    # 同主机本轮停止
+        self.assertEqual(rc, 1)
+
+    # ---- MEDIUM ⑤：跳转起点只冷却该 URL，停的是返回可疑响应那一跳的主机
+    def test_r15_5_redirect_origin_host_not_stopped(self):
+        d = self.tmpdir()
+        routes = {"https://doi.org/10.1/a": Resp(302, headers={"Location": "https://pub.org/a"}), "https://pub.org/a": Resp(403),
+                  "https://doi.org/10.1/b": Resp(302, headers={"Location": "https://ok.org/b"}),
+                  "https://ok.org/b": Resp(200, b"ok"), "https://pub.org/c": Resp(200, b"ok")}
+        f = self.fetcher(d, routes)
+        self.assertEqual(f.get("https://doi.org/10.1/a", sid="s").error, "http_403")
+        self.assertTrue(f.get("https://doi.org/10.1/b", sid="s").ok)                       # 同轮其他 DOI 照常
+        self.assertEqual(f.get("https://pub.org/c", sid="s").error, "host_stopped_this_round")
+        st = collect.SourceHealth(d / "st.json").data
+        self.assertEqual(sorted(st["host_stops"][ROUND]), ["pub.org"])
+        self.assertIn(collect.url_key("https://doi.org/10.1/a"), st["urls"][ROUND])        # 起点 URL 仍冷却
+        f2 = collect.Fetcher(collect.SourceHealth(d / "st.json"), opener=FakeOpener(routes), sleep=lambda w: None,
+                             resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=ROUND)    # 另一进程、同一轮
+        self.assertEqual(f2.get("https://doi.org/10.1/a", sid="s").error, "url_cooldown")
+        self.assertTrue(f2.get("https://doi.org/10.1/b", sid="s").ok)
+
+    # ---- MEDIUM ⑥：限速锁文件损坏 → 拒绝请求并报错，不当空桶放行
+    def test_r15_6_corrupt_rate_lock_refuses(self):
+        for bad in ("{bad", "[]", '{"site": "x"}', '{"site": 1, "hosts": []}', '{"site": 1, "hosts": {"a.org": "x"}}',
+                    '{"site": 1, "hosts": {}, "extra": 1}', '{"site": true}'):
+            for robots_cached in (False, True):
+                d = self.tmpdir()
+                f = self.fetcher(d, {"https://a.org/x": Resp(200, b"ok"), "https://a.org/y": Resp(200, b"ok")})
+                if robots_cached:
+                    self.assertTrue(f.get("https://a.org/y", sid="s").ok)      # robots 已取过，再损坏正文那次
+                n = len(f.opener.calls)
+                (d / "locks" / "rate-site-a.org.lock").parent.mkdir(parents=True, exist_ok=True)
+                (d / "locks" / "rate-site-a.org.lock").write_text(bad)
+                r = f.get("https://a.org/x", sid="s")
+                self.assertEqual(r.error, "rate_lock_invalid", (bad, robots_cached))
+                self.assertFalse(collect.is_suspicious(r.error))
+                self.assertEqual(len(f.opener.calls), n, (bad, robots_cached))     # 一个请求都没发
+                self.assertEqual((d / "locks" / "rate-site-a.org.lock").read_text(), bad)   # 不改写
+        d = self.tmpdir()                                                       # 空文件 = 首次使用，照常
+        (d / "locks").mkdir(); (d / "locks" / "rate-site-a.org.lock").write_text("")
+        self.assertTrue(self.fetcher(d, {"https://a.org/x": Resp(200, b"ok")}).get("https://a.org/x", sid="s").ok)
+
+    def test_r15_6_capture_reports_corrupt_rate_lock(self):
+        base = self.tmpdir()
+        B = BlockRule1522()
+        lk = base / "priv" / "state" / "locks" / "rate-site-f.org.lock"
+        lk.parent.mkdir(parents=True); lk.write_text("{bad")
+        rc, err, calls = B.run_round(base, "2026-10-12", 1, {"https://f.org/rss": B.RSS}, sources=[B.S])
+        self.assertEqual((rc, calls), (1, []))
+        self.assertIn("rate_lock_invalid", err)
+
+    # ---- MEDIUM ⑦：旧表停用原因、人工 --reason 等自由文本不进公开 skipped / 健康报告，只写固定代码
+    def test_r15_7_free_text_never_in_public_outputs(self):
+        import contextlib, io
+        import source_health as SH
+        B = BlockRule1522()
+        base = self.tmpdir()
+        st = base / "priv" / "state"; st.mkdir(parents=True)
+        legacy = {"hosts": {"a.org": {"reason": "HTTP 403 FREETEXT-LEGACY-HOST seen by ops"},
+                            "b.org": {"reason": "bot challenge FREETEXT-LEGACY-BOT"}},
+                  "sources": {"feedl": {"reason": "HTTP 401 FREETEXT-LEGACY-SRC", "host": "c.org"}}}
+        (st / "collector-hosts.json").write_text(json.dumps(legacy))
+        args = ["--private-root", str(base / "priv"), "--out-root", str(base / "pub")]
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["migrate", *args]), 0)
+            self.assertEqual(SH.main(["confirm-disable", "--id", "feedm", "--reason", "FREETEXT-MANUAL note", *args]), 0)
+        hs = collect.SourceHealth(st / "source-health.json")
+        for rid in ("2026-10-12/r1",):
+            hs.stop(["https://e.org/x"], "2026-10-12/r1", "feede", "suspected_challenge:xml_root:FREETEXT-ROOT")
+            hs.record_round(rid, {"feede": ["suspected_challenge:xml_root:FREETEXT-ROOT"]})
+        srcs = [dict(B.S, id="feeda", url="https://a.org/rss"), dict(B.S, id="feedb", url="https://b.org/rss"),
+                dict(B.S, id="feedl", url="https://c.org/rss"), dict(B.S, id="feedm", url="https://m.org/rss"),
+                dict(B.S, id="feede", url="https://e.org/x")]
+        rc, err, calls = B.run_round(base, "2026-10-12", 1, {}, sources=srcs, t=time.time())
+        self.assertEqual(calls, [])
+        pub = [p for p in (base / "pub").rglob("*") if p.is_file()]
+        self.assertTrue([p for p in pub if p.name.startswith("skipped-")])
+        self.assertTrue([p for p in pub if p.name.startswith("source-health-")])
+        for p in pub:
+            self.assertNotIn("FREETEXT", p.read_text(), p.name)
+        self.assertNotIn("FREETEXT", err)
+        skipped = json.loads(next(p for p in pub if p.name.startswith("skipped-")).read_text())
+        self.assertEqual({x["id"]: x["detail"] for x in skipped},
+                         {"feeda": "host disabled:legacy-import:http_403", "feedb": "host disabled:legacy-import:bot_check:unrecoverable",
+                          "feedl": "source disabled:legacy-import:unrecoverable", "feedm": "source disabled:manual-confirm",
+                          "feede": "suspected_challenge:xml_root"})
+        rep = {e["id"]: e for e in json.loads(next(p for p in pub if p.name.startswith("source-health-")).read_text())}
+        self.assertEqual(rep["feedm"]["reason_code"], "disabled:manual-confirm")
+        self.assertEqual(rep["feede"]["recent"][0]["reasons"], ["suspected_challenge:xml_root"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(SH.main(["report", *args]), 0)            # 私有终端输出仍可看原文
+        self.assertIn("FREETEXT-MANUAL", out.getvalue())
+        self.assertIn("FREETEXT-LEGACY-HOST", (st / "source-health.json").read_text())   # 原文留在私有状态
+        self.assertEqual(collect.public_code("weird free text"), "other")
+
+    # ---- LOW ⑧：固定五轮窗口（WINDOW_ROUNDS 改 4 或 6 都要被抓到）
+    def test_r15_8_window_is_exactly_five_rounds(self):
+        rounds = [f"2026-10-{12 + i // 2}/r{i % 2 + 1}" for i in range(6)]
+        S, O = ["http_403"], []
+        for pat, pending_at in (([S, O, O, S, S], 4),          # 第 5 轮：5 轮窗口里 3 轮可疑 → pending（4 轮窗口只有 2 轮）
+                                ([S, O, O, O, S, S], None)):   # 第 6 轮：第 1 轮已出窗口，只有 2 轮 → 不 pending（6 轮窗口有 3 轮）
+            hs = collect.SourceHealth(self.tmpdir() / "st.json")
+            for i, r in enumerate(pat):
+                ch = hs.record_round(rounds[i], {"s": r})
+                self.assertEqual(ch["s"], i == pending_at, (pat, i))
+            rec = hs.data["sources"]["s"]
+            self.assertEqual(rec["status"], "ok" if pending_at is None else "pending-disable", pat)
+            self.assertEqual(hs.report()[0]["window"], 5)
+            self.assertEqual(len(hs.report()[0]["recent"]), min(5, len(pat)))
 
 
 if __name__ == "__main__":
