@@ -4,11 +4,11 @@ import helpers  # noqa: F401
 from markjin import branches as B
 
 SHA = "a" * 64
-RAWP = "raw/2026-10-20/fred/X.csv"
+RAWP = "raw/2026-10-20/src/X.csv"
 RSHA = "d" * 64
-LU = "2025Q1:1.5@2025-04-16#raw/2025-04-16/fred/X.csv:" + "c" * 64 + "|https://fred.stlouisfed.org/series/X"
+LU = "2025Q1:1.5@2025-04-16#raw/2025-04-16/src/X.csv:" + "c" * 64 + "|https://example.org/series/X"
 QR1 = f"2026Q3:1.2@2026-10-20#{RAWP}:{RSHA}"
-QR2 = QR1 + f";2026Q4:1.3@2027-01-20#raw/2027-01-20/fred/X.csv:{RSHA}"
+QR2 = QR1 + f";2026Q4:1.3@2027-01-20#raw/2027-01-20/src/X.csv:{RSHA}"
 EVID = f"{RAWP}:{RSHA}|scripts/calc.py@{'e' * 40}|2027-01-05T09:00:00+08:00"
 DONE = dict(checked_by="审查与治理", checked_at="2027-01-05T10:00:00+08:00")
 HDR = ",".join(B.HEADER) + "\n"
@@ -19,7 +19,7 @@ def row(**kw):
     base = dict.fromkeys(B.HEADER, "")
     base.update(row_id=FIRST, classification_id="c1", domain="macro", framework_commit="b" * 40, draft_id="2026-10-13-macro",
                 slug="gdp-q3", publish_date="2026-10-13", framework_version="v2.4",
-                framework_sha256=SHA, observed_variable="GDP", unit="%", data_source="FRED:X",
+                framework_sha256=SHA, observed_variable="GDP", unit="%", data_source="SRC:X",
                 data_vintage="每季取到期核对日（SGT）最新发布的版本", window_start="2026-10-14", window_end="2026-12-31",
                 branch_order="1", interval_low="", interval_low_closed="false", interval_high="5",
                 interval_high_closed="false", trigger_condition="x < 5", registered_by="生产与发布",
@@ -285,7 +285,7 @@ class R3R4Quarterly(unittest.TestCase):
             self.assertIn("E-BR-READING-RAW-FORMAT", ccodes(quarterly(), self.rd(r)), p)
 
     def test_manifest_binding(self):
-        man = {RAWP: RSHA, "raw/2025-04-16/fred/X.csv": "c" * 64}.get
+        man = {RAWP: RSHA, "raw/2025-04-16/src/X.csv": "c" * 64}.get
         self.assertEqual(ccodes(quarterly(), self.rd(QR1), manifest=man), [])
         self.assertIn("E-BR-READING-RAW-MANIFEST", ccodes(quarterly(), self.rd(QR1.replace(RSHA, "9" * 64)), manifest=man))
 
@@ -427,7 +427,7 @@ class R3Review(unittest.TestCase):
 
     def test_N5_group_different_windows(self):
         self.assertIn("E-BR-GROUP-MISMATCH", ccodes(row(), self.b2(window_end="2027-03-31")))
-        for f, v in (("observed_variable", "CPI"), ("unit", "pp"), ("data_source", "FRED:Y"), ("data_vintage", "首发值"),
+        for f, v in (("observed_variable", "CPI"), ("unit", "pp"), ("data_source", "SRC:Y"), ("data_vintage", "首发值"),
                      ("window_start", "2026-10-15"), ("registered_at", "2026-10-14T07:00:00+08:00")):
             self.assertIn("E-BR-GROUP-MISMATCH" if f != "registered_at" else "E-BR-REGISTERED-DATE",
                           ccodes(row(), self.b2(**{f: v})), f)
@@ -599,7 +599,7 @@ class R4Review(unittest.TestCase):
     def test_Y1_units_and_paths(self):
         for u in ("/年", "亿元 /年", "bp /月", "x /5", "美元/桶", "%/年", "人/km2", "1/2", "/kg"):
             self.assertFalse(B.private_text("unit", u), u)
-        for v in ("/年", "亿元 /年", "bp /月", "x /5", "https://fred.stlouisfed.org/series/X", "FRED:GDP/CPI", "见 / 年"):
+        for v in ("/年", "亿元 /年", "bp /月", "x /5", "https://example.org/series/X", "SRC:GDP/CPI", "见 / 年"):
             self.assertFalse(B.private_text("data_source", v), v)
         ws = "/work" + "space/a"
         for v in ("/opt/private/x", "a:/opt/private/x", "markjin-internal/f", "C:\\x", "~/a", "file:///x", ws,
@@ -674,7 +674,7 @@ class R4Review(unittest.TestCase):
         for v in ("见/optimal", "/年", "亿元 /年", "亿元/年", "人/km2", "美元/桶", "bp /月", "x /5"):
             self.assertFalse(B.private_text("unit", v), v)
             self.assertFalse(B.private_text("data_source", v), v)
-        self.assertFalse(B.private_text("data_source", "https://fred.stlouisfed.org/series/X|FRED:X"))
+        self.assertFalse(B.private_text("data_source", "https://example.org/series/X|SRC:X"))
 
 class R6Trust(unittest.TestCase):
     """r6：可信合并时间 = 这组行首次进入 main 的那次 push 运行的 created_at（反例 B、C、D、E、V3、V7）。"""

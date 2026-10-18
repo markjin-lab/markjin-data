@@ -57,7 +57,7 @@ FREE_TEXT = ["slug", "reason", "observed_variable", "unit", "data_source", "data
              "registered_by", "checked_by", "actual_value"]
 # 网址按明确边界剔除：只吃 URL 合法字符，遇到 | , ; 引号 括号 空白 中文 即止（https://x.org|/opt/x 里的路径仍要检出）
 URL_RE = re.compile(r"(?i)https?://[A-Za-z0-9\-._~:/?#@!$&*+=%]+")
-# 绝对路径：斜杠后必须跟 ASCII 字母、下划线、点或 ~（/年、bp /月、x /5 不算）；斜杠前不能是字母数字（km/s、FRED:GDP/CPI 不算），
+# 绝对路径：斜杠后必须跟 ASCII 字母、下划线、点或 ~（/年、bp /月、x /5 不算）；斜杠前不能是字母数字（km/s、SRC:GDP/CPI 不算），
 # 冒号后直接跟的绝对路径（a:/opt/x）要算
 ABS_RE = re.compile(r"(?:(?<![\w.~%/-])|(?<=:))/[A-Za-z_.~][\w.~-]*")
 # 斜杠前是中文（如「见/opt/private/x」）：后面是 ASCII 路径词并且还有下一段，才算路径（「亿元/年」「人/km2」不算）

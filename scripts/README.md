@@ -7,6 +7,8 @@
 > **硬拦的边界（王总经 Grok Bot 转达，2026-10-11 r13）**：selfcheck 只是 Codex 之前的前置硬拦，不承担语义层面的完备拦截。词表和模式能识别的宏观观点、仓位与买卖建议直接 FAIL；**词表和模式之外的观点、评价与倾向，由每篇必过的 Codex 审查拦截**。因此 selfcheck `PASS` 不代表稿件没有观点，也不构成 B1 已满足的证明；不再为追求完备而无限加词。
 
 
+> **FRED 已停用（2026-10-18）**：FRED 已于 2026-10-18 停用，改从原始机构取数，FRED 原始文件已按 `raw/2026-10-11/RETRACTIONS.md` 撤回（data PR #87）。下文凡写 FRED 存档、FRED 序列、FRED 观测的规则都是历史口径，只说明 selfcheck 现有代码的行为，不表示 FRED 仍是来源；selfcheck 里的 FRED 回放代码与对应测试和 data PR #79 重叠，留待 #79 处理后再清理。稿件提到 FRED（`fred` 词、`/fred/` 路径、`fred.stlouisfed.org` 链接）仍按宏观处理（`R-MACRO`，须王总批准），撤回的 raw 文件已不存在，引用会按 `E-REPLAY-002` 失败。
+
 `python3 scripts/selfcheck.py DRAFT.md --repo REPO_ROOT --date YYYY-MM-DD --card-type daily|signal [--json]`
 
 - `--repo`、`--date`、`--card-type` 都必须显式给出：不退回当前目录，不默认 daily。退出码 0=PASS、1=FAIL、2=UNCLEAR。
@@ -65,7 +67,7 @@
 
 ### 宏观按整篇判定
 
-任一行属宏观语境（宏观词、FRED 来源）即整篇为宏观（`R-MACRO`，永不低风险）。宏观稿中任何位置（含跨行写法）出现观点、预测、判断词
+任一行属宏观语境（宏观词、FRED 来源；FRED 已于 2026-10-18 停用，这条识别保留，用来拦住重新引用）即整篇为宏观（`R-MACRO`，永不低风险）。宏观稿中任何位置（含跨行写法）出现观点、预测、判断词
 （预计、看多、看涨、看好、加配、减配、建议…）或资金比例/投入建议（如“建议将三成资金投入股票”）→ `E-BLOCK-MACRO-OPINION`（FAIL）。
 宏观稿中的因果判断（由于、导致、推动…）同样硬拦。转述词在宏观稿中只算 `R-INFERENCE`，不硬拦。
 
