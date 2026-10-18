@@ -3128,5 +3128,64 @@ class R16Review(unittest.TestCase):
             self.assertTrue(collect.SourceHealth(p).blocked("s", ROUND))
 
 
+class FedSourcesPaused(unittest.TestCase):
+    """Grok Bot 2026-10-18 裁定：www.federalreserve.gov 的 fed-press-monetary、fed-prates 停用，0 请求（全部离线，假 opener）。
+    以后要恢复，走审查 bot 的 lift 流程，不在本测试里放开。"""
+    IDS = ("fed-press-monetary", "fed-prates")
+    HOST = "www.federalreserve.gov"
+
+    def repo_sources(self):
+        import yaml
+        p = Path(__file__).resolve().parents[1] / "improve" / "sources.yaml"
+        return yaml.safe_load(p.read_text(encoding="utf-8"))["sources"]
+
+    def run_capture(self, sources, extra=()):
+        import io, contextlib, yaml
+        base = Path(tempfile.mkdtemp()); out, priv = base / "pub", base / "priv"; out.mkdir()
+        src = base / "s.yaml"
+        src.write_text(yaml.safe_dump({"sources": sources}), encoding="utf-8")
+        routes = {}
+        for s in sources:
+            routes[s["url"]] = Resp(200, b"<rss><channel/></rss>", {"Content-Type": "application/rss+xml"})
+        routes["https://%s/robots.txt" % self.HOST] = Resp(200, b"")
+        opener = FakeOpener(routes)
+        orig = collect.Fetcher.__init__
+
+        def init(s, *a, **k):
+            k["opener"] = collect._TestTransport(opener); k["sleep"] = lambda x: None; k.setdefault("resolver", PUBLIC_DNS)
+            orig(s, *a, **k)
+        collect.Fetcher.__init__ = init
+        try:
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                rc = CS.main(["--sources", str(src), "--date", "2026-10-12", "--round", "1",
+                              "--out-root", str(out), "--private-root", str(priv), *extra])
+        finally:
+            collect.Fetcher.__init__ = orig
+        return rc, err.getvalue(), opener.calls, out
+
+    def test_fed_sources_disabled_in_repo_yaml(self):
+        srcs = {s["id"]: s for s in self.repo_sources()}
+        for sid in self.IDS:
+            self.assertIn(sid, srcs)
+            self.assertIs(srcs[sid]["enabled"], False, sid)
+            self.assertFalse(collect.approval_gate(srcs[sid])[0], sid)
+        for s in srcs.values():                                              # 该主机上没有任何启用的源
+            if collect.host_of(s["url"]) == self.HOST:
+                self.assertFalse(s.get("enabled"), s["id"])
+
+    def test_fed_sources_zero_requests(self):
+        fed = [s for s in self.repo_sources() if s["id"] in self.IDS]
+        self.assertEqual(sorted(s["id"] for s in fed), sorted(self.IDS))
+        rc, err, calls, out = self.run_capture(fed)                          # 常规一轮：静默跳过
+        self.assertEqual(calls, [])                                          # 0 请求（含 robots.txt）
+        self.assertEqual(rc, 0)
+        self.assertFalse(list((out / "raw").rglob("index-*.json")) if (out / "raw").exists() else [])
+        rc, err, calls, out = self.run_capture(fed, ["--only", ",".join(self.IDS)])   # 点名也拒绝
+        self.assertEqual(calls, [])
+        self.assertEqual(rc, 1)
+        for sid in self.IDS:
+            self.assertIn("REFUSED %s" % sid, err)
+
+
 if __name__ == "__main__":
     unittest.main()
