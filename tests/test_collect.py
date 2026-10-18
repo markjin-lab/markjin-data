@@ -1584,18 +1584,26 @@ class R12Fixes(unittest.TestCase):
 
     def test_state_file_strict_schema_refuses_requests(self):
         ok_src = '{"status": "ok", "rounds": {}}'
-        bad = ["{bad", "", "[]", "{}", '{"version": 2, "sources": {}}', '{"version": 2, "urls": {}}',
+        bad = ["{bad", "", "[]", "{}", '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": {}}', '{"version": 2, "urls": {}}',
                '{"sources": {}, "urls": {}}', '{"version": 1, "sources": {}, "urls": {}}',
-               '{"version": 2, "sources": [], "urls": {}}', '{"version": 2, "sources": {}, "urls": []}',
-               '{"version": 2, "sources": {"s": {}}, "urls": {}}',
-               '{"version": 2, "sources": {"s": {"status": "off", "rounds": {}}}, "urls": {}}',
-               '{"version": 2, "sources": {"s": {"status": "disabled", "rounds": {}}}, "urls": {}}',
-               '{"version": 2, "sources": {"s": {"status": "ok", "rounds": {"bad": {"suspicious": true, "reasons": []}}}}, "urls": {}}',
-               '{"version": 2, "sources": {"s": {"status": "ok", "rounds": {"2026-10-12/r1": {"suspicious": 1, "reasons": []}}}},'
+               '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": [], "urls": {}}', '{"version": 2, "sources": {}, "urls": []}',
+               '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": {"s": {}}, "urls": {}}',
+               '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": {"s": {"status": "off", "rounds": {}}}, "urls": {}}',
+               '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": {"s": {"status": "disabled", "rounds": {}}}, "urls": {}}',
+               '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": {"s": {"status": "ok", "rounds": {"bad": {"suspicious": true, "reasons": []}}}}, "urls": {}}',
+               '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": {"s": {"status": "ok", "rounds": {"2026-10-12/r1": {"suspicious": 1, "reasons": []}}}},'
                ' "urls": {}}',
-               '{"version": 2, "sources": {"s": ' + ok_src + '}, "urls": {"x": {"round": "2026-10-12/r1", "reason": "r", '
+               '{"version": 3, "hosts": {}, "legacy_imports": {}, "sources": {"s": ' + ok_src + '}, "urls": {"x": {"round": "2026-10-12/r1", "reason": "r", '
                '"sid": null, "host": "a"}}}',
-               '{"hosts": {}, "sources": {}}']                                                   # 旧格式也不当空状态
+               '{"hosts": {}, "sources": {}}',                                                   # 旧格式也不当空状态
+               '{"version": 2, "sources": {}, "urls": {}}',                                     # v2（无 hosts）不再接受
+               '{"version": 3, "sources": {}, "urls": {}, "legacy_imports": {}}',               # 缺 hosts
+               '{"version": 3, "sources": {}, "urls": {}, "hosts": {}}',                        # 缺 legacy_imports
+               '{"version": 3, "sources": {}, "urls": {}, "legacy_imports": {}, "hosts": {"a.org": {"status": "ok", '
+               '"reason": "r", "category": "other", "unrecoverable": false}}}',
+               '{"version": 3, "sources": {}, "urls": {}, "legacy_imports": {}, "hosts": {"a.org": {"status": "disabled", '
+               '"reason": "r", "category": "bot_check"}}}',
+               '{"version": 3, "sources": {}, "urls": {}, "legacy_imports": {"x": "t"}, "hosts": {}}']
         for txt in bad:
             p = self.tmpdir() / "state" / "source-health.json"; p.parent.mkdir()
             p.write_text(txt)
@@ -1616,7 +1624,7 @@ class R12Fixes(unittest.TestCase):
         p = self.tmpdir() / "fresh" / "source-health.json"                                    # 文件不存在 = 首次运行
         self.assertIsNone(collect.SourceHealth(p).blocked("s"))
         collect.SourceHealth(p).record_round(ROUND, {"s": []})
-        self.assertEqual(sorted(json.loads(p.read_text())), ["sources", "urls", "version"])
+        self.assertEqual(sorted(json.loads(p.read_text())), ["hosts", "legacy_imports", "sources", "urls", "version"])
 
     def test_robots_checks_source_status_before_cache(self):
         p = self.tmpdir() / "state" / "h.json"
@@ -1802,9 +1810,18 @@ class BlockRule20261018(unittest.TestCase):
             if i < 3:
                 self.assertEqual(rep[0]["status"], "watch")
                 self.assertNotIn("PENDING-DISABLE", err)
+                self.assertNotIn("Grok Bot 复核", err)
+                self.assertFalse(list((base / "pub" / "raw" / date).rglob("GROK-BOT-REVIEW-*.md")))
         self.assertEqual((rep[0]["status"], rep[0]["flag"], rep[0]["newly_flagged"]), ("pending-disable", "grok-bot-review", True))
         self.assertIn("PENDING-DISABLE feed", err)
+        self.assertIn("=== 待 Grok Bot 复核（pending-disable）1 个源：feed", err)          # 当天汇报显眼可见（C）
+        self.assertIn("pending_disable=1", err.strip().splitlines()[-1])
+        md = list((base / "pub" / "raw" / "2026-10-13").glob("GROK-BOT-REVIEW-*.md"))
+        self.assertEqual(len(md), 1)
+        self.assertIn("| feed | 是 | 3 |", md[0].read_text())
+        self.assertNotIn("f.org", md[0].read_text())                           # 不含 URL
         pub = (base / "pub" / "raw" / "2026-10-13" / "MANIFEST.sha256").read_text()
+        self.assertIn("GROK-BOT-REVIEW-", pub)
         self.assertIn("source-health-", pub)                                   # 报告文件已登记
         rc, err, calls = self.run_round(base, "2026-10-13", 2, routes)         # 第 4 轮：不再请求，跳过并继续报告
         self.assertNotIn("https://f.org/rss", calls)
@@ -1866,7 +1883,7 @@ class BlockRule20261018(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(SH.main(["report", *args]), 0)
-        self.assertEqual(json.loads(out.getvalue())[0]["status"], "pending-disable")
+        self.assertEqual(json.loads(out.getvalue())["sources"][0]["status"], "pending-disable")
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(SH.main(["confirm-disable", "--id", "feed", *args]), 2)        # 必须写明确认依据
         with contextlib.redirect_stdout(io.StringIO()):
@@ -1879,6 +1896,140 @@ class BlockRule20261018(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(SH.main(["report", *args]), 2)                                 # 损坏文件 → 2，不改写
         self.assertEqual(st.read_text(), "{}")
+
+
+class LegacyHosts20261018(unittest.TestCase):
+    """王总 2026-10-18 经 Grok Bot 定：旧 collector-hosts.json 的主机导入新状态，标「已停用（等人工复核）」，
+    不自动恢复、不计入 3 轮计数；机器人验证 / 登录停用的额外标 unrecoverable，enable 默认拒绝。"""
+
+    def tmpdir(self):
+        d = tempfile.TemporaryDirectory(dir="/workspace"); self.addCleanup(d.cleanup); return Path(d.name)
+
+    LEGACY = {"hosts": {"a.org": {"reason": "HTTP 403", "at": "2026-10-12T05:01:00+08:00", "needs": "manual review"},
+                        "B.org": {"reason": "bot challenge page: vendor marker (HTTP 503)", "at": "2026-10-12T05:02:00+08:00"},
+                        "c.org": {"reason": "HTTP 401", "at": "2026-10-13T05:03:00+08:00"},
+                        "d.org": {"reason": "robots.txt bot challenge page (HTTP 200)", "at": "2026-10-13T05:04:00+08:00"},
+                        "e.org": {"reason": "robots.txt HTTP 403"}},
+              "sources": {"feedx": {"reason": "HTTP 401", "at": "2026-10-13T05:03:00+08:00", "host": "c.org"}}}
+
+    def priv(self, legacy=None):
+        base = self.tmpdir()
+        st = base / "priv" / "state"; st.mkdir(parents=True)
+        (st / "collector-hosts.json").write_text(json.dumps(self.LEGACY if legacy is None else legacy))
+        return base
+
+    def test_import_marks_disabled_pending_review_and_unrecoverable(self):
+        base = self.priv()
+        legacy = base / "priv" / "state" / "collector-hosts.json"
+        before = legacy.read_bytes()
+        hs, res = collect.open_source_health(base / "priv")
+        self.assertEqual(res, {"hosts": 5, "sources": 1, "skipped": False})
+        H = hs.data["hosts"]
+        self.assertEqual(sorted(H), ["a.org", "b.org", "c.org", "d.org", "e.org"])
+        self.assertEqual({h: (r["category"], r["unrecoverable"]) for h, r in H.items()},
+                         {"a.org": ("http_403", False), "b.org": ("bot_check", True), "c.org": ("login", True),
+                          "d.org": ("bot_check", True), "e.org": ("http_403", False)})
+        for r in H.values():
+            self.assertEqual((r["status"], r["review"]), ("disabled", "pending-manual-review"))
+        self.assertEqual(H["b.org"]["reason"], "bot challenge page: vendor marker (HTTP 503)")   # 原文
+        self.assertEqual(H["a.org"]["since"], "2026-10-12T05:01:00+08:00")
+        src = hs.data["sources"]["feedx"]
+        self.assertEqual((src["status"], src["unrecoverable"]), ("disabled", True))
+        self.assertEqual(legacy.read_bytes(), before)                       # 旧文件不改不删
+        hs2, res2 = collect.open_source_health(base / "priv")               # 幂等
+        self.assertTrue(res2["skipped"])
+        self.assertEqual(hs2.data["hosts"], H)
+
+    def test_disabled_host_never_requested_and_not_suspicious(self):
+        base = self.priv()
+        hs, _ = collect.open_source_health(base / "priv")
+        f, _ = mk({"https://a.org/robots.txt": Resp(200, b""), "https://a.org/x": Resp(200, b"ok"),
+                   "https://z.org/robots.txt": Resp(200, b""),
+                   "https://z.org/r": Resp(302, headers={"Location": "https://b.org/y"}),
+                   "https://b.org/robots.txt": Resp(200, b""), "https://b.org/y": Resp(200, b"ok")},
+                  state=hs, round_id=ROUND)
+        r = f.get("https://a.org/x", sid="s")
+        self.assertEqual(r.error, "host_disabled")
+        self.assertFalse(collect.is_suspicious(r.error))
+        r = f.get("https://z.org/r", sid="s")                               # 跳转到停用主机：不跟
+        self.assertEqual(r.error, "host_disabled")
+        calls = [u for u, _ in f.opener.calls]
+        self.assertFalse([u for u in calls if "a.org" in u or "b.org" in u])   # 连 robots.txt 都不请求
+        self.assertEqual(f.suspicious, {})
+        self.assertFalse(f.robots("https://A.org/x").can_fetch(collect.UA_TOKEN, "https://a.org/x"))
+        self.assertEqual(f._raw("https://a.org/x", "*/*")[3], "host_disabled")   # 最底层出站入口同样拒绝
+
+    def test_capture_rounds_skip_legacy_host_no_auto_recover_no_count(self):
+        base = self.priv({"hosts": {"f.org": {"reason": "HTTP 403", "at": "2026-10-12T05:00:00+08:00"}}})
+        B = BlockRule20261018()
+        good = {"https://f.org/rss": B.RSS, "https://f.org/rss2": B.RSS,
+                "https://f.org/robots.txt": Resp(200, b"")}
+        for i, (date, rnd) in enumerate((("2026-10-14", 1), ("2026-10-14", 2), ("2026-10-15", 1), ("2026-10-15", 2))):
+            rc, err, calls = B.run_round(base, date, rnd, good)
+            self.assertEqual(calls, [])                                     # 合并后也不会被重新抓
+            self.assertEqual(("LEGACY-IMPORT" in err), i == 0)
+            self.assertIn("host_disabled", err)
+            self.assertNotIn("PENDING-DISABLE", err)
+            d = base / "pub" / "raw" / date / ("round2" if rnd == 2 else "")
+            skipped = json.loads(next(d.glob("skipped-*.json")).read_text())
+            self.assertEqual(sorted(x["reason"] for x in skipped), ["host_disabled", "host_disabled"])
+        hs = collect.SourceHealth(base / "priv" / "state" / "source-health.json")
+        self.assertEqual(hs.data["sources"], {})                            # 不计入 3 轮计数
+        self.assertEqual(hs.data["hosts"]["f.org"]["status"], "disabled")   # 没有自动恢复
+
+    def test_corrupt_legacy_refuses_to_run(self):
+        import contextlib, io
+        import source_health as SH
+        for bad in ("{bad", "[]", '{"hosts": {"a.org": {}}}', '{"hosts": []}'):
+            base = self.tmpdir()
+            st = base / "priv" / "state"; st.mkdir(parents=True)
+            (st / "collector-hosts.json").write_text(bad)
+            B = BlockRule20261018()
+            rc, err, calls = B.run_round(base, "2026-10-14", 1, {"https://f.org/rss": B.RSS})
+            self.assertEqual((rc, calls), (2, []), bad)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(SH.main(["report", "--private-root", str(base / "priv"),
+                                          "--out-root", str(base / "pub")]), 2)
+            self.assertFalse((st / "source-health.json").exists())
+
+    def test_enable_refuses_unrecoverable_by_default(self):
+        import contextlib, io
+        import source_health as SH
+        base = self.priv()
+        args = ["--private-root", str(base / "priv"), "--out-root", str(base / "pub")]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(SH.main(["report", *args]), 0)
+        rep = json.loads(out.getvalue())
+        self.assertEqual(len(rep["disabled_hosts"]), 5)
+        st = base / "priv" / "state" / "source-health.json"
+        q = io.StringIO()
+        with contextlib.redirect_stderr(q), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["enable", "--host", "b.org", "--reason", "x", *args]), 2)   # bot_check
+            self.assertEqual(SH.main(["enable", "--host", "c.org", "--reason", "x", *args]), 2)   # login
+            self.assertEqual(SH.main(["enable", "--host", "c.org", "--allow-unrecoverable", *args]), 2)  # 无依据
+            self.assertEqual(SH.main(["enable", "--id", "feedx", *args]), 2)                      # 旧表 login 源
+            self.assertEqual(SH.main(["enable", "--host", "a.org", *args]), 2)                    # 403 也须写依据
+        self.assertIn("unrecoverable", q.getvalue())
+        self.assertEqual(sorted(collect.SourceHealth(st).data["hosts"]), ["a.org", "b.org", "c.org", "d.org", "e.org"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["enable", "--host", "a.org", "--reason", "reviewed by Grok Bot", *args]), 0)
+            self.assertEqual(SH.main(["enable", "--host", "b.org", "--allow-unrecoverable",
+                                      "--reason", "vendor whitelisted us, confirmed by Grok Bot", *args]), 0)
+            self.assertEqual(SH.main(["enable", "--id", "feedx", "--allow-unrecoverable",
+                                      "--reason", "confirmed by Grok Bot", *args]), 0)
+        hs, res = collect.open_source_health(base / "priv")                 # 旧文件还在，也不会再导入
+        self.assertTrue(res["skipped"])
+        self.assertEqual(sorted(hs.data["hosts"]), ["c.org", "d.org", "e.org"])
+        self.assertIsNone(hs.host_blocked("a.org"))
+        self.assertIsNone(hs.blocked("feedx"))
+
+    def test_legacy_category_from_original_reason(self):
+        for reason, cat in (("HTTP 403", "http_403"), ("HTTP 401", "login"), ("robots.txt HTTP 401", "login"),
+                            ("robots.txt HTTP 403", "http_403"), ("bot challenge page: vendor marker (HTTP 403)", "bot_check"),
+                            ("robots.txt bot challenge page (HTTP 503)", "bot_check"), ("login required", "login"),
+                            ("network", "other")):
+            self.assertEqual(collect.legacy_category(reason), cat, reason)
 
 
 if __name__ == "__main__":

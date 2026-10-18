@@ -686,6 +686,10 @@ def ext_for(ctype, body):
 DISABLE_AFTER_ROUNDS = 3
 KEEP_ROUNDS = 10
 SOURCE_STATUSES = ("ok", "pending-disable", "disabled")
+STATE_VERSION = 3
+LEGACY_HOSTS_FILE = "collector-hosts.json"   # 旧 HostState 文件（#3 的持久停用表），只读导入，不再写
+HOST_CATEGORIES = ("bot_check", "login", "http_403", "other")
+UNRECOVERABLE_CATEGORIES = frozenset({"bot_check", "login"})
 _ROUND_ID = re.compile(r"\d{4}-\d{2}-\d{2}/r[12]")
 SUSPICIOUS_ERRORS = frozenset({"http_401", "http_403", "challenge", "suspected_challenge", "robots_http_401",
                                "robots_http_403", "robots_challenge", "robots_suspected_challenge",
@@ -709,43 +713,96 @@ class StateError(ValueError):
     """状态文件损坏或结构不对。"""
 
 
+def legacy_category(reason):
+    """旧停用原因（按记录原文）归类：验证页 → bot_check；401 / 登录 → login；403 → http_403；其他 → other。
+    bot_check 与 login 属于「不可恢复」（王总 2026-10-18 经 Grok Bot 定）：enable 默认拒绝。"""
+    r = (reason or "").lower()
+    if "challenge" in r or "captcha" in r or "验证" in r:
+        return "bot_check"
+    if re.search(r"\b401\b", r) or "login" in r or "登录" in r or "auth" in r:
+        return "login"
+    if re.search(r"\b403\b", r):
+        return "http_403"
+    return "other"
+
+
+def read_legacy_hosts(path):
+    """严格读取旧 collector-hosts.json（{"hosts": {主机: {reason, at, ...}}, "sources": {sid: {reason, at, host, ...}}}）。
+    结构不对 → StateError（不当作空表，避免把停用的主机悄悄放开）。返回 (hosts, sources, 文件 sha256)。"""
+    raw = Path(path).read_bytes()
+    try:
+        d = strictjson.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise StateError(f"legacy host state unreadable: {type(e).__name__}")
+    if not isinstance(d, dict):
+        raise StateError("legacy host state top level must be an object")
+    out = []
+    for k in ("hosts", "sources"):
+        m = d.get(k, {})
+        if not isinstance(m, dict):
+            raise StateError(f"legacy host state '{k}' must be an object")
+        for name, rec in m.items():
+            if not isinstance(rec, dict) or not isinstance(rec.get("reason"), str) or not rec["reason"].strip():
+                raise StateError(f"legacy host state '{k}' entry without reason")
+        out.append(m)
+    return out[0], out[1], hashlib.sha256(raw).hexdigest()
+
+
 class SourceHealth:
     """私有状态文件（默认 PRIVATE/state/source-health.json）：
-    {"version": 2,
+    {"version": 3,
      "sources": {sid: {"status": ok|pending-disable|disabled, "rounds": {"YYYY-MM-DD/rN": {"suspicious": bool, "reasons": [..]}},
                        ["status_at": ..., "status_reason": ...]}},
-     "urls": {sha256(完整 URL): {"round": "YYYY-MM-DD/rN", "reason": ..., "sid": sid 或 null, "host": 主机}}}
+     "urls": {sha256(完整 URL): {"round": "YYYY-MM-DD/rN", "reason": ..., "sid": sid 或 null, "host": 主机}},
+     "hosts": {主机: {"status": "disabled", "review": "pending-manual-review", "reason": 原文, "since": ..., "category": ...,
+                     "unrecoverable": bool, "origin": "legacy collector-hosts.json"}},
+     "legacy_imports": {旧文件 sha256: 导入时间}}
+    hosts 只来自旧 collector-hosts.json 的导入：这些主机已停用、等人工复核，不会自动恢复，也不参与 3 轮计数
+    （对它们一律不发请求，返回 host_disabled，不算可疑）；category 为 bot_check / login 的标 unrecoverable，
+    enable 默认拒绝。legacy_imports 记已导入的旧文件，人工恢复后不会因为旧文件还在而再被导入。
     urls 只保留当前轮（写入时清掉别的轮），记的是完整 URL 的 sha256，不写 URL 本身。
-    严格读取：文件存在时 version、sources、urls 三个键都必须在且类型正确，否则 StateError（损坏不当作空状态）；
+    严格读取：文件存在时 version、sources、urls、hosts、legacy_imports 都必须在且类型正确，否则 StateError（损坏不当作空状态）；
     文件不存在 = 首次运行。损坏时 blocked() 对一切请求返回拒绝，写操作一律拒绝改写。
     写入：fcntl 排他锁（同目录 locks/<name>.lock）内重读磁盘、只改本次条目，mkstemp + fsync + os.replace。"""
 
     def __init__(self, path):
         self.path = Path(path) if path else None
-        self.data = {"version": 2, "sources": {}, "urls": {}}
+        self.data = self._empty()
         self.error = None
         try:
             self.refresh()
         except StateError as e:
             self.error = str(e)
 
+    @staticmethod
+    def _empty():
+        return {"version": STATE_VERSION, "sources": {}, "urls": {}, "hosts": {}, "legacy_imports": {}}
+
     # -- 读取与校验
     def _read(self):
         if not (self.path and self.path.exists()):
-            return {"version": 2, "sources": {}, "urls": {}}
+            return self._empty()
         try:
             d = strictjson.loads(self.path.read_text(encoding="utf-8"))
         except (ValueError, UnicodeDecodeError) as e:
             raise StateError(f"source health unreadable: {type(e).__name__}")
         if not isinstance(d, dict):
             raise StateError("source health top level must be an object")
-        for k in ("version", "sources", "urls"):
+        for k in ("version", "sources", "urls", "hosts", "legacy_imports"):
             if k not in d:
                 raise StateError(f"source health missing key '{k}'")
-        if d["version"] != 2 or isinstance(d["version"], bool):
-            raise StateError("source health version must be 2")
-        if not isinstance(d["sources"], dict) or not isinstance(d["urls"], dict):
-            raise StateError("source health 'sources' and 'urls' must be objects")
+        if d["version"] != STATE_VERSION or isinstance(d["version"], bool):
+            raise StateError(f"source health version must be {STATE_VERSION}")
+        if not all(isinstance(d[k], dict) for k in ("sources", "urls", "hosts", "legacy_imports")):
+            raise StateError("source health 'sources', 'urls', 'hosts', 'legacy_imports' must be objects")
+        for h, rec in d["hosts"].items():
+            if not h or not isinstance(rec, dict) or rec.get("status") != "disabled" or \
+                    not (isinstance(rec.get("reason"), str) and rec["reason"].strip()) or \
+                    rec.get("category") not in HOST_CATEGORIES or not isinstance(rec.get("unrecoverable"), bool):
+                raise StateError("source health host entry malformed")
+        for k, v in d["legacy_imports"].items():
+            if not re.fullmatch(r"[0-9a-f]{64}", k) or not isinstance(v, str):
+                raise StateError("source health legacy_imports entry malformed")
         for sid, rec in d["sources"].items():
             if not isinstance(rec, dict) or rec.get("status") not in SOURCE_STATUSES or \
                     not isinstance(rec.get("rounds"), dict):
@@ -757,6 +814,8 @@ class SourceHealth:
                     raise StateError("source health round entry malformed")
             if rec["status"] != "ok" and not (isinstance(rec.get("status_reason"), str) and rec["status_reason"].strip()):
                 raise StateError("non-ok source without status_reason")
+            if "unrecoverable" in rec and not isinstance(rec["unrecoverable"], bool):
+                raise StateError("source health entry malformed")
         for k, rec in d["urls"].items():
             if not re.fullmatch(r"[0-9a-f]{64}", k) or not isinstance(rec, dict) or \
                     not _ROUND_ID.fullmatch(str(rec.get("round"))) or \
@@ -788,6 +847,17 @@ class SourceHealth:
         rec = self.data["sources"].get(sid) if sid else None
         if rec and rec["status"] != "ok":
             return f"source {rec['status']}: {rec['status_reason']}"
+        return None
+
+    def host_blocked(self, host):
+        """旧表导入的停用主机（或状态文件损坏）→ 拒绝原因；否则 None。对这些主机不发任何请求（含 robots.txt）。"""
+        bad = self._fresh()
+        if bad:
+            return f"source health invalid ({bad}); refusing requests"
+        rec = self.data["hosts"].get((host or "").lower())
+        if rec:
+            return (f"host disabled (awaiting manual review{', unrecoverable' if rec['unrecoverable'] else ''}): "
+                    f"{rec['reason']}")
         return None
 
     def url_failed(self, url, rid):
@@ -868,8 +938,9 @@ class SourceHealth:
         self._locked_update(upd)
         return changed
 
-    def set_status(self, sid, status, reason):
-        """人工操作：confirm-disable / disable（status=disabled，须写明确认依据）或 enable（status=ok，清空轮次计数）。"""
+    def set_status(self, sid, status, reason, allow_unrecoverable=False):
+        """人工操作：confirm-disable / disable（status=disabled，须写明确认依据）或 enable（status=ok，清空轮次计数）。
+        旧表导入且标 unrecoverable 的源：enable 默认拒绝（ConfigError），须 allow_unrecoverable 并写明依据。"""
         if status not in SOURCE_STATUSES:
             raise ConfigError(f"bad status {status!r}")
         if status != "ok" and not (reason or "").strip():
@@ -877,12 +948,68 @@ class SourceHealth:
 
         def upd(d):
             rec = d["sources"].setdefault(sid, {"status": "ok", "rounds": {}})
+            if status == "ok" and rec.get("unrecoverable") and not (allow_unrecoverable and (reason or "").strip()):
+                raise ConfigError(f"source {sid} is marked unrecoverable (bot check / login); refusing to enable")
             if status == "ok":
                 d["sources"][sid] = {"status": "ok", "rounds": {}, "status_at": now(),
                                      "status_reason": reason or "manually re-enabled"}
             else:
                 rec.update(status=status, status_at=now(), status_reason=reason.strip())
         self._locked_update(upd)
+
+    def import_legacy(self, legacy_path):
+        """把旧 collector-hosts.json 的每个主机 / 源导入为「已停用、等人工复核」（不自动恢复，不参与 3 轮计数）。
+        幂等：同一份旧文件（按 sha256）只导入一次；已存在的主机条目不覆盖。旧文件不改不删。
+        返回 {"hosts": 新导入主机数, "sources": 新导入源数, "skipped": 旧文件是否已导入过}。"""
+        hosts, sources, sha = read_legacy_hosts(legacy_path)
+        res = {"hosts": 0, "sources": 0, "skipped": False}
+
+        def upd(d):
+            if sha in d["legacy_imports"]:
+                res["skipped"] = True
+                return
+            for h, rec in sorted(hosts.items()):
+                h = h.lower()
+                if h in d["hosts"]:
+                    continue
+                cat = legacy_category(rec["reason"])
+                d["hosts"][h] = {"status": "disabled", "review": "pending-manual-review", "reason": rec["reason"].strip(),
+                                 "since": rec.get("at") if isinstance(rec.get("at"), str) else None, "category": cat,
+                                 "unrecoverable": cat in UNRECOVERABLE_CATEGORIES,
+                                 "origin": f"legacy {LEGACY_HOSTS_FILE}", "imported_at": now()}
+                res["hosts"] += 1
+            for sid, rec in sorted(sources.items()):
+                cur = d["sources"].get(sid)
+                if cur and cur["status"] == "disabled":
+                    continue
+                cat = legacy_category(rec["reason"])
+                d["sources"][sid] = {"status": "disabled", "rounds": (cur or {}).get("rounds", {}),
+                                     "status_at": rec.get("at") if isinstance(rec.get("at"), str) else now(),
+                                     "status_reason": f"legacy {LEGACY_HOSTS_FILE}: {rec['reason'].strip()}; "
+                                                      f"awaiting manual review",
+                                     "unrecoverable": cat in UNRECOVERABLE_CATEGORIES}
+                res["sources"] += 1
+            d["legacy_imports"][sha] = now()
+        self._locked_update(upd)
+        return res
+
+    def enable_host(self, host, reason, allow_unrecoverable=False):
+        """人工恢复旧表导入的停用主机。unrecoverable（bot_check / login）默认拒绝；须 allow_unrecoverable 且写明依据。"""
+        host = (host or "").lower()
+
+        def upd(d):
+            rec = d["hosts"].get(host)
+            if rec is None:
+                raise ConfigError(f"host {host} not disabled")
+            if rec["unrecoverable"] and not (allow_unrecoverable and (reason or "").strip()):
+                raise ConfigError(f"host {host} is marked unrecoverable ({rec['category']}); refusing to enable")
+            del d["hosts"][host]
+        self._locked_update(upd)
+
+    def host_report(self):
+        """旧表导入的停用主机（私有：只给 source_health.py report，不写进公开目录）。"""
+        self._fresh()
+        return [dict(rec, host=h) for h, rec in sorted(self.data["hosts"].items())]
 
     def report(self, sids=None):
         """报告条目：所有非 ok 的源，以及连续可疑轮数 > 0 的源（观察中）。pending-disable 标明交 Grok Bot 复核。"""
@@ -905,6 +1032,32 @@ class SourceHealth:
                 e.update(since=rec.get("status_at"), reason=rec.get("status_reason"))
             out.append(e)
         return out
+
+
+def open_source_health(priv_root):
+    """打开 PRIVATE/state/source-health.json；同目录有旧 collector-hosts.json 时先导入（幂等）。
+    旧文件损坏 → StateError，调用方须拒绝运行（不能把停用的主机悄悄放开）。返回 (SourceHealth, 导入结果或 None)。"""
+    st = Path(priv_root) / "state"
+    h = SourceHealth(st / "source-health.json")
+    legacy = st / LEGACY_HOSTS_FILE
+    if not legacy.exists():
+        return h, None
+    if h.error:
+        raise StateError(h.error)
+    return h, h.import_legacy(legacy)
+
+
+def review_md(date, rnd, entries, newly):
+    """pending-disable 源的当天汇报片段（capture_sources 与 fetch_primary 共用）（只含源 id、轮次与原因，不含 URL）。"""
+    out = [f"# {date} round-{rnd}：待 Grok Bot 复核（pending-disable）", "",
+           "以下源连续 3 轮有可疑结果，已转为 pending-disable，下一轮起不再请求，等人工 "
+           "`scripts/source_health.py confirm-disable` 或 `enable`。请把本节写进当天 capture-failures.md 并报给 Grok Bot。", "",
+           "| 源 | 本轮新转入 | 连续可疑轮数 | 最近原因 |", "|---|---|---|---|"]
+    for e in entries:
+        why = "; ".join(f"{x['round']}: {', '.join(x['reasons']) or '-'}" for x in e.get("recent", []))
+        out.append(f"| {e['id']} | {'是' if newly.get(e['id']) else '否（此前已转入）'} | "
+                   f"{e['consecutive_suspicious_rounds']} | {why} |")
+    return "\n".join(out) + "\n"
 
 
 # ---------------------------------------------------------------- 抓取层
@@ -1037,6 +1190,9 @@ class Fetcher:
 
     def _raw(self, url, accept):
         host = host_of(url)
+        why = self.state.host_blocked(host)
+        if why:                                # 所有出站入口的最后一道门：旧表停用主机一律不发请求
+            return 0, {}, b"", "host_disabled", why
         if in_group(host, SEC_SUFFIX):     # 所有出站入口（get、robots、直接调用）统一门禁：缺 UA 或跨进程锁 → 不发请求
             if not self.sec_ua:
                 return 0, {}, b"", "not_configured", f"{SEC_UA_ENV} not set (must include contact info)"
@@ -1136,7 +1292,7 @@ class Fetcher:
         p = urlsplit(url)
         host = (p.hostname or "").lower()
         base = f"{p.scheme}://{p.netloc}"
-        if self.state.blocked(sid):             # 状态文件损坏或源已 pending-disable/disabled：直接禁止，不发请求
+        if self.state.blocked(sid) or self.state.host_blocked(host):   # 状态损坏 / 源非 ok / 旧表停用主机：不发请求
             return self._disallow_all()
         if base in self._robots:
             return self._robots[base]
@@ -1235,6 +1391,9 @@ class Fetcher:
                 return Result(False, final_url=cur, hops=hops, error="bad_url")
             if host in REFUSED_HOSTS:
                 return Result(False, final_url=cur, hops=hops, error="refused_host")
+            why = self.state.host_blocked(host)
+            if why:                       # 旧表导入的停用主机：不发请求，不算可疑（不参与 3 轮计数）
+                return Result(False, final_url=cur, hops=hops, error="host_disabled", detail=why)
             prev = self.failed_this_round(cur)
             if prev:                      # 本轮已判可疑的 URL：本轮绝不再请求
                 self._event(sid, "url_failed_this_round", cur)

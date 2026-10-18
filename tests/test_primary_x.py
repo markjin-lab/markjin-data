@@ -1399,3 +1399,53 @@ class BlockRule20261018Primary(unittest.TestCase):
         rc, err, calls = self._patched(routes, lambda: CS.main(args("2026-10-13", 2)))
         self.assertEqual(calls, [])                                          # 不再请求
         self.assertIn("SKIP s-news source_blocked", err)
+
+    # ---- 王总 2026-10-18（Grok Bot 定）：旧 collector-hosts.json 导入、pending-disable 当天显眼可见
+    def legacy(self, hosts):
+        st = self.priv / "state"; st.mkdir(parents=True, exist_ok=True)
+        (st / "collector-hosts.json").write_text(json.dumps({"hosts": hosts}))
+
+    def test_primary_pending_disable_visible_in_daily_report(self):
+        routes = {self.ART: self.CF403}
+        for date, rnd in (("2026-10-12", 1), ("2026-10-12", 2)):
+            rc, err, _ = self.fp(date, rnd, routes)
+            self.assertNotIn("Grok Bot 复核", err)
+            self.assertIn("pending_disable=0", err)
+        rc, err, _ = self.fp("2026-10-13", 1, routes)
+        self.assertIn("=== 待 Grok Bot 复核（pending-disable）1 个源：primary:openai.com", err)
+        self.assertIn("pending_disable=1", err)
+        md = list((self.out / "raw/2026-10-13/primary").glob("GROK-BOT-REVIEW-*.md"))
+        self.assertEqual(len(md), 1)
+        self.assertIn("| primary:openai.com | 是 | 3 |", md[0].read_text())
+        self.assertNotIn("some-article", md[0].read_text())                  # 不含 URL 路径
+
+    def test_legacy_host_article_not_requested_not_counted(self):
+        self.legacy({"openai.com": {"reason": "bot challenge page: vendor marker (HTTP 403)", "at": "2026-10-12T05:00:00+08:00"}})
+        routes = {self.ART: self.RSS_BODY, self.RSS: self.RSS_BODY}
+        for i, (date, rnd) in enumerate((("2026-10-14", 1), ("2026-10-14", 2), ("2026-10-15", 1), ("2026-10-15", 2))):
+            rc, err, calls = self.fp(date, rnd, routes)
+            self.assertEqual(calls, [])                                      # 合并后也不会被重新抓
+            self.assertEqual("LEGACY-IMPORT" in err, i == 0)
+            rc, err, calls = self.cs(date, rnd, routes)                      # 同主机已批准 RSS 也一并停（旧表按主机）
+            self.assertEqual(calls, [])
+            self.assertIn("SKIP openai-news host_disabled", err)
+        idx = sorted((self.out / "raw/2026-10-15/round2/primary").glob("index-*.json")) or \
+            sorted((self.out / "raw/2026-10-15/primary").glob("index-*.json"))
+        self.assertEqual(json.loads(idx[-1].read_text())[0]["fetch_status"], "host_disabled")
+        h = self.health()
+        self.assertEqual(h.data["sources"], {})                             # 不计入 3 轮计数
+        self.assertTrue(h.data["hosts"]["openai.com"]["unrecoverable"])
+
+    def test_legacy_host_scraper_skipped(self):
+        import yaml
+        self.legacy({"s.org": {"reason": "HTTP 403"}})
+        src = self.base / "s.yaml"
+        src.write_text(yaml.safe_dump({"sources": [{"id": "s-news", "method": "scraper", "scraper": "anthropic_sitemap",
+                                                    "url": "https://s.org/sitemap.xml", "enabled": True,
+                                                    "approval_status": "approved", "approval_basis": "b",
+                                                    "license": "url+hash-only"}]}), encoding="utf-8")
+        rc, err, calls = self._patched({}, lambda: CS.main(["--sources", str(src), "--date", "2026-10-14", "--round", "1",
+                                                            "--out-root", str(self.out), "--private-root", str(self.priv)]))
+        self.assertEqual(calls, [])
+        self.assertIn("SKIP s-news host_disabled", err)
+        self.assertEqual(self.health().data["sources"], {})

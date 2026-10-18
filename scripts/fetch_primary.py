@@ -11,6 +11,7 @@ Usage:
     429/5xx 有上限退避、超过 25 MiB 明确失败（不存半截）。
   - 可疑响应（2026-10-18 新规则）：401/403、验证页只让这篇文章的 URL 本轮失败（本轮内跨进程不再请求，绝不重试）。
     文章按主机归入伪源 primary:<主机> 计数；同一伪源连续 3 轮可疑 → pending-disable，写公开 primary/source-health-<run>.json
+    与 primary/GROK-BOT-REVIEW-<run>.md（当天汇报照抄）。旧 collector-hosts.json 的停用主机：启动时导入，不请求（host_disabled），不计数。
     并在 stderr 打 PENDING-DISABLE，交 Grok Bot 复核。伪源与 sources.yaml 里的源互不影响：文章被拒不会连带
     同主机已批准的 RSS/API 源（审查 r13 第 4 条）。
   - 原字节 → PRIVATE/raw/DATE/primary/<sha256>.<ext>（独占创建 + MANIFEST.sha256）；提取文本 → 私有派生物。
@@ -148,7 +149,15 @@ def main(argv=None, fetcher=None):
     pub = collect.Archive(Path(a.out_root) / "raw" / a.date)
     priv = collect.Archive(priv_root / "raw" / a.date)
     rid = collect.round_id(a.date, a.round)
-    f = fetcher or collect.Fetcher(collect.SourceHealth(priv_root / "state" / "source-health.json"),
+    if fetcher is None:
+        try:     # 旧 collector-hosts.json 在则先导入为「已停用、等人工复核」；损坏 → 拒绝运行
+            st0, imported = collect.open_source_health(priv_root)
+        except (collect.StateError, OSError) as e:
+            print(f"source health: {e}; refusing to run", file=sys.stderr); return 2
+        if imported and not imported["skipped"]:
+            print(f"LEGACY-IMPORT {collect.LEGACY_HOSTS_FILE}: {imported['hosts']} hosts, {imported['sources']} sources "
+                  f"→ disabled (awaiting manual review)", file=sys.stderr)
+    f = fetcher or collect.Fetcher(st0,
                                    interval=a.interval, fakeip_cidr=a.proxy_fakeip_cidr or "",
                                    lock_dir=priv_root / "state" / "locks", round_id=rid)    # SEC 跨进程限速锁
     health = f.state
@@ -184,7 +193,7 @@ def main(argv=None, fetcher=None):
                 _acc.append({"raw": rel_h, "sha256": sha_h, "status": st})
             psid = primary_sid(orig)
             r = f.get(orig, sid=psid, raw_sink=sink)
-            if r.error != "source_blocked":
+            if r.error not in ("source_blocked", "host_disabled"):   # 不发请求的情况不计入 3 轮计数
                 ran.setdefault(psid, [])
             rec = {"url": cu, "fetched_at": t0, "http_status": r.status, "license": "url+hash-only",
                    "stored": None, "fetch_status": "fetched" if r.ok else r.error}
@@ -242,10 +251,15 @@ def main(argv=None, fetcher=None):
         newly, report = {}, []
     if report:
         pub.put_json(f"primary/source-health-{run}.json", [dict(e, newly_flagged=bool(newly.get(e["id"]))) for e in report])
-    for e in report:
-        if e["status"] == "pending-disable":
-            print(f"PENDING-DISABLE {e['id']}: {e['consecutive_suspicious_rounds']} consecutive suspicious rounds "
-                  f"— flag for Grok Bot review (confirm-disable or enable)", file=sys.stderr)
+    pend = [e for e in report if e["status"] == "pending-disable"]
+    if pend:            # 当天汇报显眼可见：单独一份 Markdown + stderr 一行，写 capture-failures.md 时照抄
+        pub.put(f"primary/GROK-BOT-REVIEW-{run}.md", collect.review_md(a.date, a.round, pend, newly).encode())
+    for e in pend:
+        print(f"PENDING-DISABLE {e['id']}: {e['consecutive_suspicious_rounds']} consecutive suspicious rounds "
+              f"— flag for Grok Bot review (confirm-disable or enable)", file=sys.stderr)
+    if pend:
+        print(f"=== 待 Grok Bot 复核（pending-disable）{len(pend)} 个源：{', '.join(e['id'] for e in pend)} "
+              f"— 详见 primary/GROK-BOT-REVIEW-{run}.md，请写进当天 capture-failures.md ===", file=sys.stderr)
     priv.put_json(f"primary/leads-{run}.json", doc)              # 完整线索（含帖文）只进私有档案
     pub.put_json(f"primary/index-{run}.json", index)
     pub_doc = {"items": [public_lead(x, g) for x, g in zip(items, gens)]}
@@ -254,7 +268,8 @@ def main(argv=None, fetcher=None):
         priv.put(f"primary/fetch-log-{run}.jsonl", "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in plog).encode())
     c = {}
     for r in cache.values(): c[(r["fetch_status"], r["stored"])] = c.get((r["fetch_status"], r["stored"]), 0) + 1
-    print("summary:", json.dumps({f"{s}/{l}": v for (s, l), v in c.items()}, ensure_ascii=False), file=sys.stderr)
+    print("summary:", json.dumps({f"{s}/{l}": v for (s, l), v in c.items()}, ensure_ascii=False),
+          f"pending_disable={len(pend)}", file=sys.stderr)
     return 0
 
 

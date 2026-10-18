@@ -232,10 +232,15 @@
 - 单次可疑响应——HTTP 401/403、厂商验证页（`classify_page` 返回 `vendor`）、只命中泛用短语的疑似验证页（`phrase`）、robots.txt 的上述情况、rss/api 格式校验不通过——**只让这个 URL 本轮失败**：本轮内不再请求它（私有 `state/source-health.json` 的 `urls` 只记完整 URL 的 sha256 和轮次，跨进程生效，换轮自动清掉）；同主机的其他 URL、其他源照常。经重定向时，最初请求的 URL 和返回可疑响应的那一跳都算。robots.txt 可疑时该站本轮按禁止。
 - 每轮结束，`capture_sources` 给本轮跑过的每个源记一笔（`SourceHealth.record_round`，轮次 id `YYYY-MM-DD/rN`）：有可疑结果算可疑轮，没有就把连续计数清零；同一轮重跑按「任一次可疑即可疑」合并，不重复计数。
 - **连续 3 轮可疑 → `pending-disable`**：当轮写报告 `source-health-<run>.json`（公开源写公开目录、internal_only 源写内部目录；只含源 id、状态、轮次和原因，不含 URL），条目带 `flag: grok-bot-review`，stderr 打出 `PENDING-DISABLE <id>`，交 Grok Bot 复核。从下一轮起不再请求该源（列入 `skipped-<run>.json`，原因 `source_blocked`），每轮报告继续列出，不静默。连续 1–2 轮的源在报告里标 `watch`。
-- 人工确认：`scripts/source_health.py confirm-disable --id <id> --reason "<谁确认、依据>"` → `disabled`；`enable --id <id>` → 恢复为 `ok` 并清零。`report` 查看当前状态。不要手改状态文件：读取严格校验（`version`、`sources`、`urls` 三个键都必须在且类型正确，缺键也算损坏），损坏时拒绝一切请求，也拒绝改写。
+- **当天汇报显眼可见**：当轮有 pending-disable 的源时，另写一份 `GROK-BOT-REVIEW-<run>.md`（同目录，公开源写公开目录、internal_only 源写内部目录；表格列出源 id、是否本轮新转入、连续可疑轮数、最近原因，不含 URL），stderr 末尾打一行 `=== 待 Grok Bot 复核（pending-disable）N 个源：… ===`，最后一行 `done: … pending_disable=N`。写当天 `capture-failures.md` 时照抄这一节，报给 Grok Bot。
+- 人工确认：`scripts/source_health.py confirm-disable --id <id> --reason "<谁确认、依据>"` → `disabled`；`enable --id <id>` → 恢复为 `ok` 并清零。`report` 查看当前状态。不要手改状态文件：读取严格校验（`version`=3、`sources`、`urls`、`hosts`、`legacy_imports` 都必须在且类型正确，缺键也算损坏），损坏时拒绝一切请求，也拒绝改写。
 - 永不绕过付费墙、登录或验证：验证页只记失败，不重试、不换 UA、不跑 JS、不带 cookie。
-- `fetch_primary.py`（须给 `--round 1|2`）：文章按主机归入伪源 `primary:<主机>` 计数，与 sources.yaml 的源互不影响——文章被拒不会连带同主机已批准的 RSS/API 源（r13 第 4 条）；伪源连续 3 轮可疑同样转为 `pending-disable`，报告写在公开 `primary/source-health-<run>.json`。scraper 源与 rss/api 源同样按源计数，子 sitemap 被拒算该源可疑。
+<<<<<<< HEAD
+- `fetch_primary.py`（须给 `--round 1|2`）：文章按主机归入伪源 `primary:<主机>` 计数，与 sources.yaml 的源互不影响——文章被拒不会连带同主机已批准的 RSS/API 源（r13 第 4 条）；伪源连续 3 轮可疑同样转为 `pending-disable`，报告写在公开 `primary/source-health-<run>.json`。当轮另写 `primary/GROK-BOT-REVIEW-<run>.md`，stderr 打出「待 Grok Bot 复核」一行，summary 行带 `pending_disable=N`。旧 `collector-hosts.json` 里的停用主机，fetch_primary 和 scraper 同样不请求（`host_disabled`），也不计入 3 轮计数。scraper 源与 rss/api 源同样按源计数，子 sitemap 被拒算该源可疑。
 - 旧的 `state/collector-hosts.json`（按主机持久停用）不再读取；其中已有的条目需要人工看一遍，确有需要的源用 `confirm-disable` 迁移。
+=======
+- **旧停用表迁移**（王总 2026-10-18 经 Grok Bot 定）：私有目录 `state/collector-hosts.json`（旧版按主机持久停用）存在时，`capture_sources`、`source_health.py` 启动时先把其中每个主机、每个源导入新状态（也可 `source_health.py import-legacy` 显式执行），标为「已停用（等人工复核）」：`hosts.<主机>.status = disabled`、`review = pending-manual-review`，停用原因保留原文。对这些主机一律不发请求，包括 robots.txt 和经跳转到达的情况（错误码 `host_disabled`，列入 `skipped-<run>.json`）；这类结果不算可疑，不计入 3 轮计数，也不会自动恢复。按原文归类：验证页 → `bot_check`；401 或登录 → `login`；403 → `http_403`。`bot_check`、`login` 两类额外标 `unrecoverable`：`source_health.py enable --host <主机>`（或 `--id`）默认拒绝，只有加 `--allow-unrecoverable` 并用 `--reason` 写明谁、依据什么复核过才放行。普通停用主机恢复同样要写 `--reason`。导入幂等：按旧文件 sha256 只导入一次，人工恢复后不会因旧文件还在而再被导入；旧文件不改不删。旧文件损坏时拒绝运行（退出码 2，不发请求），不会把停用的主机悄悄放开。
+>>>>>>> origin/improve/p0-sources-v2
 
 ## 验证页识别
 

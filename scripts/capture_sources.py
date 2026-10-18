@@ -27,7 +27,10 @@ $MARKJIN_PROXY_FAKEIP_CIDR 声明代理假 IP 网段（只接受 198.18.0.0/15 �
 401/403 / 验证页 / 格式校验不通过（2026-10-18 新规则）→ 只让该 URL 本轮失败，给源记一次可疑（PRIVATE/state/source-health.json）。
 同一源连续 3 轮可疑 → pending-disable：写入 source-health-<run>.json 报告条目（flag: grok-bot-review）并在 stderr 打出
 PENDING-DISABLE，交 Grok Bot 复核；之后各轮不再请求该源，直到人工 confirm-disable 或 enable（scripts/source_health.py）。
-不按主机停用，不绕过付费墙、登录或验证。
+当轮另写 GROK-BOT-REVIEW-<run>.md，stderr 末尾打出「待 Grok Bot 复核」一行，便于写进当天 capture-failures.md。
+新规则不再因可疑响应停用主机；不绕过付费墙、登录或验证。
+旧 PRIVATE/state/collector-hosts.json 在则启动时先导入：其中主机标「已停用（等人工复核）」，一律不请求（host_disabled），
+不计入 3 轮计数、不自动恢复；验证页 / 登录类标 unrecoverable。旧文件损坏 → 退出码 2，不发请求。
 Exit code: 0 = all ok, 1 = 有失败或拒绝, 2 = 参数/配置错误.
 """
 import argparse, datetime as dt, gzip, json, os, re, sys
@@ -113,6 +116,8 @@ def run_scraper(fetcher, raw_ar, sub, sid, s, url):
     return r, raws
 
 
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--sources", required=True)
@@ -145,7 +150,15 @@ def main(argv=None):
     run = collect.stamp()
     sub = "round2/" if a.round == 2 else ""
     rid = collect.round_id(a.date, a.round)
-    health = collect.SourceHealth(priv_root / "state" / "source-health.json")
+    try:
+        health, imported = collect.open_source_health(priv_root)   # 旧 collector-hosts.json 在则先导入为「已停用、等人工复核」
+    except (collect.StateError, OSError) as e:
+        print(f"source health: {e}; refusing to run (legacy {collect.LEGACY_HOSTS_FILE} must import cleanly)",
+              file=sys.stderr)
+        return 2
+    if imported and not imported["skipped"]:
+        print(f"LEGACY-IMPORT {collect.LEGACY_HOSTS_FILE}: {imported['hosts']} hosts, {imported['sources']} sources "
+              f"→ disabled (awaiting manual review)", file=sys.stderr)
     fetcher = collect.Fetcher(health, interval=a.interval, timeout=a.timeout, fakeip_cidr=a.proxy_fakeip_cidr or "",
                               lock_dir=priv_root / "state" / "locks", round_id=rid)   # SEC 等主机组的跨进程限速锁放在私有目录
     # 地址策略（addr_policy）由 Fetcher 强制安装：每一跳、scraper 的子 sitemap 都在请求前检查
@@ -186,10 +199,12 @@ def main(argv=None):
         t0 = collect.now()
         raws = []
         if s["method"] == "scraper":
-            blocked = health.blocked(sid)
-            if blocked:                       # pending-disable / disabled / 状态文件损坏：不发请求，列入跳过与报告
-                skipped[where].append({"id": sid, "url": purl, "reason": "source_blocked", "detail": blocked})
-                print(f"SKIP {sid} source_blocked: {blocked}", file=sys.stderr)
+            blocked, why_code = health.blocked(sid), "source_blocked"
+            if not blocked:
+                blocked, why_code = health.host_blocked(collect.host_of(url)), "host_disabled"
+            if blocked:     # pending-disable / disabled / 状态文件损坏 / 旧表停用主机：不发请求，列入跳过，不计入 3 轮计数
+                skipped[where].append({"id": sid, "url": purl, "reason": why_code, "detail": blocked})
+                print(f"SKIP {sid} {why_code}: {blocked}", file=sys.stderr)
                 n_bad += 1
                 continue
             ran.setdefault(sid, [])
@@ -219,9 +234,10 @@ def main(argv=None):
                 skipped[where].append({"id": sid, "url": purl, "reason": "not_configured", "detail": r.detail})
                 print(f"SKIP {sid} not_configured: {r.detail}", file=sys.stderr)
                 continue
-            if r.error == "source_blocked":   # pending-disable / disabled / 状态文件损坏：不发请求，列入跳过与报告
-                skipped[where].append({"id": sid, "url": purl, "reason": "source_blocked", "detail": r.detail})
-                print(f"SKIP {sid} source_blocked: {r.detail}", file=sys.stderr)
+            if r.error == "source_blocked" or (r.error == "host_disabled" and not r.hops):
+                # pending-disable / disabled / 状态文件损坏 / 旧表停用主机：不发请求，列入跳过与报告，不计入 3 轮计数
+                skipped[where].append({"id": sid, "url": purl, "reason": r.error, "detail": r.detail})
+                print(f"SKIP {sid} {r.error}: {r.detail}", file=sys.stderr)
                 n_bad += 1
                 continue
             if not cred_err:
@@ -288,11 +304,18 @@ def main(argv=None):
         entries = [dict(e, newly_flagged=bool(newly.get(e["id"]))) for e in report if where_of.get(e["id"]) == where]
         if ar is not None and entries:
             ar.put_json(f"{sub}source-health-{run}.json", entries)
-    for e in report:
-        if e["status"] == "pending-disable":
-            print(f"PENDING-DISABLE {e['id']}: {e['consecutive_suspicious_rounds']} consecutive suspicious rounds "
-                  f"— flag for Grok Bot review (confirm-disable or enable)", file=sys.stderr)
-    print(f"done: ok={n_ok} failed_or_refused={n_bad}", file=sys.stderr)
+    pend = [e for e in report if e["status"] == "pending-disable"]
+    for where, ar in (("public", pub_ar), ("internal", int_ar)):
+        mine = [e for e in pend if where_of.get(e["id"]) == where]
+        if ar is not None and mine:      # 当天汇报里显眼可见：单独一份 Markdown，写日报 capture-failures.md 时照抄
+            ar.put(f"{sub}GROK-BOT-REVIEW-{run}.md", collect.review_md(a.date, a.round, mine, newly).encode())
+    for e in pend:
+        print(f"PENDING-DISABLE {e['id']}: {e['consecutive_suspicious_rounds']} consecutive suspicious rounds "
+              f"— flag for Grok Bot review (confirm-disable or enable)", file=sys.stderr)
+    if pend:
+        print(f"=== 待 Grok Bot 复核（pending-disable）{len(pend)} 个源：{', '.join(e['id'] for e in pend)} "
+              f"— 详见 {sub}GROK-BOT-REVIEW-{run}.md，请写进当天 capture-failures.md ===", file=sys.stderr)
+    print(f"done: ok={n_ok} failed_or_refused={n_bad} pending_disable={len(pend)}", file=sys.stderr)
     return 1 if n_bad else 0
 
 
