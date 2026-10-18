@@ -201,6 +201,66 @@
 - **整体验收 r13 修复（审查 bot 定）**：FRED 只在被引用的那一期观测里核数字（断言写观测日期则按 date 选；写 vintage 则再按 realtime_start/realtime_end 限定；多条观测且没写日期 → 不算支持；日期与 vintage 本身不当作要核对的数字）；带来源段落、非结构化行核对时带上断言原文（去掉 raw 路径与 URL），断言里有数字却不被引用条目支持 → R-SUPPORT-UNVERIFIED。
 - **整体验收 r15 修复（审查 bot 定的技术方案）**：(1) front matter 统一用 yaml.safe_load 解析一次，更正稿元数据（corrects / corrected_at）与日期字段都按解析后的值判断，带引号与不带引号等价；(2) tongyi 长文豁免：front matter `type: tongyi` 且路径为 `tongyi/<name>.md`（站点 `content/posts/tongyi/<name>.md`）的稿件及其更正稿，不报日报专用的 E-INFER-UNCLEAR、E-REPLAY-001；硬拦（买卖建议、仓位、宏观观点、内部词表、X-only 等）照常；type 与路径只有一方是 tongyi → E-TONGYI-MISMATCH（fail-closed，照常跑日报检查）。理由：长文由 Codex 加王总 v2 direct 逐篇把关。`check_text` 新增 `rel` 参数，CLI 按稿件相对 --repo 的路径传入。
 
+## 采集规则（PR #3 审查 REJECTED 修复，2026-10-12）
+
+- 公共层 `markjin/collect.py`，`capture_sources.py` 只经它访问网络。
+- **审批门禁**：只采集 `enabled: true` + `approval_status: approved` + 非空 `approval_basis` 的源；其他一律拒绝（`--only` 点名未审批源 → 退出码 1）。`approval_basis` 写法见 `improve/sources.yaml` 文件头。
+- **许可**：所有源默认 `url+hash-only`。不再有整源或整域名（含 .gov/.mil）全文许可；整份 RSS/API 响应永不进公开目录。全文只能逐条目公开：须有针对该 URL 的许可证据（`url, license, license_url, evidence_url, attribution, verified_by, verified_at`，许可限 CC-BY-4.0 / CC0-1.0 / US-Gov-PD 且后者须 `third_party_excluded: true`），由 `collect.public_fulltext_ok` 在写公开目录前逐条校验，否则默认私有。
+- **原件与只追加**：原字节不解压、不脱敏，按 sha256 独占创建写入私有 `raw/DATE/[round2/]<id>/<sha256>.<ext>`，追加私有 `MANIFEST.sha256`；解压等派生物写 `derived/` 并登记 `DERIVED.sha256` / `DERIVED-FROM.tsv`。公开目录每次运行只独占创建 `<id>/index-<run>.json`、`query-log-<run>.jsonl`、`failures-<run>.json`，追加公开 `MANIFEST.sha256`，任何已存在文件都不改写（字节不同 → `ArchiveError`）。
+- **访问礼仪**：UA `markjin-collector/0.1 (+https://markjin-lab.github.io)`（不写死邮箱；SEC 另见下文）``；按站点限速（未公布限速的站点每站每分钟最多 1 次、跨进程共享；另有每主机下限 2 秒，`--interval` 须为有限数且不低于 2，否则退出码 2；robots `Crawl-delay`/`Request-rate` 更严则从严；见下文「封锁规则」规则 4），robots.txt 请求本身也限速；RSS/API 也查 robots；不自动跟随重定向，每一跳重新查拒绝主机（t.co）、源状态、主机停用与本轮停止、URL 冷却、robots 与限速。robots.txt 自身的跳转也逐跳查 scheme、t.co，跨主机跳转按禁止处理；robots.txt 返回 401/403/429、验证页或登录墙 → 与正文相同，该主机本轮停止（见下文「封锁规则」）；HTML 判断不只看 Content-Type，正文以 `<` 开头的标签片段（如 text/plain 下的 `<div>…`）也算；5xx 返回 HTML → 不重试，本轮按禁止；404/410 仍按“没有 robots”处理；robots 的每一跳请求前也过地址策略；不再逐条加厂商特征，rss/api 按采集方式校验内容：looks_html、rss 的 XML 根元素不是 rss/feed/RDF、api 应为 JSON 却解析不了（api 源可声明 `format: xml` + `xml_roots`），任一条都记 `suspected_challenge:<原因>`：算可疑（该主机本轮停止、URL 冷却）、不写成功索引（原字节仍私有存档）；通用验证短语（Check(ing) your browser、verify you are human、enable JavaScript and cookies 等，`collect.CHALLENGE_PHRASES`）在 title 和可见文本（去脚本/样式/标签）的前 2KB 里匹配，不看整页长度；Fetcher 每一跳、robots、fetch_primary、scrapers 共用；text/plain 正文以 HTML 标签开头单独不算可疑；XML 根元素按完整 QName（`{namespace}local`）比对，`xml_roots` 也写完整名字；含 DOCTYPE/ENTITY 的 XML 一律拒收；JSON 顶层必须是对象或数组；每一跳收到的原字节先私有存档（`hop_raws`），再决定丢弃或跳转；每一跳（含 3xx）拿到响应后先做验证页检测，命中即算可疑（该主机本轮停止），不处理 Location、不再抓正文。验证页识别只有 `collect.classify_page` 一份。**地址策略强制生效**：每个 Fetcher 都装有 `AddressPolicy`（不能关闭，外部策略只能叠加），初始 URL、DNS 结果、每一跳都拒绝本机/内网/链路本地/保留地址；出站经透明代理、DNS 返回 RFC 2544 假 IP（198.18.0.0/15 内的某个地址）时，用 `--proxy-fakeip-cidr` 或 `MARKJIN_PROXY_FAKEIP_CIDR` 显式声明该网段，只对主机名解析结果放行，IP 字面量永远拒绝。
+- **拒绝与重试**：401/403、429、验证页（厂商组件或只命中短语）、登录墙、rss/api 格式校验不通过 → 算可疑：该主机本轮停止、URL 冷却 24 小时、给源记一次可疑，不重试（详见下文「封锁规则」）；收到任何 HTTP 状态（含 429、5xx）都不重发，只有网络错误有限重试；超过 25 MiB 明确失败，不存半截。
+- **路径与日志**：私有根目录必须 `--private-root` 或 `MARKJIN_PRIVATE_DIR` 显式给出，且与公开根目录互不包含；代码中无本机默认路径。公开记录只写 `stored: private|internal`、错误类别和脱敏 URL（默认只写 `scheme://主机/#sha256=<完整 URL 的 sha256>`，路径也不写——路径里也可能有凭证；逐源确认路径不含凭证后在 sources.yaml 声明 `public_path: true` 才写路径；去 userinfo、片段和查询值，只记参数个数 `query_param_count`，不记参数名；某源确需公开的参数值，在 sources.yaml 里按源声明 `public_params`）；重定向 `hops[].from` 从一开始就只存脱敏 URL，私有日志同样不含凭证；需要免费密钥的 API 用 `auth_env`/`auth_param`，密钥只在请求时拼接，不进任何记录。
+- **严格 JSON**：`capture_sources.parse_ok`、`collect.SourceHealth`、`collect.load_license_evidence` 用 `markjin/strictjson.py`（重复键 → 无法解析）。
+- 测试：`tests/test_collect.py`（审批门禁、路径、URL 脱敏、逐条许可、只追加档案、robots/重定向/t.co、单次可疑即停该主机本轮、URL 冷却与按轮存储、5 轮 3 轮 → pending-disable 下一轮起生效、站点 60 秒跨进程限速、旧停用表迁移（`BlockRule1522`、`LegacyHosts`）、限速、超限、重复键）。`tests/fixtures/px_blocking_template.html` 是 PerimeterX 官方 SDK（perimeterx-python-wsgi）测试用的拦截模板样例，只用于离线识别测试。
+
+## SEC（*.sec.gov）
+
+- UA 必须从环境变量 `MARKJIN_SEC_USER_AGENT` 读取，且要带联系方式（邮箱或网址）；代码里不写死任何邮箱。
+- 未设置（或不含联系方式）时，SEC 的请求一律不发，源记为 `not_configured`（写进 `skipped-<run>.json`），不算失败，也不算可疑。
+- SEC 所有主机共用一个全局限速桶：每秒最多 5 次（SEC 公示上限是 10 次/秒，留了余量），同时仍受每主机 2 秒的下限约束。
+
+## 封锁规则与来源健康状态（现行版，取代 r8–r12 的「持久停用主机」和 13:51 初版「单次只让该 URL 失败、连续 3 轮待停用」）
+
+出处：王总 10-18 13:50 决定切回正常模式、恢复 #3/#6（14:15 改为立即生效）；封锁细则由 Grok Bot 定，10-18 13:51 初版，15:22 按审查意见收紧为现行版，底线是王总 10-11 确认的『遇到拦截即停』。
+
+- **可疑响应**：HTTP 401/403、429、验证页（`classify_page` 返回 `vendor` 或 `phrase`）、登录墙（跳到登录页 `is_login_url`；或不跳转、含 200 的登录页 `login_page`，只看结构特征：`<title>` 含 sign in / log in / login / password、`<form>` 里有密码框、form action 指向 login / signin / auth、`<form>` 内可见文字含这些词——密码框 + 登录标题，或登录标题 + 登录 action，或密码框 + 登录 action + 表单内登录词且表单外正文很短；响应头 `WWW-Authenticate`（非 401 状态，含 200）也算登录墙；也认无密码（邮箱 / magic link）登录表单，以及没有表单、只有登录链接加登录提示语（please sign in to continue 等）或登录标题的短中间页；扫描整个正文，不截断；词按边界匹配，「Data Blog Index」不算；不对全文做单词匹配，数据页面常见的 `id="signin-wrap"`、页眉「Sign in」链接、侧栏登录框、订阅邮箱框不算）、rss/api 格式校验不通过。robots.txt、每一跳重定向、正文一视同仁。收到任何 HTTP 状态都不重发（429、5xx 也不重试）；只有没收到响应的网络错误有限重试（`NET_RETRIES`）。
+- **门禁不可绕过**：`collect.check_gates()` 在建 Fetcher 和每次发送前核对限速、冷却、窗口、重试、跳转上限、拒绝主机、可疑分类这些常量，运行时被调松 → `ConfigError`，不发请求；自带 opener 只收 urllib `OpenerDirector` 原类且只装 `_NoRedirect`（子类、会跟随跳转的处理器、cookie 处理器、改写 `open` 一律拒绝）；任何 opener 返回的响应 URL 不是请求的 URL（自己跟随了跳转）→ `opener_redirected`，丢弃正文。入口脚本不自带 opener、不改门禁常量（有测试）。
+- **规则 1，单次即停该主机**：一次可疑 → 该主机本轮全部停止（私有 `state/source-health.json` 的 `host_stops.<轮次>.<主机>`，跨进程生效），同主机的其他 URL、其他源本轮都不再请求（`host_stopped_this_round`，列入 `skipped-<run>.json`，不另算可疑）。
+- **规则 2，URL 冷却 ≥24 小时**：被拒的 URL 记入 `urls.<轮次>`（只存规范化 URL 的 sha256：scheme、主机小写，去默认端口，空路径补 `/`，去 fragment），24 小时内任何轮次都不再请求（`url_cooldown`）。经重定向时，最初请求的 URL 和返回可疑响应的那一跳都记冷却；但本轮停止的只是返回可疑响应那一跳的主机，起点主机不停（r15 ⑤：doi.org 跳到出版商 403，同轮其他 DOI 照常）。记录按轮次分开存，补跑 r1 不会清掉 r2 的记录；只保留最近 10 轮。查记录、发请求、写记录在同一把按 URL 的跨进程文件锁内完成（`state/locks/urls/`），两个进程不会同时请求同一 URL；rss/api 格式校验也在锁内（r15 ④）。站点限速锁里等待结束后、发送之前重跑完整预检（旧表停用、源状态、本轮主机停止、URL 冷却），可疑分类与停止写入也在站点限速锁内完成，「写停止」与同站「发请求」互斥（r15 ①）。超过 25 MiB 的 401/403/429 先按状态码判可疑、停主机，再报 `too_large`（r15 ③）。
+  - **来源级冷却（Grok Bot 2026-10-18 18:12 SGT 采纳）**：同一来源只要还有未到期的 URL 冷却记录，**从下一轮起整个来源都不请求**（`source_blocked`，原因 `source cooldown:<代码>`），不只那个 URL；触发的那一轮不受此限（同主机已按规则 1 停止），直到最晚的冷却记录到期。**登录墙按停源处理**（#60 r15 HIGH）：识别为登录墙后，本轮起整个来源就不再请求。
+    - ① 来源 → 主机：代码里只有一份对照表 `collect.SOURCE_HOSTS`（只收 sources.yaml 已批准的主机，不借此新增来源）：
+
+      | 来源 | 主机 | sources.yaml 里的 id |
+      |---|---|---|
+      | `arxiv` | rss.arxiv.org | arxiv-cs-ai、arxiv-cs-lg、arxiv-gr-qc、arxiv-hep-th、arxiv-quant-ph |
+      | `federalreserve` | www.federalreserve.gov | fed-press-monetary、fed-prates |
+      | `clinicaltrials` | clinicaltrials.gov | ctgov-recent、ctgov-bci |
+      | `fda` | www.fda.gov、api.fda.gov | fda-biologics、openfda-510k |
+
+      表里一个来源的任一主机被拒 → 下一轮起该来源所有主机、落在这些主机上的所有 id 都不请求。不在表里的主机，来源就是 sources.yaml 的 id（`fetch_primary` 是 `primary:<主机>`）。另外 `capture_sources` 按各 id 的 url 主机建 `host_sources`：请求带的 id 与主机所属 id 冲突 → 拒绝（`source_mismatch`，不发请求）。
+    - ② 24 小时从判定为被拒 / 可疑、写下记录的时刻起算（收到响应并判定之后取时钟，不是发送之前；慢响应不会缩短冷却）。
+    - ③ 跨运行：记录在私有 `state/source-health.json`，新进程、下一轮都从磁盘读。
+    - ④ URL 比对：scheme、主机小写，去默认端口、用户信息、fragment，并去掉 API key / token / 签名 / session 等凭据类查询参数（`collect.cooldown_identity`）；换一把 key 不能绕过冷却，状态文件里也不留 key。
+    - 多进程：在跨进程站点限速锁内、限速等待之后、发送之前从磁盘重读状态，重新核对来源冷却（与规则 2 的完整预检同一处）。
+- **规则 3，5 轮 3 轮 → pending-disable**：每轮结束，`capture_sources` 只给本轮实际发过请求的源记一轮（轮次 id `YYYY-MM-DD/rN`；同一轮重跑按「任一次可疑即可疑」合并）。最近 5 个记录轮里有 3 轮可疑（不要求连续）→ `pending-disable`，**从下一轮起**生效：触发的那一轮照常跑完，下一轮起该源不再请求（`source_blocked`），每轮报告继续列出。被主机停止、冷却、停用跳过而没发请求的源不记轮。
+- **当天汇报显眼可见**：当轮有 pending-disable 的源时写 `source-health-<run>.json`（条目带 `flag: grok-bot-review`）和 `GROK-BOT-REVIEW-<run>.md`（公开源写公开目录、internal_only 源写内部目录；列源 id、是否本轮新转入、最近 5 轮可疑轮数、触发轮、最近原因，不含 URL）；stderr 末尾打一行 `=== 待 Grok Bot 复核（pending-disable）N 个源：… ===`，最后一行 `done: … pending_disable=N`。写当天 `capture-failures.md` 时照抄，报给 Grok Bot，等人工确认。
+- **规则 4，限速**：没有公布限速的站点每站（`site_of`，按可注册域名近似）每分钟最多 1 次，跨进程共享（`state/locks/rate-site-<站点>.lock`），robots.txt、每一跳都算。只有 `improve/sources.yaml` 顶层 `site_rate_limits: {站点: {min_interval_s, basis}}` 写明公布限额和依据的站点按其限额（缺 `basis` → 配置错误，退出码 2）。SEC 按其公布的 5 次/秒（0.2 秒）。robots `Crawl-delay`/`Request-rate` 更严则从严。限速锁文件损坏（不是 `{"site": 数, "hosts": {主机: 数}}`）→ 拒绝本次请求并报 `rate_lock_invalid`，不当空桶放行（r15 ⑥）。
+- **规则 6，旧停用表**：私有 `state/collector-hosts.json`（旧版按主机持久停用）里还有未迁移条目时，`capture_sources` 和 `source_health.py`（`migrate` 除外）一律拒绝运行（退出码 2，不发请求）。先跑 `scripts/source_health.py migrate`：每个主机导入为「已停用（等人工复核）」（`hosts.<主机>.status = disabled`、`review = pending-manual-review`，原因保留原文），不自动恢复，不计入 5 轮 3 轮计数。按原文归类：验证页 → `bot_check`，401 或登录 → `login`，403 → `http_403`，其他 → `other`；`bot_check`、`login` 额外标 `unrecoverable`。这些主机一律不发请求，包括 robots.txt 和经跳转到达（`host_disabled`）。迁移按旧文件 sha256 幂等；旧文件不改不删；旧文件损坏时拒绝运行。
+- **人工操作**：`source_health.py confirm-disable --id <id> --reason "<谁确认、依据>"` → `disabled`；`enable --id <id> --reason …` 或 `enable --host <主机> --reason …` → 恢复为 `ok`；`unrecoverable`（因验证页或登录墙停用）的主机和源永不恢复，没有放行开关，只能改 `sources.yaml` 并重新审批；`report` 查看当前状态（只打到终端，可含人工 `--reason` 与旧表原因原文）。
+- **公开输出只写固定代码（r15 ⑦）**：`skipped-<run>.json` 的 `detail`、`source-health-<run>.json`（`reason_code`、各轮 `reasons`）和 `GROK-BOT-REVIEW-<run>.md` 只写固定代码（如 `source disabled:manual-confirm`、`host disabled:legacy-import:bot_check:unrecoverable`、`suspected_challenge:xml_root`）；旧表停用原因、人工 `--reason` 等自由文本只留在私有状态文件。
+- **状态文件**：不要手改。读取严格校验：`version` 必须是整数 2，顶层只能是 `version`、`sources`、`urls`、`host_stops`、`hosts`、`legacy_imports`（缺键、多键都算损坏），每条源记录必须带 `sid`。损坏或读不了时拒绝一切请求，也拒绝改写；`report()` 读失败直接报错。
+- 永不绕过付费墙、登录或验证：不重试、不换 UA、不跑 JS、不带 cookie。
+
+## 验证页识别
+
+- 先按状态码：HTTP 403、401、429（robots 与每一跳都一样）直接判可疑，不再看正文。其余按 `classify_page(ctype, body, headers, url)` 分 `vendor`（厂商组件，高置信）和 `phrase`（疑似），robots、正文、每一跳同一套；两者后果相同（该主机本轮停止、URL 冷却），区分只为报告写清原因。响应 URL 传入分类器，`src` 一律 `urljoin` 补全后核对同源（scheme + 主机 + 端口），相对、协议相对 `//a.org/…`、同主机绝对地址都认，其他主机不认。高置信标记：响应头 `cf-mitigated: challenge`；Cloudflare——script src 或 `x.src = '…'` 指向 challenges.cloudflare.com 或本站 `/cdn-cgi/challenge-platform/h/<字母>/orchestrate/`（`/cdn-cgi/challenge-platform/scripts/jsd/` 是注入正常页面的检测脚本，不算）、不在引号里的 `window._cf_chl_opt =`、class `cf-turnstile`；reCAPTCHA/hCaptcha——class `g-recaptcha`、对应 api.js；Incapsula——`<script src>` 指向本站 `/_Incapsula_Resource`，或 `<iframe src>` 指向本站 `/_Incapsula_Resource?…` 且正文含 “Incapsula incident ID”；PerimeterX——script src（含赋值）指向 captcha.px-cdn.net / captcha.px-cloud.net、meta description 为 `px-captcha` 且标题为 “Access to this page has been denied”、`div#px-captcha` 且整页可见文本 ≤1000 字符；`form#challenge-form`。单独的 `window._pxAppId =` 是正常页面的 Sensor，不算（r13）。没闭合的 `<script>` 永不算高置信：内容里混入 HTML 标签（如 `<pre>`）时不判定，纯脚本命中标记只算 `phrase`（r13）。script 内容先去掉字符串字面量和注释。免检只有 `<textarea>`/`<xmp>`/`<plaintext>`/`<title>`、注释和可见文本；`<pre>`/`<code>` 照常检查。`data-class`/`data-src` 不算。
+- 泛用短语（`CHALLENGE_PHRASES`）只在 HTML 形态的正文里匹配，且只看 title，或可见文本很短（≤512 字符）且短语占一半以上；只命中短语（包括 text/plain 以标签开头再加短语）→ `suspected_challenge`，算可疑。
+- JSON / XML 只做格式校验：格式不对记 `suspected_challenge:<原因>`，算可疑。XML 用 `xml.parsers.expat` 按编码与语法检查（含 UTF-16、DOCTYPE 引号里的 `>`）：`StartDoctypeDeclHandler` 的 has_internal_subset 为真即拒收，`EntityDeclHandler` 见到实体声明即拒收，未声明的实体引用也拒收；外部 DOCTYPE（如 pubmed、RSS 0.91）放行但不加载。
+- RSS 兼容边界：允许外部 DOCTYPE，但不联网加载、也不加载其中声明的实体；正文里直接写 `&nbsp;` 这类外部 DTD 实体的文档会被拒收——算可疑（格式错误）。转义写法 `&amp;nbsp;`、CDATA、数字实体 `&#160;` 正常通过。
+- robots.txt 返回 HTML 但无厂商标记（401/403/429 以外）：本轮按禁止处理，不算可疑。
+- 每收到一次响应（含 robots.txt、429/5xx、3xx）都先交给 `raw_sink` 私有存档，再做判定。
+- SEC 站点限速同样走跨进程文件锁（私有目录 `state/locks/rate-site-sec.gov.lock`，fcntl）：同一时间只有一个实例在请求 SEC，间隔按锁文件里的时间戳控制。 SEC 的 UA 或 `lock_dir` 缺一个，`_raw()` 就返回 `not_configured`、不发请求（get、robots、直接调用都一样），不算可疑。锁文件里同时记站点上次请求时间和每台主机上次请求时间，站点间隔（SEC 0.2 秒）与单主机间隔（≥2 秒，含 Crawl-delay）都在锁内执行，跨进程有效。
+
 ## check-site-corrections（站点 PR 页面更正检查，Grok Bot 2026-10-18）
 
 `python3 scripts/check-site-corrections.py --site-repo DIR (--pr N | --head REF [--base REF])`：检查站点 PR 改动的 `content/posts`、`content/cards` 页面是否符合更正规则（“已发布”按 Hugo 实际构建判定；改已发布页面须为更正、更正区符合 Issue #71 新格式或过渡期旧格式、不得删除或取消发布已发布页面；纯格式迁移例外）。需要本机 hugo（版本与站点部署一致）。`--head/--base` 只读取仓库；`--pr` 会 fetch 并更新本地 Git 对象和引用。规则与错误码见 docs/approvals.md「站点 PR 页面检查」。
