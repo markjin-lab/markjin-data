@@ -204,14 +204,34 @@ def _is_delimiter_row(ln):
     return "|" in ln and all(_RETRACTION_SEP_CELL_RE.match(c) for c in _table_cells(ln))
 
 
+def _cell_text(cell):
+    """原始行分列后的单个格子 → 可见文字：实体还原（&#124; → |，只在分列之后做；#93 r3 MEDIUM 1），去掉标签与隐藏元素。"""
+    from .route import _hide_html                 # route 导入本模块，此处延迟导入
+    return _hide_html(cell, correction_syntax=True).strip()
+
+
+def _heading_at(raw, vis, i):
+    """第 i 行是不是标题（#93 r3 MEDIUM 2、3）：语法一律按原始行认（实体编码的 #、=、- 不构成标题），可见文字照旧取自可见文本。
+    ATX：原始行符合 ATX 语法，且可见行仍是 ATX 标题行；Setext：原始的文字行与下划线行符合 Setext 语法，且两行在可见文本里都不为空。
+    返回 (级别, 可见标题文字, 占用行数)；不是标题 → None。"""
+    from .route import _HEADING_LINE_RE, _HEADING_PARTS_RE, _setext_title   # route 导入本模块，此处延迟导入
+    v = vis[i].rstrip("\r")
+    if _HEADING_LINE_RE.match(raw[i]):
+        m = _HEADING_PARTS_RE.match(v)
+        return (len(m.group(1)), m.group(2), 1) if m else None
+    if _setext_title(raw, i) and v.strip() and vis[i + 1].strip():
+        return (1 if raw[i + 1].strip().startswith("=") else 2), v.strip(), 2
+    return None
+
+
 def parse_fred_retractions(text, day):
     """解析一份 RETRACTIONS.md 的「FRED 撤回」节。返回 (路径集合, 解析不出的行号列表)。
-    标题只在 route.visible_text（等行数、去掉注释与围栏）里认；行数对不齐 → 整份判解析不出（行 1）。
+    标题须在 route.visible_text（等行数、去掉注释与围栏）里可见，且语法按原始行认（_heading_at）；行数对不齐 → 整份判解析不出（行 1）。
+    表头、分隔行、表体一律用原始行分列，分完再逐格实体还原（_cell_text），登记路径的规范化见 retracted_path_re（#93 r3 MEDIUM 1）。
     节内表格按 GFM 认（首尾竖线可省略）：表头行（第一格须为 path）+ 分隔行开始，到空行或标题为止，其间每一个非空行都是表体行，
     须与表头列数相同、第一格为 raw/<本目录日期>/… 路径，否则判格式不对（不静默跳过；#93 r1 MEDIUM）。
     表格以外的行含竖线，或含 raw/<日期>/ 路径，也判格式不对（路径只能登记在表格里）。节内没有一条路径 → 该节标题行判解析不出。"""
-    from .route import _HEADING_PARTS_RE, _setext_title   # route 导入本模块，此处延迟导入
-    from .route import visible_text
+    from .route import visible_text               # route 导入本模块，此处延迟导入
     raw = text.split("\n")
     vis = visible_text(text, body_only=True, correction_syntax=True).split("\n")
     if len(vis) != len(raw):
@@ -226,19 +246,16 @@ def parse_fred_retractions(text, day):
     i = 0
     while i < len(vis):
         ln = vis[i].rstrip("\r")
-        m = _HEADING_PARTS_RE.match(ln)
-        level = title = None
-        if m:
-            level, title = len(m.group(1)), m.group(2)
-        elif _setext_title(vis, i):
-            level, title = (1 if vis[i + 1].strip().startswith("=") else 2), ln.strip()
-        if level is not None:
+        rl = raw[i].rstrip("\r")
+        h = _heading_at(raw, vis, i)
+        if h is not None:
+            level, title, span = h
             ncols = None
             if sec_level is not None and level <= sec_level:
                 close(); sec_level = None
             if sec_level is None and _FRED_SECTION_RE.search(_IGNORABLE_RE.sub("", title)):
                 sec_level, sec_line, sec_paths = level, i + 1, 0
-            i += 2 if m is None else 1           # Setext 标题的下划线行不是内容
+            i += span                            # Setext 标题的下划线行不是内容
             continue
         if sec_level is None:
             i += 1
@@ -248,9 +265,9 @@ def parse_fred_retractions(text, day):
             i += 1
             continue
         if ncols is None:
-            nxt = vis[i + 1].rstrip("\r") if i + 1 < len(vis) else ""
-            if "|" in ln and _is_delimiter_row(nxt):
-                head = _table_cells(ln)
+            nxt = raw[i + 1].rstrip("\r") if i + 1 < len(raw) else ""
+            if "|" in rl and i + 1 < len(vis) and vis[i + 1].strip() and _is_delimiter_row(nxt):
+                head = [_cell_text(c) for c in _table_cells(rl)]
                 if head[0].lower() != "path" or len(_table_cells(nxt)) != len(head):
                     bad.append(i + 1)
                 ncols = len(head)
@@ -260,7 +277,7 @@ def parse_fred_retractions(text, day):
                 bad.append(i + 1)                # 表格以外的竖线行或路径行：格式不对
             i += 1
             continue
-        cells = _table_cells(ln)
+        cells = [_cell_text(c) for c in _table_cells(rl)]
         first = cells[0]
         pm = _RETRACTION_PATH_RE.match(first)
         if pm and pm.group(1) == day and len(cells) == ncols and ncols >= 2 and not ({".", ".."} & set(first.split("/"))):
@@ -1232,9 +1249,10 @@ def correction_section_lines(raw_lines, fm_end=0):
     再用 route.visible_text(..., body_only=True, correction_syntax=True) 生成等行数的可见文本，只在可见文本里认标题
     （代码围栏、HTML 注释、HTML 块里的伪标题不算）；行数对不齐 → 空集合（不豁免）。
     标题识别沿用 route.py：新格式二级标题「## 更正」/「## Corrections」，或旧格式「## 更正 YYYY-MM-DD…」/「## Correction(s) YYYY-MM-DD…」；
-    从标题下一行起，到下一个 ATX 或 Setext 标题为止。返回的行另须在可见文本里与原始行逐字相同（说明行本身可见）。"""
-    from .route import (CORRECTION_HEADING, _HEADING_LINE_RE, _HEADING_PARTS_RE, _OLD_DATED_HEADING_RE,
-                        _heading_shown, _setext_title, visible_text)   # route 导入本模块，此处延迟导入
+    从标题下一行起，到下一个 ATX 或 Setext 标题为止。标题语法按原始行认（_heading_at；实体编码的 # 不算，#93 r3 MEDIUM 3）。
+    返回的行另须在可见文本里与原始行逐字相同（说明行本身可见）。"""
+    from .route import (CORRECTION_HEADING, _HEADING_PARTS_RE, _OLD_DATED_HEADING_RE,
+                        _heading_shown, visible_text)   # route 导入本模块，此处延迟导入
     body = list(raw_lines[fm_end:])
     if not body:
         return set()
@@ -1243,11 +1261,12 @@ def correction_section_lines(raw_lines, fm_end=0):
         return set()                            # 行数对不齐：不豁免
     names = set(CORRECTION_HEADING.values())
     out, inside = set(), False
+    heads = [_heading_at(body, vis, i) for i in range(len(vis))]
     for i, ln in enumerate(vis):
-        if _setext_title(vis, i) or (i and _setext_title(vis, i - 1)):
+        if (heads[i] and heads[i][2] == 2) or (i and heads[i - 1] and heads[i - 1][2] == 2):
             inside = False
             continue
-        if _HEADING_LINE_RE.match(ln):
+        if heads[i]:
             shown = _heading_shown(ln)
             m = _HEADING_PARTS_RE.match(shown)
             inside = bool((m and len(m.group(1)) == 2 and m.group(2) in names) or _OLD_DATED_HEADING_RE.match(shown))

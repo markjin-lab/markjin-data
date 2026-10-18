@@ -415,6 +415,19 @@ class FredNoteVisibleHeading(unittest.TestCase):
         got, _n = self.lines_for("\n```\ncode\n```\n" + NEW_HEAD + "\n" + NOTE + "\n<!-- 注释 -->\n")
         self.assertEqual(got, [])
 
+    def test_entity_hash_pseudo_heading_not_correction(self):
+        # #93 r3 MEDIUM 3：&#35;&#35; 写成的伪标题渲染为普通文字，不是更正节，其后的说明行照报
+        from markjin.selfcheck import correction_section_lines
+        for head in ("&#35;&#35; 更正", "&#35;&#35; 更正 2026-10-18：见下方。", "&#35;&#35; Corrections",
+                     "&#35;# 更正", "&#x23;&#x23; 更正", "&#35;&#35; 更正\n---"):
+            got, n = self.lines_for("\n" + head + "\n\n" + NOTE + "\n")
+            self.assertEqual(got, [n], head)
+            body = f"# 日报 {NEW}\n\n{head}\n\n{NOTE}\n".split("\n")
+            self.assertEqual(correction_section_lines(body), set(), head)
+        # 真更正节里的说明行仍豁免（对照）
+        got, _n = self.lines_for("\n## 更正\n\n" + NOTE + "\n")
+        self.assertEqual(got, [])
+
     def test_note_inside_hidden_block_reported(self):
         got, n = self.lines_for(OLD_HEAD + "\n<div>\n" + NOTE + "\n</div>\n")
         self.assertIn(n - 1, got)
@@ -595,6 +608,33 @@ class FredRetractionsIndex(unittest.TestCase):
             r = self.codes(repo_with(doc), b)
             self.assertEqual(self.unreadable(r), [], row_b)
             self.assertIn("E-FRED-CITED", r["error_codes"], row_b)
+
+    def test_entity_pipe_cell_is_one_cell(self):
+        # #93 r3 MEDIUM 1：先按原始行分列，再实体还原；&#124; 是格子里的文字，不是分列竖线
+        a = f"raw/{NEW}/bea/a.csv"
+        docs = (f"## FRED 撤回\n\n| path | reason |\n|---|---|\n| {a} | x&#124;y |\n",
+                retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", NEWP, extra=ROW.format(p=a).replace("FRED 衍生数据", "FRED&#124;衍生") + "\n")),
+                f"## FRED 撤回\n\n| path | a&#124;b |\n|---|---|\n{a} | x&#x7c;y\n",
+                f"## FRED 撤回\n\n| &#112;ath | reason |\n|---|---|\n| {a} | x&#124;y |\n")   # 分列后逐格实体还原
+        for doc in docs:
+            r = self.codes(repo_with(doc), a)
+            self.assertEqual(self.unreadable(r), [], doc)
+            self.assertIn("E-FRED-CITED", r["error_codes"], doc)
+        # 对照：真竖线照样分列，列数不符即报
+        doc = f"## FRED 撤回\n\n| path | reason |\n|---|---|\n| {a} | x|y |\n"
+        self.assertIn((f"raw/{NEW}/RETRACTIONS.md", 5), self.unreadable(self.codes(repo_with(doc), a)))
+
+    def test_entity_hash_pseudo_heading_not_fred_section(self):
+        # #93 r3 MEDIUM 2：&#35;&#35; 写成的伪标题是普通文字，不开启「FRED 撤回」节，也不结束真节
+        a = f"raw/{NEW}/bea/a.csv"
+        for pseudo in ("&#35;&#35; FRED 撤回", "&#x23;&#x23; FRED 撤回", "&#35;# FRED 撤回",
+                       "FRED 撤回\n&#61;&#61;&#61;", "FRED 撤回\n&#45;&#45;&#45;"):   # Setext 下划线同样按原始行认
+            doc = f"## 其他\n\n{pseudo}\n\n| path | reason |\n|---|---|\n| {a} | x |\n"
+            r = self.codes(repo_with(doc), a)
+            self.assertNotIn("E-FRED-CITED", r["error_codes"], pseudo)
+            self.assertEqual(self.unreadable(r), [], pseudo)
+        doc = retractions_doc(section(f"{NEW} FRED 撤回（王总决定）", NEWP, extra=f"\n&#35; 其他\n\n| path | reason |\n|---|---|\n| {a} | x |\n"))
+        self.assertIn("E-FRED-CITED", self.codes(repo_with(doc), a)["error_codes"])   # 伪标题不结束真节
 
     def test_registered_path_normalized_like_drafts(self):
         # 登记的路径与稿件同样按 norm()（NFKC、HTML 实体、Cf 字符）规范化后比对
