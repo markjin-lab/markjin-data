@@ -64,7 +64,7 @@ NET_RETRIES = 2              # 只对没收到 HTTP 响应的网络错误重试�
 LOCAL_ROUND = "0000-00-00/r1"  # 无持久状态（测试、单次调用）时的进程内轮次
 BACKOFF_BASE = 2.0
 BACKOFF_CAP = 120.0          # Retry-After 超过此值直接放弃本次（不长时间挂起）
-_LOGIN_PATH = re.compile(r"/(?:log-?in|sign-?in|signon|sso|servicelogin|auth(?:orize)?|account/login|users/sign_in|session/new)(?:[/?.;#]|$)", re.I)
+_LOGIN_PATH = re.compile(r"/(?:log-?in|sign-?in|signon|sso|servicelogin|auth(?:orize)?|account/login|users/sign_in|sessions?)(?:[/?.;#]|$)", re.I)
 
 
 def is_login_url(u):
@@ -322,18 +322,21 @@ def classify_page(ctype, body, headers=None, url=None):
 
 # 不跳转的登录墙（任何非 3xx 状态，含 200）：只看结构特征，不对全文做单词匹配（正常数据页面常有 id="signin-wrap"
 # 之类的属性或页眉「Sign in」链接，不能误伤）。特征：
-#   T  <title> 含 sign in / log in / login / password（或 登录 / 登入）
-#   P  <form> 里有密码输入框 <input type=password>
-#   A  某个 <form> 的 action 指向登录路径（is_login_url：/login、/signin、/auth、/sso… 或 login./accounts. 主机）
-#   F  <form> 内可见文字（含 label、button、submit 的 value）含上述登录词
-#   E  <form> 里有邮箱输入框（type=email 或 name/autocomplete 为 email/username）——无密码（magic link / 一次性码）登录
+#   T  <title> 含 sign in / log in / login / password（或 登录 / 登入）；TS  <title> 写明登录（同上但不含 password）
+# 以下 P、A、F、E 逐个 <form> 分别记（r16 ③：证据只在同一个表单内组合，不跨表单拼凑）：
+#   P  该表单里有密码输入框 <input type=password>
+#   A  该表单的 action 指向登录路径（is_login_url：/login、/signin、/session、/auth、/sso… 或 login./accounts. 主机）
+#   F  该表单内可见文字（含 label、button、submit 的 value）含上述登录词
+#   E  该表单里有邮箱输入框（type=email 或 name/autocomplete 为 email/username）——无密码（magic link / 一次性码）登录
 #   L  有链接（<a href>）指向登录路径；Q  可见文字里有登录提示语（sign in to continue、please log in、登录后查看…）
 #   S  表单外可见文字很短（≤ LOGIN_OUTSIDE_MAX，整页基本只有登录内容）
-# 判定：(P 或 E) 且 T；或 T 且 A；或 (P 或 E) 且 F 且 S；
+# 判定（任一表单满足即可，见 _login_form）：P 且 (S 或 TS)；或 A 且 (P 或 E) 且 (S 或 TS)；或 E 且 (F 或 TS) 且 S；
 #       无表单的登录提示 / 中间页：L 且 Q 且 S，或 T 且 L 且 S。
+# 标题含 Password 的长文章页加邮箱订阅框不算（只有邮箱框的表单在长页面上一律不算，password 标题不算登录标题）。
 # 侧栏 / 页眉里带登录框或「Sign in」链接的普通文章（标题不是登录、正文很长）不算；扫描整个正文（不截断）。
 # 词边界：两侧不能是字母数字，所以「Data Blog Index」「signing」「loginx」都不算。
 _LOGIN_WORDS = re.compile(r"(?<![a-z0-9])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on|password)(?![a-z0-9])|登录|登入|ログイン", re.I)
+_SIGNIN_WORDS = re.compile(r"(?<![a-z0-9])(?:sign[\s-]?in|log[\s-]?in|login|sign[\s-]?on)(?![a-z0-9])|登录|登入|ログイン", re.I)
 _LOGIN_PROMPT = re.compile(r"(?<![a-z0-9])(?:(?:please\s+)?(?:sign|log)[\s-]?in\s+(?:to|for)\s+(?:continue|view|access|read|see|download|proceed)"
                            r"|please\s+(?:sign|log)[\s-]?in|you\s+(?:must|need\s+to)\s+(?:be\s+)?(?:sign(?:ed)?|log(?:ged)?)[\s-]?in"
                            r"|(?:sign|log)[\s-]?in\s+required|login\s+required|members?\s+only)(?![a-z0-9])"
@@ -348,8 +351,12 @@ def _login_features(text, base=None):
         def __init__(self):
             super().__init__(convert_charrefs=True)
             self.title, self.in_title, self.skip, self.form = [], False, 0, 0
-            self.pw = self.action = self.has_form = self.email = self.link = False
-            self.form_text, self.outside, self.text = [], 0, []
+            self.has_form = self.link = False
+            self.forms = []            # r16 ③：逐个表单记证据（不跨表单、不与标题跨区域拼凑）
+            self.outside, self.text = 0, []
+
+        def _cur(self):
+            return self.forms[-1] if self.form and self.forms else None
 
         def handle_starttag(self, tag, attrs):
             a = {}
@@ -360,13 +367,17 @@ def _login_features(text, base=None):
             elif tag in ("script", "style", "noscript", "template"):
                 self.skip += 1
             elif tag == "form":
-                self.form += 1; self.has_form = True
+                self.has_form = True
+                if not self.form:          # 嵌套 form 并入最外层（浏览器同样忽略内层 form 标签）
+                    self.forms.append({"pw": False, "email": False, "action": False, "text": []})
+                self.form += 1
                 act = a.get("action", "").strip()
                 if act:
                     try:
                         full = urljoin(base, act) if base else act
-                        self.action = self.action or is_login_url(full if urlsplit(full).scheme else "https://x" + (
+                        hit = is_login_url(full if urlsplit(full).scheme else "https://x" + (
                             full if full.startswith("/") else "/" + full))
+                        self.forms[-1]["action"] = self.forms[-1]["action"] or hit
                     except ValueError:
                         pass
             elif tag == "a" and a.get("href", "").strip():
@@ -377,14 +388,15 @@ def _login_features(text, base=None):
                 except ValueError:
                     pass
             elif tag == "input" and self.form:
+                f = self._cur()
                 typ = a.get("type", "").strip().lower()
                 if typ == "password":
-                    self.pw = True
+                    f["pw"] = True
                 if typ == "email" or (typ in ("", "text") and (a.get("name", "").strip().lower() in ("email", "username", "login", "user")
                                                               or a.get("autocomplete", "").strip().lower() in ("email", "username"))):
-                    self.email = True
+                    f["email"] = True
                 if typ in ("submit", "button") and a.get("value"):
-                    self.form_text.append(a["value"])
+                    f["text"].append(a["value"])
 
         def handle_startendtag(self, tag, attrs):
             self.handle_starttag(tag, attrs)
@@ -403,7 +415,7 @@ def _login_features(text, base=None):
             elif self.skip:
                 return
             elif self.form:
-                self.form_text.append(d); self.text.append(d)
+                self._cur()["text"].append(d); self.text.append(d)
             else:
                 self.outside += len(" ".join(d.split())); self.text.append(d)
     p = P()
@@ -412,9 +424,26 @@ def _login_features(text, base=None):
     except Exception:
         pass
     title = " ".join("".join(p.title).split())
-    return {"T": bool(title) and len(title) <= 160 and bool(_LOGIN_WORDS.search(title)), "P": p.pw, "A": p.action,
-            "F": bool(_LOGIN_WORDS.search(" ".join(p.form_text))), "form": p.has_form, "outside": p.outside,
-            "E": p.email, "L": p.link, "Q": bool(_LOGIN_PROMPT.search(" ".join(" ".join(p.text).split())))}
+    forms = [{"P": f["pw"], "E": f["email"], "A": f["action"], "F": bool(_LOGIN_WORDS.search(" ".join(f["text"])))}
+             for f in p.forms]
+    tl = bool(title) and len(title) <= 160
+    return {"T": tl and bool(_LOGIN_WORDS.search(title)), "TS": tl and bool(_SIGNIN_WORDS.search(title)), "forms": forms,
+            "form": p.has_form, "outside": p.outside, "L": p.link,
+            "Q": bool(_LOGIN_PROMPT.search(" ".join(" ".join(p.text).split())))}
+
+
+def _login_form(f, title_signin, short):
+    """r16 ③：单个表单内组合证据（证据不跨表单拼凑）。长页面上，标题只能和本表单的密码框一起算；只有邮箱框的
+    表单（订阅框等）不论标题如何都不算，除非页面很短、该表单就是页面主体（无密码登录中间页）。与表单搭配的标题须写明
+    登录（sign in / log in 等）；只含 password 的标题（如讲密码的文章）不算。
+    - 密码框：页面很短（登录中间页，含标题不是登录、按钮不写登录词、提交到 /session 的短表单），或标题写明登录；
+    - 提交到登录路径（/login、/session 等）且有密码框或邮箱框：页面很短，或标题写明登录；
+    - 只有邮箱框：页面很短（表单就是页面主体），且本表单内有登录词或标题写明登录。长文章页的订阅框不算。"""
+    if f["P"] and (short or title_signin):
+        return True
+    if f["A"] and (f["P"] or f["E"]) and (short or title_signin):
+        return True
+    return f["E"] and (f["F"] or title_signin) and short
 
 
 def _header(h, name):
@@ -439,10 +468,8 @@ def login_page(ctype, body, url=None):
     t = body.decode("utf-8", "replace") if isinstance(body, bytes) else body     # 整个正文（不截断：表单可能在 300KB 之后）
     f = _login_features(t, url)
     short = f["outside"] <= LOGIN_OUTSIDE_MAX
-    if f["form"]:
-        cred = f["P"] or f["E"]
-        if (cred and f["T"]) or (f["T"] and f["A"]) or (cred and f["F"] and short):
-            return True
+    if any(_login_form(x, f["TS"], short) for x in f["forms"]):
+        return True
     return short and f["L"] and (f["Q"] or f["T"])
 
 
@@ -805,12 +832,15 @@ def ext_for(ctype, body):
 #     来源级冷却（Grok Bot 2026-10-18 18:12 SGT 采纳）：来源只要还有未到期的 URL 冷却，从下一轮起整个来源都不请求
 #     （source cooldown）；来源 → 主机见 SOURCE_HOSTS；24 小时从判定时刻起算；跨运行持久；URL 去掉 key / token 后比对。
 #     本轮停止的只是返回可疑响应的那一跳的主机；跳转起点只冷却该 URL，起点主机不停（r15 ⑤）。
+#     冷却到期不自动再请求（Grok Bot 2026-10-18 20:51 SGT）：只把来源标成「待批准重测」，须 Grok Bot 或审查 bot 的书面批准
+#     （带 quote_ref 或审查提交号，每个引用只能用一次）才放行一次重测（见「人工批准门禁」）。
 #  3. 一个源最近 WINDOW_ROUNDS（5）轮里有 PENDING_AFTER（3）轮可疑（不要求连续）→ pending-disable：
 #     触发那一轮照常跑完，从下一轮起不抓；当轮写报告与 GROK-BOT-REVIEW 汇报，等人工 confirm-disable / enable。
 #  4. 没有公布限速的站点，每站（site_of）每分钟最多 1 次（跨进程共享；限速锁文件损坏 → 拒绝请求并报 rate_lock_invalid）；只有 sources.yaml site_rate_limits 写明
 #     公布限额和依据的站点按其限额；SEC 维持 5 次/秒。robots Crawl-delay 更严时从严。
 #  5. 旧 collector-hosts.json 的主机全部保持停用：未迁移时拒绝运行，迁移（source_health.py migrate）后不再请求；
-#     因验证页或登录墙停的（unrecoverable）永不恢复，没有放行开关，只能改 sources.yaml 并重新审批。
+#     因验证页或登录墙停的（unrecoverable，含原因写法含糊或未知的）永不恢复，没有放行开关，只能改 sources.yaml 并重新审批；
+#     其余（只有固定写法 "HTTP 403" / "robots.txt HTTP 403"）enable --host 也须书面批准（带引用，只能用一次）。
 #  永不绕过付费墙、登录或验证：不重试、不换 UA、不跑 JS、不带 cookie。
 WINDOW_ROUNDS = 5
 PENDING_AFTER = 3
@@ -828,6 +858,19 @@ SOURCE_HOSTS = MappingProxyType({
 _HOST_SOURCE = MappingProxyType({h: name for name, hs in SOURCE_HOSTS.items() for h in hs})
 
 
+def source_hosts_digest(m):
+    """来源 → 主机对照表的规范化 sha256（check_gates 用它核对表的内容，r16 ④）。"""
+    try:
+        canon = sorted((str(n), sorted(str(h) for h in hs)) for n, hs in m.items())
+    except (AttributeError, TypeError):
+        return None
+    return hashlib.sha256(json.dumps(canon, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+# 对照表内容的预期指纹（改表必须同时改这里，并重新审批）；check_gates 核对内容，不只核对两张表彼此一致。
+SOURCE_HOSTS_SHA256 = "453a01b84dde7dcbd3e4a9c5e6976b4d05ceb1eea82b04b88dc8978d1c21e49d"
+
+
 def cooldown_source(host, sid):
     """来源级冷却的来源键：主机在 SOURCE_HOSTS 里 → "table:<来源>"；否则就是 sid（可能为 None）。"""
     g = _HOST_SOURCE.get((host or "").lower())
@@ -836,14 +879,18 @@ SITE_INTERVAL = 60.0          # 未公布限速的站点：每站每分钟最多
 SOURCE_STATUSES = ("ok", "pending-disable", "disabled")
 STATE_VERSION = 2
 LEGACY_HOSTS_FILE = "collector-hosts.json"   # 旧 HostState 文件（#3 的持久停用表），只读迁移，不再写
-HOST_CATEGORIES = ("bot_check", "login", "http_403", "other")
-UNRECOVERABLE_CATEGORIES = frozenset({"bot_check", "login"})
+HOST_CATEGORIES = ("bot_check", "login", "http_403", "unknown", "other")   # other：r16 之前的迁移写的，enable 时重新归类
+UNRECOVERABLE_CATEGORIES = frozenset({"bot_check", "login", "unknown"})
 _ROUND_ID = re.compile(r"\d{4}-\d{2}-\d{2}/r[12]")
 _SHA = re.compile(r"[0-9a-f]{64}")
 SUSPICIOUS_ERRORS = frozenset({"http_401", "http_403", "http_429", "challenge", "suspected_challenge", "login_wall",
                                "robots_http_401", "robots_http_403", "robots_http_429", "robots_challenge",
                                "robots_suspected_challenge", "robots_login_wall"})
-_TOP_KEYS = frozenset({"version", "sources", "urls", "host_stops", "hosts", "legacy_imports"})
+_TOP_KEYS = frozenset({"version", "sources", "urls", "host_stops", "hosts", "legacy_imports", "retest", "approvals_used"})
+_TOP_KEYS_PRE_R16 = _TOP_KEYS - {"retest", "approvals_used"}    # r16 之前写的状态文件：这两节缺省为空
+_RETEST_STATUSES = ("pending-approval", "approved", "used")
+_RETEST_KEYS = frozenset({"status", "since", "approval", "round", "used_at"})
+_APPROVAL_KEYS = frozenset({"by", "quote_ref", "review_commit", "at"})
 _SRC_KEYS = frozenset({"status", "rounds", "status_at", "status_reason", "pending_round", "unrecoverable"})
 _URL_KEYS = frozenset({"reason", "sid", "host", "at", "until"})
 _STOP_KEYS = frozenset({"reason", "sid", "at"})
@@ -951,35 +998,160 @@ def site_of(host):
     return ".".join(parts[-2:])
 
 
+class SiteLimits:
+    """校验过的站点限额（只读）：每项都有公布限额的依据（basis）和正数间隔。只能由配置构造，构造时即校验（r16 ④）。"""
+    __slots__ = ("_m", "_basis")
+
+    def __init__(self, cfg):
+        m, basis = {}, {}
+        if not isinstance(cfg, dict):
+            raise ConfigError("site_rate_limits must be a mapping")
+        for site, rec in cfg.items():
+            if not isinstance(site, str) or not site.strip():
+                raise ConfigError("site_rate_limits: site name required")
+            if not isinstance(rec, dict) or set(rec) - {"min_interval_s", "basis"} or not str(rec.get("basis") or "").strip():
+                raise ConfigError(f"site_rate_limits.{site}: basis (published limit source) required")
+            v = rec.get("min_interval_s")
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
+                raise ConfigError(f"site_rate_limits.{site}: min_interval_s must be a positive number")
+            m[site_of(site)] = float(v)
+            basis[site_of(site)] = str(rec["basis"]).strip()
+        object.__setattr__(self, "_m", MappingProxyType(m))
+        object.__setattr__(self, "_basis", MappingProxyType(basis))
+
+    def __setattr__(self, *_):
+        raise AttributeError("SiteLimits is read-only")
+
+    def __contains__(self, site):
+        return site in self._m
+
+    def __getitem__(self, site):
+        return self._m[site]
+
+    def __len__(self):
+        return len(self._m)
+
+    def __iter__(self):
+        return iter(self._m)
+
+    def basis(self, site):
+        return self._basis[site]
+
+
 def load_site_limits(cfg):
     """sources.yaml 顶层 site_rate_limits：{站点: {min_interval_s: 正数, basis: 公布限额的出处}}。缺依据或数值不对 → ConfigError。
-    只有写明公布限额和依据的站点才按其限额；其余一律 SITE_INTERVAL。SEC 内置 5 次/秒（RATE_GROUPS）。"""
-    out = {}
-    for site, rec in (cfg or {}).items():
-        if not isinstance(rec, dict) or not str(rec.get("basis") or "").strip():
-            raise ConfigError(f"site_rate_limits.{site}: basis (published limit source) required")
-        v = rec.get("min_interval_s")
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
-            raise ConfigError(f"site_rate_limits.{site}: min_interval_s must be a positive number")
-        out[site_of(site)] = float(v)
-    return out
+    只有写明公布限额和依据的站点才按其限额；其余一律 SITE_INTERVAL。SEC 内置 5 次/秒（RATE_GROUPS）。返回 SiteLimits。"""
+    return SiteLimits(cfg or {})
+
+
+# ---------------------------------------------------------------- 人工批准门禁（Grok Bot 2026-10-18 20:51 SGT）
+# 通用采集的 URL 冷却 / 来源冷却到期后不自动再请求：只把来源标成「待批准重测」（retest: pending-approval），不发请求。
+# 只有 Grok Bot 或审查 bot 的书面批准、且带引用（quote_ref 或审查提交号）时，才能 enable --host 或批准重测；
+# 每个引用只能用一次（approvals_used 记引用的 sha256）；批准的重测只放行一次正文请求（之后本轮该来源不再请求）。
+# robots.txt 是请求前提，按 robots 规则照常先取、不占这一次；robots.txt 本身可疑时同样用掉这次批准、重新冷却。
+APPROVERS = ("grok-bot", "review-bot")
+QUOTE_REF_RE = re.compile(r"[A-Za-z0-9._:/#@-]{1,200}")       # 与 docs/approvals.md 的 quote_ref 格式一致
+REVIEW_COMMIT_RE = re.compile(r"[0-9a-f]{7,40}")
+
+
+def make_approval(by, quote_ref=None, review_commit=None):
+    """书面批准：by ∈ APPROVERS，且至少带 quote_ref（QUOTE_REF_RE）或审查提交号（REVIEW_COMMIT_RE）之一。否则 ConfigError。"""
+    by = (by or "").strip().lower()
+    if by not in APPROVERS:
+        raise ConfigError(f"approval must come from one of {', '.join(APPROVERS)}")
+    q = (quote_ref or "").strip() or None
+    c = (review_commit or "").strip().lower() or None
+    if q is None and c is None:
+        raise ConfigError("approval needs a reference: quote_ref or review commit")
+    if q is not None and not QUOTE_REF_RE.fullmatch(q):
+        raise ConfigError("approval quote_ref malformed")
+    if c is not None and not REVIEW_COMMIT_RE.fullmatch(c):
+        raise ConfigError("approval review commit malformed (7-40 hex digits)")
+    return {"by": by, "quote_ref": q, "review_commit": c}
+
+
+def _approval_ids(a):
+    return [hashlib.sha256(f"{k}:{a[k]}".encode("utf-8")).hexdigest() for k in ("quote_ref", "review_commit") if a.get(k)]
+
+
+def _use_approval(d, approval, action, t):
+    """在状态锁内核对并消耗一次书面批准：没有批准、格式不对或引用已用过 → ConfigError（不改状态）。返回要存的批准记录。"""
+    if not isinstance(approval, dict):
+        raise ConfigError(f"{action}: written approval from {' or '.join(APPROVERS)} with a quote_ref or review commit required")
+    a = make_approval(approval.get("by"), approval.get("quote_ref"), approval.get("review_commit"))
+    ids = _approval_ids(a)
+    if any(i in d["approvals_used"] for i in ids):
+        raise ConfigError(f"{action}: approval reference already used; each approval can be used once")
+    for i in ids:
+        d["approvals_used"][i] = {"action": action, "at": float(t)}
+    return {k: v for k, v in a.items() if v is not None} | {"at": float(t)}
+
+
+def _legacy_unrecoverable_source(rec):
+    """旧表迁移来的源：按 status_reason 里的旧原因原文重新归类（r16 HIGH）。不是旧表迁移的源 → False。"""
+    r = str(rec.get("status_reason") or "")
+    pre = f"legacy {LEGACY_HOSTS_FILE}: "
+    if not r.startswith(pre):
+        return False
+    return legacy_category(r[len(pre):].rsplit("; awaiting manual review", 1)[0]) in UNRECOVERABLE_CATEGORIES
 
 
 class StateError(ValueError):
     """状态文件损坏或结构不对。"""
 
 
+# r16 HIGH：旧表停用原因归类。#3 历史版本（7b5398a..a31b14a）的 HostState.disable 实际写过的原因只有这几种形式：
+#   "HTTP 403" / "HTTP 401" / "HTTP {st}"、"robots.txt HTTP 403" / "robots.txt HTTP {st}"（只在 401/403 时写）、
+#   "bot challenge page (HTTP {st})"、"bot challenge page: vendor marker (HTTP {st})"、
+#   "bot challenge page: text/plain HTML + phrase (HTTP {st})"、"robots.txt bot challenge page (HTTP {st})"、
+#   "robots.txt suspected challenge: HTTP {st} HTML (pending manual review)"、
+#   "suspected challenge: text/plain body starts with HTML tag (HTTP {st})"。
+# 人工写进旧表的条目还可能是 bot_check、cf-turnstile、sign in required 之类。规则（fail-closed）：
+#   1. 先找验证类迹象（bot / challenge / captcha / turnstile / 厂商名 / verify / human / 验证…）→ bot_check；
+#   2. 再找登录类迹象（401 / login / sign in / sign on / auth / password / session / 会员 / 登录…）→ login；
+#   3. 只有恰好是 "HTTP 403" 或 "robots.txt HTTP 403" → http_403（唯一可恢复的类别）；
+#   4. 其他一切（含糊、未知写法）→ unknown，同样不可恢复。
+# 先把 _ - . / : 等分隔符换成空格再按词匹配，所以 bot_check、cf-turnstile、Sign-In、log_in 都能认出。
+_LEGACY_BOT = re.compile(r"(?<![a-z0-9])(?:bots?|robot\s*check|anti\s*bot|challenges?|captchas?|recaptcha|hcaptcha|geetest|"
+                         r"turnstile|cf\s*chl|cf\s*mitigated|cloudflare|perimeterx|px\s*captcha|incapsula|imperva|akamai|"
+                         r"datadome|kasada|distil|verify|verification|human|interstitial|blocked\s*page)(?![a-z0-9])"
+                         r"|验证|人机|机器人|機器人|ロボット", re.I)
+_LEGACY_LOGIN = re.compile(r"(?<![a-z0-9])(?:401|unauthori[sz]ed|log\s*in|login|logon|log\s*on|sign\s*in|signin|sign\s*on|"
+                           r"signon|sso|oauth|auth|authn|authenticat\w*|password|passwd|credentials?|sessions?|account|"
+                           r"members?\s*only|subscri\w*|paywall)(?![a-z0-9])|登录|登入|登陆|认证|認證|会员|ログイン", re.I)
+_LEGACY_403 = re.compile(r"(?:robots txt )?http 403")
+
+
+def _legacy_norm(reason):
+    return " ".join(re.sub(r"[_\-./:;,()\[\]{}|=+]+", " ", str(reason or "")).lower().split())
+
+
 def legacy_category(reason):
-    """旧停用原因（按记录原文）归类：验证页 → bot_check；401 / 登录 → login；403 → http_403；其他 → other。
-    bot_check 与 login 属于「不可恢复」：enable 默认拒绝。"""
-    r = (reason or "").lower()
-    if "challenge" in r or "captcha" in r or "验证" in r:
+    """旧停用原因（按记录原文）归类（规则见上）：bot_check / login / http_403 / unknown。
+    只有 http_403 可恢复；bot_check、login、unknown 不可恢复，enable 一律拒绝。"""
+    r = _legacy_norm(reason)
+    if _LEGACY_BOT.search(r):
         return "bot_check"
-    if re.search(r"\b401\b", r) or "login" in r or "登录" in r or "auth" in r:
+    if _LEGACY_LOGIN.search(r):
         return "login"
-    if re.search(r"\b403\b", r):
+    if _LEGACY_403.fullmatch(r):
         return "http_403"
-    return "other"
+    return "unknown"
+
+
+_ISO_TS = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})")
+
+
+def norm_timestamp(v):
+    """r16 ②：旧表 at 等时间字段严格解析：只收带时区的 ISO 8601（YYYY-MM-DDTHH:MM:SS[.ffffff](Z|±HH:MM)），
+    规范成 UTC 的 YYYY-MM-DDTHH:MM:SSZ；不是字符串、格式不对、日期不存在 → None（调用方省略该字段）。"""
+    if not isinstance(v, str) or not _ISO_TS.fullmatch(v):
+        return None
+    try:
+        t = dt.datetime.fromisoformat(v[:-1] + "+00:00" if v.endswith("Z") else v)
+    except ValueError:
+        return None
+    return t.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def read_legacy_hosts(path):
@@ -1012,6 +1184,9 @@ def _nonempty(v):
     return isinstance(v, str) and bool(v.strip())
 
 
+_RETEST_CODES = {"pending": "source retest:awaiting-approval", "used": "source retest:used-this-round"}
+
+
 class SourceHealth:
     """私有状态文件（PRIVATE/state/source-health.json），顶层键恰好是：
     {"version": 2（整数）,
@@ -1021,7 +1196,10 @@ class SourceHealth:
      "host_stops": {轮次: {主机: {"reason", "sid", "at"}}},
      "hosts": {主机: 旧表迁移来的停用条目（status=disabled、review=pending-manual-review、reason 原文、category、unrecoverable…）},
      "legacy_imports": {旧文件 sha256: 迁移时间}}
-    urls 与 host_stops 按轮次分别保存：写一轮不会动别的轮。URL 冷却按 until（≥24 小时）判定，过期才清理；
+    "retest": {来源键: {"status": pending-approval|approved|used, "since": 秒, ["approval", "round", "used_at"]}},
+     "approvals_used": {引用 sha256: {"action", "at"}}}（r16：冷却到期后的人工批准重测；r16 之前的文件缺这两节时补空）
+    urls 与 host_stops 按轮次分别保存：写一轮不会动别的轮。URL 冷却按 until（≥24 小时）判定；到期的记录不自动清理、
+    也不自动恢复请求，只把来源标成待批准重测，经书面批准的那一次重测收到不可疑的响应后才清掉；
     host_stops 只保留最近 KEEP_ROUNDS 个轮次。只存 URL 的 sha256，不写 URL 本身。
     严格读取：顶层键、各条目的键与类型都必须精确匹配（多键、少键、2.0、true 都算损坏）；文件不存在 = 首次运行。
     损坏时 blocked() 对一切请求返回拒绝，report() 抛 StateError，写操作一律拒绝改写。
@@ -1039,7 +1217,8 @@ class SourceHealth:
 
     @staticmethod
     def _empty():
-        return {"version": STATE_VERSION, "sources": {}, "urls": {}, "host_stops": {}, "hosts": {}, "legacy_imports": {}}
+        return {"version": STATE_VERSION, "sources": {}, "urls": {}, "host_stops": {}, "hosts": {}, "legacy_imports": {},
+                "retest": {}, "approvals_used": {}}
 
     # -- 读取与校验
     def _read(self):
@@ -1049,6 +1228,8 @@ class SourceHealth:
             d = strictjson.loads(self.path.read_text(encoding="utf-8"))
         except (ValueError, UnicodeDecodeError) as e:
             raise StateError(f"source health unreadable: {type(e).__name__}")
+        if isinstance(d, dict) and set(d) == _TOP_KEYS_PRE_R16:
+            d["retest"], d["approvals_used"] = {}, {}        # r16 之前写的文件：补空的两节，其余照常严格校验
         self.validate(d)
         return d
 
@@ -1106,6 +1287,29 @@ class SourceHealth:
         for k, v in d["legacy_imports"].items():
             if not _SHA.fullmatch(k) or not isinstance(v, str):
                 bad("source health legacy_imports entry malformed")
+        for k, rec in d["retest"].items():
+            if not _nonempty(k) or not isinstance(rec, dict) or not {"status", "since"} <= set(rec) <= _RETEST_KEYS or \
+                    rec["status"] not in _RETEST_STATUSES or not _num(rec["since"]):
+                bad("source health retest entry malformed")
+            a = rec.get("approval")
+            if (rec["status"] != "pending-approval") != (a is not None):
+                bad("source health retest entry malformed")
+            if a is not None:
+                if not isinstance(a, dict) or not {"by", "at"} <= set(a) <= _APPROVAL_KEYS or a["by"] not in APPROVERS or \
+                        not _num(a["at"]) or not (a.get("quote_ref") or a.get("review_commit")):
+                    bad("source health retest approval malformed")
+                try:
+                    make_approval(a["by"], a.get("quote_ref"), a.get("review_commit"))
+                except ConfigError:
+                    bad("source health retest approval malformed")
+            if (rec["status"] == "used") != ("round" in rec and "used_at" in rec):
+                bad("source health retest entry malformed")
+            if rec["status"] == "used" and (not _ROUND_ID.fullmatch(str(rec["round"])) or not _num(rec["used_at"])):
+                bad("source health retest entry malformed")
+        for k, rec in d["approvals_used"].items():
+            if not _SHA.fullmatch(k) or not isinstance(rec, dict) or set(rec) != {"action", "at"} or \
+                    not _nonempty(rec["action"]) or not _num(rec["at"]):
+                bad("source health approvals_used entry malformed")
 
     def refresh(self):
         if self.path:
@@ -1130,7 +1334,125 @@ class SourceHealth:
         rec = self.data["sources"].get(sid) if sid else None
         if rec and rec["status"] != "ok" and not (rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]):
             return f"source {status_code(rec)}"          # r15 ⑦：只写固定代码，不写 status_reason 原文
-        return self.source_cooling(sid, rid, host=host)  # 触发 pending 的那一轮照常跑完（但仍受来源冷却约束）
+        why = self.source_cooling(sid, rid, host=host)   # 触发 pending 的那一轮照常跑完（但仍受来源冷却约束）
+        if why:
+            return why
+        st, keys = self.retest_status(sid, rid, host)      # 冷却到期：待批准重测（不发请求）
+        if st == "pending":
+            self._mark_retest_pending(keys)
+        return _RETEST_CODES.get(st)
+
+    # -- 冷却到期后的人工批准重测（Grok Bot 2026-10-18 20:51 SGT）
+    def _want_keys(self, sid, host):
+        h = (host or "").lower()
+        return {x for x in (sid, cooldown_source(h, None)) if x} | {f"host:{h}"}
+
+    def _rec_keys(self, u):
+        uh = (u.get("host") or "").lower()
+        have = {x for x in (u.get("sid"), cooldown_source(uh, None)) if x}
+        if not u.get("sid"):
+            have |= set(getattr(self, "host_sources", {}).get(uh, ()))
+        return have or {f"host:{uh}"}
+
+    def _expired(self, d, keys, t, by_host=False):
+        """冷却已到期、还没经批准重测清掉的 URL 记录：[(轮次, url_key, 该记录的来源键 ∩ keys)]。
+        by_host（不带来源的直接调用）：同主机的到期记录一律算（键为 host:<主机>），不让直接调用绕过。"""
+        out = []
+        for r, m in d["urls"].items():
+            for k, u in m.items():
+                if u["until"] <= t:
+                    hit = self._rec_keys(u) & keys
+                    hk = f"host:{(u.get('host') or '').lower()}"
+                    if by_host and hk in keys:
+                        hit = hit | {hk}
+                    if hit:
+                        out.append((r, k, hit))
+        return out
+
+    def retest_status(self, sid, rid, host, now=None, d=None):
+        """(状态, 来源键)：None（无到期记录）/ "used"（本轮已用掉批准的那一次请求）/ "pending"（到期待批准）/ "approved"。
+        只读，不改状态。"""
+        d = self.data if d is None else d
+        t = self.clock() if now is None else now
+        want = self._want_keys(sid, host)
+        for k in sorted(want):
+            e = d["retest"].get(k)
+            if e and e["status"] == "used" and e.get("round") == rid:
+                return "used", {k}
+        hit = set().union(*[x[2] for x in self._expired(d, want, t, by_host=not sid)]) if d["urls"] else set()
+        if not hit:
+            return None, set()
+        for k in sorted(hit):
+            e = d["retest"].get(k)
+            if e and e["status"] == "approved":
+                return "approved", {k}
+        return "pending", hit
+
+    def _mark_retest_pending(self, keys):
+        """只改标记：把来源标成 pending-approval（已是 pending-approval / approved 的不动）。写失败也照样拒绝请求。"""
+        t = float(self.clock())
+
+        def upd(d):
+            for k in keys:
+                e = d["retest"].get(k)
+                if not e or e["status"] == "used":
+                    d["retest"][k] = {"status": "pending-approval", "since": t}
+        if all((self.data["retest"].get(k) or {}).get("status") in ("pending-approval", "approved") for k in keys):
+            return
+        try:
+            self._locked_update(upd)
+        except (StateError, OSError):
+            pass
+
+    def approve_retest(self, key, approval):
+        """书面批准一次重测：key 必须正处于 pending-approval；批准须带合法引用，且引用没用过。只放行一次请求。"""
+        def upd(d):
+            e = d["retest"].get(key)
+            if not e or e["status"] != "pending-approval":
+                raise ConfigError(f"source {key} is not awaiting retest approval")
+            rec = _use_approval(d, approval, f"retest:{key}", self.clock())
+            d["retest"][key] = {"status": "approved", "since": e["since"], "approval": rec}
+        self._locked_update(upd)
+
+    def consume_retest(self, sid, rid, host):
+        """在状态锁内把批准的重测标成已用（本轮），返回来源键；已被别的进程用掉或不再是 approved → None。"""
+        out = []
+        t = float(self.clock())
+
+        def upd(d):
+            st, keys = self.retest_status(sid, rid, host, now=t, d=d)
+            if st != "approved":
+                return
+            k = next(iter(keys))
+            d["retest"][k] = dict(d["retest"][k], status="used", round=rid, used_at=t)
+            out.append(k)
+        self._locked_update(upd)
+        return out[0] if out else None
+
+    def settle_retest(self, key, outcome):
+        """重测那一次请求的结果：response（收到 HTTP 响应且不可疑）→ 清掉该来源已到期的记录，下一轮起照常；
+        suspicious → 已按规则 1 写下新的冷却，清掉旧的到期记录；no_response（网络错误等）→ 记录保留，重新待批准。"""
+        t = float(self.clock())
+
+        def upd(d):
+            if outcome == "no_response":
+                e = d["retest"].get(key)
+                if e:
+                    d["retest"][key] = {"status": "pending-approval", "since": e["since"]}
+                return
+            for r, k, _ in self._expired(d, {key}, t, by_host=key.startswith("host:")):
+                del d["urls"][r][k]
+            for r in [r for r, m in d["urls"].items() if not m]:
+                del d["urls"][r]
+        self._locked_update(upd)
+
+    def retest_report(self):
+        """待批准 / 已批准 / 已用的重测（只含来源键、状态与规范时间，固定代码，可写进公开报告）。"""
+        self._strict()
+        return [{"source": k, "status": e["status"], "since": norm_timestamp(
+                    dt.datetime.fromtimestamp(e["since"], dt.timezone.utc).isoformat()), **(
+                    {"round": e["round"]} if e["status"] == "used" else {})}
+                for k, e in sorted(self.data["retest"].items())]
 
     def source_cooling(self, sid, rid, now=None, host=None):
         """来源级冷却（Grok Bot 2026-10-18 18:12 SGT 采纳）：来源在别的轮次被拒、且仍有未到期的 URL 冷却记录 →
@@ -1239,15 +1561,13 @@ class SourceHealth:
         t = float(self.clock())          # 24 小时从判定时刻起算：stop 只在收到响应、判定为被拒 / 可疑之后调用
 
         def upd(d):
-            for r in list(d["urls"]):
-                d["urls"][r] = {k: v for k, v in d["urls"][r].items() if v["until"] > t}
-                if not d["urls"][r] and r != rid:
-                    del d["urls"][r]
+            # 到期的记录不清理：冷却到期后须经书面批准重测（settle_retest 才清掉），不自动恢复请求
             cur = d["urls"].setdefault(rid, {})
             stops = d["host_stops"].setdefault(rid, {})
             for u in urls:
-                cur.setdefault(url_key(u), {"reason": reason, "sid": sid, "host": host_of(u), "at": t,
-                                            "until": t + COOLDOWN_SECONDS})
+                k = url_key(u)
+                if k not in cur or cur[k]["until"] <= t:
+                    cur[k] = {"reason": reason, "sid": sid, "host": host_of(u), "at": t, "until": t + COOLDOWN_SECONDS}
             if urls:
                 stops.setdefault(host_of(urls[0]), {"reason": reason, "sid": sid, "at": t})
             for old in sorted(d["host_stops"])[:-KEEP_ROUNDS]:
@@ -1291,7 +1611,7 @@ class SourceHealth:
 
         def upd(d):
             rec = d["sources"].setdefault(sid, {"status": "ok", "rounds": {}})
-            if status == "ok" and rec.get("unrecoverable"):
+            if status == "ok" and (rec.get("unrecoverable") or _legacy_unrecoverable_source(rec)):
                 raise ConfigError(f"source {sid} is marked unrecoverable (bot check / login); not re-enabled — "
                                   f"change sources.yaml and get it re-approved instead")
             if status == "ok":
@@ -1327,7 +1647,7 @@ class SourceHealth:
                     continue
                 cat = legacy_category(rec["reason"])
                 d["hosts"][h] = {"status": "disabled", "review": "pending-manual-review", "reason": rec["reason"].strip(),
-                                 "since": rec.get("at") if isinstance(rec.get("at"), str) else None, "category": cat,
+                                 "since": norm_timestamp(rec.get("at")), "category": cat,
                                  "unrecoverable": cat in UNRECOVERABLE_CATEGORIES,
                                  "origin": f"legacy {LEGACY_HOSTS_FILE}", "imported_at": now()}
                 res["hosts"] += 1
@@ -1337,7 +1657,7 @@ class SourceHealth:
                     continue
                 cat = legacy_category(rec["reason"])
                 d["sources"][sid] = {"status": "disabled", "rounds": (cur or {}).get("rounds", {}),
-                                     "status_at": rec.get("at") if isinstance(rec.get("at"), str) else now(),
+                                     "status_at": norm_timestamp(rec.get("at")),     # r16 ②：解析不了 → None（报告里省略）
                                      "status_reason": f"legacy {LEGACY_HOSTS_FILE}: {rec['reason'].strip()}; "
                                                       f"awaiting manual review",
                                      "unrecoverable": cat in UNRECOVERABLE_CATEGORIES}
@@ -1346,7 +1666,7 @@ class SourceHealth:
         self._locked_update(upd)
         return res
 
-    def enable_host(self, host, reason):
+    def enable_host(self, host, reason, approval=None):
         """人工恢复旧表迁移来的停用主机（须写明依据）。r15 ②：unrecoverable（bot_check / login）一律不恢复，没有放行开关。"""
         host = (host or "").lower()
 
@@ -1356,9 +1676,11 @@ class SourceHealth:
                 raise ConfigError(f"host {host} not disabled")
             if not (reason or "").strip():
                 raise ConfigError("reason required")
-            if rec["unrecoverable"]:
-                raise ConfigError(f"host {host} is marked unrecoverable ({rec['category']}); not re-enabled — "
+            cat = legacy_category(rec["reason"])          # r16 HIGH：按原文重新归类（r16 之前迁移的条目可能误标 other）
+            if rec["unrecoverable"] or cat in UNRECOVERABLE_CATEGORIES or rec["category"] in UNRECOVERABLE_CATEGORIES:
+                raise ConfigError(f"host {host} is marked unrecoverable ({cat}); not re-enabled — "
                                   f"change sources.yaml and get it re-approved instead")
+            _use_approval(d, approval, f"enable-host:{host}", self.clock())   # 书面批准（带引用），只能用一次
             del d["hosts"][host]
         self._locked_update(upd)
 
@@ -1388,12 +1710,13 @@ class SourceHealth:
                        "reasons": sorted({public_code(x) for x in rec["rounds"][r]["reasons"]})} for r in self.window(rec)]
             e = {"id": sid, "status": rec["status"] if rec["status"] != "ok" else "watch",
                  "suspicious_rounds_in_window": n, "window": WINDOW_ROUNDS, "threshold": PENDING_AFTER, "recent": recent}
+            since = norm_timestamp(rec.get("status_at"))   # r16 ②：公开报告只写规范时间；解析不了就省略
             if rec["status"] == "pending-disable":
-                e.update(flag="grok-bot-review", since=rec.get("status_at"), pending_round=rec.get("pending_round"),
+                e.update(flag="grok-bot-review", pending_round=rec.get("pending_round"),
                          effective="from the round after pending_round",
                          action="confirm-disable or enable (scripts/source_health.py)")
-            elif rec["status"] == "disabled":
-                e.update(since=rec.get("status_at"))
+            if rec["status"] != "ok" and since:
+                e["since"] = since
             if rec["status"] != "ok":
                 e["reason_code"] = status_code(rec)
             if include_text and rec.get("status_reason"):
@@ -1501,7 +1824,9 @@ def check_gates():
     if not (isinstance(MAX_BYTES, int) and 0 < MAX_BYTES <= 25 * 1024 * 1024): bad.append("MAX_BYTES")
     if not (isinstance(REFUSED_HOSTS, frozenset) and "t.co" in REFUSED_HOSTS): bad.append("REFUSED_HOSTS")
     if not (isinstance(SOURCE_HOSTS, MappingProxyType) and isinstance(_HOST_SOURCE, MappingProxyType)
-            and all(_HOST_SOURCE.get(h) == n for n, hs in SOURCE_HOSTS.items() for h in hs)): bad.append("SOURCE_HOSTS")
+            and source_hosts_digest(SOURCE_HOSTS) == SOURCE_HOSTS_SHA256
+            and dict(_HOST_SOURCE) == {h: n for n, hs in SOURCE_HOSTS.items() for h in hs}): bad.append("SOURCE_HOSTS")
+    if not (isinstance(APPROVERS, tuple) and set(APPROVERS) == {"grok-bot", "review-bot"}): bad.append("APPROVERS")
     if not (isinstance(REDIRECT_CODES, frozenset) and {301, 302, 303, 307, 308} <= REDIRECT_CODES): bad.append("REDIRECT_CODES")
     if not (isinstance(SUSPICIOUS_ERRORS, frozenset) and SUSPICIOUS_ERRORS >= {
             "http_401", "http_403", "http_429", "challenge", "suspected_challenge", "login_wall", "robots_http_401",
@@ -1531,6 +1856,14 @@ def check_opener(opener):
     elif not callable(getattr(opener, "open", None)):
         raise ConfigError("opener has no open()")
     return opener
+
+
+class _TestTransport:
+    """测试替身的显式包装（只由 Fetcher.with_test_transport 构造）。"""
+    __slots__ = ("inner",)
+
+    def __init__(self, inner):
+        self.inner = inner
 
 
 class Result:
@@ -1583,20 +1916,36 @@ class Fetcher:
                                             resolver=resolver)
         self.addr_policy = addr_policy
         self.interval, self.timeout, self.max_bytes = interval, timeout, max_bytes
-        self.opener = check_opener(opener) if opener is not None else urllib.request.build_opener(_NoRedirect)
+        # r16 ④：生产路径不接受自定义 opener，一律用内置的不跟随跳转 opener；测试替身只能经 Fetcher.with_test_transport
+        if opener is None:
+            self.opener = urllib.request.build_opener(_NoRedirect)
+        elif isinstance(opener, _TestTransport):
+            self.opener = opener.inner
+        else:
+            raise ConfigError("custom opener not allowed; tests must use Fetcher.with_test_transport")
         # 主机 → 来源（capture_sources 按 sources.yaml 的 url 建表）：请求带的 sid 与该主机所属来源冲突 → 拒绝（source_mismatch）
         self.host_sources = {h.lower(): frozenset(v) for h, v in (host_sources or {}).items()}
         self.state.host_sources = self.host_sources
         check_gates()
         self.sleep, self.clock = sleep, clock
         self.wall = wall or ((lambda: time.time()) if clock is time.monotonic else clock)   # 跨进程限速用墙钟
-        self.site_limits = dict(site_limits or {})
+        # r16 ④：site_limits 只收 load_site_limits 校验过、写明依据的 SiteLimits；普通 dict 等一律拒绝
+        if site_limits is None:
+            site_limits = SiteLimits({})
+        if not isinstance(site_limits, SiteLimits):
+            raise ConfigError("site_limits must come from load_site_limits (validated, with a published basis)")
+        self.site_limits = site_limits
         self._last, self._site_last, self._host_interval, self._robots = {}, {}, {}, {}
         self.robots_note = {}
         self.log = log or (lambda *_: None)
         self.requests = []     # (host, t) — 供测试/审计
         self.sec_ua = sec_user_agent()
         self._sink = None
+
+    @classmethod
+    def with_test_transport(cls, *args, opener, **kw):
+        """仅供离线测试：用测试替身代替网络（check_opener 同样核对）。生产入口脚本不得调用（有测试扫描 scripts/）。"""
+        return cls(*args, opener=_TestTransport(check_opener(opener)), **kw)
 
     def address_check(self, url):
         """强制策略与外部策略的合取；返回拒绝原因或 None。"""
@@ -1668,7 +2017,7 @@ class Fetcher:
                 return ggap
         return SITE_INTERVAL
 
-    def _raw(self, url, accept, sid=_NO_SID, judge=None):
+    def _raw(self, url, accept, sid=_NO_SID, judge=None, robots=False):
         """所有出站请求的唯一入口。持站点限速锁（跨进程）完成：等待 → 等待后重跑完整预检（旧表停用、源状态、本轮主机停止、
         URL 冷却；r15 ①）→ 发请求 → judge（可疑分类与停止写入）。所以「写停止」与同站「发请求」互斥：别的进程在等待期间
         停掉的主机不会再被请求，本进程判定可疑并写下停止之前，同站其他请求也发不出去。
@@ -1715,6 +2064,18 @@ class Fetcher:
             pre = self.precheck(url)
             if pre:
                 return 0, {}, b"", pre[0], pre[1], None
+            # 冷却到期的来源：没有批准 → 只标待批准重测、不发请求；有批准 → 锁内消耗，只放行这一次请求
+            rsid = None if sid is _NO_SID else sid
+            rst, rkeys = self.state.retest_status(rsid, self.round_id, host)
+            rkey = None
+            if rst == "pending":
+                self.state._mark_retest_pending(rkeys)
+            if rst in ("pending", "used"):
+                return 0, {}, b"", "source_blocked", _RETEST_CODES[rst], None
+            if rst == "approved" and not robots:   # robots.txt 是重测的前提，不占这一次；但它可疑时同样用掉批准
+                rkey = self.state.consume_retest(rsid, self.round_id, host)
+                if rkey is None:
+                    return 0, {}, b"", "source_blocked", _RETEST_CODES["used"], None
             t = self.wall()
             self._site_last[site] = self._last[host] = t
             self.requests.append((host, t))
@@ -1723,6 +2084,15 @@ class Fetcher:
                 lk.seek(0); lk.truncate(); lk.write(json.dumps({"site": t, "hosts": hosts})); lk.flush()
             st, h, body, ec, det = self._raw_inner(url, accept, host)
             verdict = judge(st, h or {}, body, ec, det) if judge else None
+            if rst == "approved" and robots and verdict:
+                rkey = self.state.consume_retest(rsid, self.round_id, host)
+            if rkey is not None:
+                if verdict or (not judge and self._classify(st, h or {}, body, url)):
+                    self.state.settle_retest(rkey, "suspicious")
+                elif st:
+                    self.state.settle_retest(rkey, "response")
+                else:
+                    self.state.settle_retest(rkey, "no_response")
             return st, h, body, ec, det, verdict
 
     def _raw_inner(self, url, accept, host):
@@ -1756,11 +2126,11 @@ class Fetcher:
             self._sink(buf, status, (headers.get("Content-Type") if headers else "") or "")
         return status, headers, buf, None, None
 
-    def _fetch_once(self, url, accept, sid=_NO_SID, judge=None):
+    def _fetch_once(self, url, accept, sid=_NO_SID, judge=None, robots=False):
         """只有「没收到任何 HTTP 响应」的网络错误才重试（最多 NET_RETRIES 次、指数退避）。
         收到任何 HTTP 状态（含 429、5xx）都不重发：429 计可疑并停止该主机本轮。每次尝试都走 _raw（锁内重跑预检）。"""
         for attempt in range(NET_RETRIES + 1):
-            st, h, body, ec, det, v = self._raw(url, accept, sid=sid, judge=judge)
+            st, h, body, ec, det, v = self._raw(url, accept, sid=sid, judge=judge, robots=robots)
             if ec != "network" or attempt == NET_RETRIES:
                 return st, h or {}, body, ec, det, v
             self.sleep(min(BACKOFF_CAP, BACKOFF_BASE * (2 ** attempt)))
@@ -1828,7 +2198,7 @@ class Fetcher:
                     if b:                           # robots.txt（及起点）冷却、主机本轮停止
                         self.mark_failed(_cur, sid, b, also=(start,))
                     return b
-                st, h, body, ec, rdet, bad = self._fetch_once(cur, "text/plain,*/*", sid=sid, judge=judge)
+                st, h, body, ec, rdet, bad = self._fetch_once(cur, "text/plain,*/*", sid=sid, judge=judge, robots=True)
                 if ec not in NO_CONTACT:
                     self.contacted.add(sid)
                 if bad:

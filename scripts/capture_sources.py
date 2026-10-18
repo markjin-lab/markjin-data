@@ -23,7 +23,9 @@ $MARKJIN_PROXY_FAKEIP_CIDR 声明代理假 IP 网段（只接受 198.18.0.0/15 �
 需要免费密钥的 API：auth_env（环境变量名）+ auth_param（查询参数名），密钥只在请求时拼接，不进任何记录。
 封锁规则（出处与细则见 scripts/markjin/collect.py「封锁规则与来源健康状态」；状态在 PRIVATE/state/source-health.json）：
   单次可疑（401/403、429、验证页、登录墙、rss/api 格式校验不通过）→ 该主机本轮全部停止、被拒 URL（含跳转起点）冷却 ≥24 小时，
-  不重试；同一源最近 5 轮有 3 轮可疑 → pending-disable：当轮写 source-health-<run>.json（flag: grok-bot-review）与
+  不重试；冷却到期不自动再请求，只把来源标成「待批准重测」（stderr 打「=== 待批准重测 … ===」），须 Grok Bot 或审查 bot
+  书面批准（带 quote_ref 或审查提交号，scripts/source_health.py approve-retest）才放行一次重测；
+  同一源最近 5 轮有 3 轮可疑 → pending-disable：当轮写 source-health-<run>.json（flag: grok-bot-review）与
   GROK-BOT-REVIEW-<run>.md，stderr 打 PENDING-DISABLE 和「待 Grok Bot 复核」一行（写进当天 capture-failures.md）；
   下一轮起不再请求，直到人工 confirm-disable 或 enable（scripts/source_health.py）。
   未公布限速的站点每站每分钟最多 1 次（跨进程）；sources.yaml 顶层 site_rate_limits 写明公布限额和依据的站点按其限额。
@@ -270,6 +272,13 @@ def main(argv=None):
     if pend:
         print(f"=== 待 Grok Bot 复核（pending-disable）{len(pend)} 个源：{', '.join(e['id'] for e in pend)} "
               f"— 详见 {sub}GROK-BOT-REVIEW-{run}.md，请写进当天 capture-failures.md ===", file=sys.stderr)
+    try:                                 # r16：冷却到期的来源只标「待批准重测」、不请求；显眼提示等人工书面批准
+        rt = [e["source"] for e in health.retest_report() if e["status"] == "pending-approval"]
+    except (collect.StateError, OSError):
+        rt = []
+    if rt:
+        print(f"=== 待批准重测 {len(rt)} 个来源：{', '.join(rt)} — 冷却已到期，不自动请求；须 Grok Bot 或审查 bot 书面批准"
+              f"（带 quote_ref 或审查提交号）后用 scripts/source_health.py approve-retest ===", file=sys.stderr)
     print(f"done: ok={n_ok} failed_or_refused={n_bad} pending_disable={len(pend)}", file=sys.stderr)
     return 1 if n_bad else 0
 
