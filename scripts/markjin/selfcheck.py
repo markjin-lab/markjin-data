@@ -979,12 +979,19 @@ def _neg_main(s):
 
 
 _PAIR_STOP = frozenset("the a an of in on to and or but for with by from that this these those is are was were be been "
-                       "it its their they them we our as at than then also however while".split())
+                       "it its their they them we our as at than then also however while "
+                       "do does did done has have had can could may might will would shall should each every all any some several "
+                       "how much many which what when where who whom whose there here such very".split())
 
 
 def _pair_words(s):
-    """无数字、无代号分句配对用：小写普通词（3 个字母以上，去停用词）加区分大小写的对象词（Model、B、MMLU）。"""
-    return ({w.lower() for w in re.findall(r"[A-Za-z][A-Za-z\-]{2,}", s)} - _PAIR_STOP) | {"@" + w for w in _OBJ_RE.findall(s)}
+    """无数字、无代号分句配对用：小写普通词（3 个字母以上，去停用词）加区分大小写的对象词（Model、B、MMLU）。
+    r6（审查 HIGH）：先挖掉 without 短语、审慎说法和否定词再取词，否定本身不能参与配对，否则带否定的断言分句
+    会被拉向原文里带否定的那一句（“The baseline does not improve recall.” 配到 “The new method does not improve recall”）；
+    句首大写的普通词（The、By、Each）不算对象词。"""
+    s = numnorm.NEG_EN.sub(" ", _neg_main(s)[0])
+    return ({w.lower() for w in re.findall(r"[A-Za-z][A-Za-z\-]{2,}", s)} - _PAIR_STOP) | \
+        {"@" + w for w in _OBJ_RE.findall(s) if w.lower() not in _PAIR_STOP}
 
 
 def _neg_state(seg):
@@ -994,15 +1001,17 @@ def _neg_state(seg):
 
 
 def _neg_parity_ok(claim, loc, kind=None):
-    """#32 r4/r5：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
+    """#32 r4/r5/r6：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
     1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
        原文有、断言没写同样的短语 → 提示 support_scope（R-SUPPORT-SCOPE，人工必查：断言是否写成了相反前提，
        如原文 without fine-tuning、断言“经过微调”）。
-    2. 断言每个含数字、代号或对象词的分句，先按对象配对：
+    2. 断言每个含数字或代号的分句，先找窗口，并在窗口内核对对象词：
        - 普通文本（r5，审查 r4 HIGH）：在原文里找同时含这些数字、代号和对象词的最小连续分句窗口；
          窗口不唯一或找不到 → 错配（不再退回整段，避免把 A 的否定配给 B）；
        - FRED（kind == "fred"）：片段是“字段,数值”式，仍允许没有单句含全部关键项时按整个片段比较；多句都配得上 → 错配。
-       不含数字和代号的分句合起来，与原文去掉已配对窗口后的剩余部分比（r5，dry run 发现）。
+       不含数字和代号的分句逐句配对（r6，审查 r5 HIGH）：在原文去掉已配对窗口后的剩余分句里按普通词与对象词
+       （不含否定词、审慎说法）重合度找最高分候选；最高分候选的否定/审慎状态都相同才可比，否则判错配；
+       剩余分句状态不一时，只重合 1 个词不算配上。
     3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、从未、hardly、yet to 等计为否定）。
        审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed…）不计否定，出现就提示 support_hedge
        （R-SUPPORT-HEDGE）；但配对的原文窗口带审慎说法而整条断言没有，或断言分句带审慎说法而整个片段没有 → 错配；“难以置信”“无与伦比”“从未如此”“never before”等固定说法不算否定（r5，审查 r4 MEDIUM）。"""
@@ -1023,7 +1032,7 @@ def _neg_parity_ok(claim, loc, kind=None):
         keys_t = [t.lower() for t in claim_terms(cc)]
         objs = [w for w in _OBJ_RE.findall(cc) if _has_word(w, loc)]
         if not (keys_n or keys_t):
-            rest_claim.append(cc)          # 不含数字和代号的分句：放到最后与原文剩余部分一起比
+            rest_claim.append(cc)          # 不含数字和代号的分句：留到最后与剩余原文分句逐句配对
             continue
 
         def has_all(seg):
@@ -1048,8 +1057,9 @@ def _neg_parity_ok(claim, loc, kind=None):
         # 或断言分句带审慎说法而整个片段没有 → 错配
         if tg_h and not claim_hedged or cc_h and not loc_hedged:
             return False, hints
-    # r5：不含数字和代号的分句逐句配对：在原文去掉已配对窗口后的剩余分句里，按普通词与对象词重合度找唯一候选；
-    # 找不到唯一候选时，剩余分句否定/审慎状态全都相同才可比，否则判错配（不能只比合并奇偶，见 r5 审查 HIGH）。
+    # r5/r6：不含数字和代号的分句逐句配对：在原文去掉已配对窗口后的剩余分句里，按普通词与对象词（不含否定词、审慎说法）
+    # 重合度找最高分候选；并列候选状态不一、或剩余分句状态不一而只重合 1 个词 → 错配；完全无重合时，剩余分句否定/审慎状态
+    # 全都相同才可比，否则判错配（不能只比合并奇偶，见 r5 审查 HIGH；否定词不参与配对，见 r6 审查 HIGH）。
     if rest_claim:
         lrest = [c for c in (numnorm.clauses(rest_loc) or []) if re.search(r"[A-Za-z0-9\u4e00-\u9fff]", c)]
         states = {_neg_state(c) for c in lrest} or {(0, False)}
@@ -1057,8 +1067,12 @@ def _neg_parity_ok(claim, loc, kind=None):
             cw = _pair_words(cc)
             scored = sorted(((len(cw & _pair_words(lc)), lc) for lc in lrest), key=lambda t: -t[0])
             cstate = _neg_state(cc)
-            if scored and scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
-                if cstate != _neg_state(scored[0][1]):        # 唯一配对：否定奇偶与审慎说法都要一致
+            top = [lc for n, lc in scored if scored[0][0] > 0 and n == scored[0][0]]
+            if top and (scored[0][0] < 2 and len(states) > 1 or len({_neg_state(lc) for lc in top}) != 1):
+                return False, hints                            # 只重合 1 个词且剩余分句状态不一，或并列候选状态不一 → 分不清对象（r6）
+            if top:
+                # 最高分候选唯一，或并列但状态相同（r6）：否定奇偶与审慎说法都要一致
+                if cstate != _neg_state(top[0]):
                     return False, hints
             elif len(states) == 1:
                 tstate = next(iter(states))
