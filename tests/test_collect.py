@@ -2700,17 +2700,19 @@ class R15Fixes(unittest.TestCase):
         t = [5_000_000.0]
         d = self.tmpdir()
 
+        sent = []
+
         class Slow(FakeOpener):
             def open(self, req, timeout=None):
+                if req.full_url == "https://a.org/x":
+                    sent.append(t[0])                                            # 发送时刻
                 t[0] += 2 * 3600                                                 # 响应 2 小时后才到
                 return super().open(req, timeout)
-        sent = []
         f = collect.Fetcher(collect.SourceHealth(d / "st.json", clock=lambda: t[0]),
                             opener=Slow({"https://a.org/x": Resp(403)}), sleep=lambda w: None, clock=lambda: t[0],
                             resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=ROUND)
-        f.log = lambda *a: sent.append(t[0])
-        send_at = t[0]
         self.assertEqual(f.get("https://a.org/x", sid="s").error, "http_403")
+        send_at = sent[0]
         rec = next(iter(collect.SourceHealth(d / "st.json").data["urls"][ROUND].values()))
         self.assertGreaterEqual(rec["at"], send_at + 2 * 3600)                  # 判定之后才取时钟
         self.assertEqual(rec["until"], rec["at"] + 24 * 3600)
