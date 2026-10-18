@@ -2368,6 +2368,51 @@ class R15Fixes(unittest.TestCase):
         self.assertEqual((rc, calls), (1, []))
         self.assertIn("rate_lock_invalid", err)
 
+    # ---- MEDIUM ⑦：旧表停用原因、人工 --reason 等自由文本不进公开 skipped / 健康报告，只写固定代码
+    def test_r15_7_free_text_never_in_public_outputs(self):
+        import contextlib, io
+        import source_health as SH
+        B = BlockRule1522()
+        base = self.tmpdir()
+        st = base / "priv" / "state"; st.mkdir(parents=True)
+        legacy = {"hosts": {"a.org": {"reason": "HTTP 403 FREETEXT-LEGACY-HOST seen by ops"},
+                            "b.org": {"reason": "bot challenge FREETEXT-LEGACY-BOT"}},
+                  "sources": {"feedl": {"reason": "HTTP 401 FREETEXT-LEGACY-SRC", "host": "c.org"}}}
+        (st / "collector-hosts.json").write_text(json.dumps(legacy))
+        args = ["--private-root", str(base / "priv"), "--out-root", str(base / "pub")]
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(SH.main(["migrate", *args]), 0)
+            self.assertEqual(SH.main(["confirm-disable", "--id", "feedm", "--reason", "FREETEXT-MANUAL note", *args]), 0)
+        hs = collect.SourceHealth(st / "source-health.json")
+        for rid in ("2026-10-12/r1",):
+            hs.stop(["https://e.org/x"], "2026-10-12/r1", "feede", "suspected_challenge:xml_root:FREETEXT-ROOT")
+            hs.record_round(rid, {"feede": ["suspected_challenge:xml_root:FREETEXT-ROOT"]})
+        srcs = [dict(B.S, id="feeda", url="https://a.org/rss"), dict(B.S, id="feedb", url="https://b.org/rss"),
+                dict(B.S, id="feedl", url="https://c.org/rss"), dict(B.S, id="feedm", url="https://m.org/rss"),
+                dict(B.S, id="feede", url="https://e.org/x")]
+        rc, err, calls = B.run_round(base, "2026-10-12", 1, {}, sources=srcs, t=time.time())
+        self.assertEqual(calls, [])
+        pub = [p for p in (base / "pub").rglob("*") if p.is_file()]
+        self.assertTrue([p for p in pub if p.name.startswith("skipped-")])
+        self.assertTrue([p for p in pub if p.name.startswith("source-health-")])
+        for p in pub:
+            self.assertNotIn("FREETEXT", p.read_text(), p.name)
+        self.assertNotIn("FREETEXT", err)
+        skipped = json.loads(next(p for p in pub if p.name.startswith("skipped-")).read_text())
+        self.assertEqual({x["id"]: x["detail"] for x in skipped},
+                         {"feeda": "host disabled:legacy-import:http_403", "feedb": "host disabled:legacy-import:bot_check:unrecoverable",
+                          "feedl": "source disabled:legacy-import:unrecoverable", "feedm": "source disabled:manual-confirm",
+                          "feede": "suspected_challenge:xml_root"})
+        rep = {e["id"]: e for e in json.loads(next(p for p in pub if p.name.startswith("source-health-")).read_text())}
+        self.assertEqual(rep["feedm"]["reason_code"], "disabled:manual-confirm")
+        self.assertEqual(rep["feede"]["recent"][0]["reasons"], ["suspected_challenge:xml_root"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(SH.main(["report", *args]), 0)            # 私有终端输出仍可看原文
+        self.assertIn("FREETEXT-MANUAL", out.getvalue())
+        self.assertIn("FREETEXT-LEGACY-HOST", (st / "source-health.json").read_text())   # 原文留在私有状态
+        self.assertEqual(collect.public_code("weird free text"), "other")
+
 
 if __name__ == "__main__":
     unittest.main()

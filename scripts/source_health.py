@@ -13,7 +13,8 @@ Usage:
 unrecoverable：永不恢复（enable 一律拒绝，没有放行开关），只能改 sources.yaml 并重新审批。
 
 只改私有状态文件 PRIVATE/state/source-health.json，不发任何网络请求。report 输出 JSON（源 id、状态、轮次与原因，
-以及旧表停用主机；不含 URL 或本机路径），只打到终端，不写进公开目录。
+以及旧表停用主机；不含 URL 或本机路径），只打到终端，不写进公开目录：其中 status_reason_private 与旧表 reason 是自由文本
+（人工 --reason、旧表原因原文），只留在私有状态与终端。采集脚本写进公开目录的报告只含固定代码（r15 ⑦）。
 Exit code: 0 = ok, 2 = 参数/配置错误、状态文件损坏、旧表未迁移，或拒绝恢复 unrecoverable 条目（永不恢复）。
 """
 import argparse, json, sys
@@ -48,7 +49,8 @@ def main(argv=None):
             return 0
         h = collect.open_source_health(root)
         if a.cmd == "report":
-            print(json.dumps({"sources": h.report(), "disabled_hosts": h.host_report()}, ensure_ascii=False, indent=1))
+            print(json.dumps({"sources": h.report(include_text=True), "disabled_hosts": h.host_report()}, ensure_ascii=False,
+                             indent=1))   # 只打到终端（私有）：可含 status_reason 原文
             return 0
         if a.cmd == "enable" and a.host:
             if a.id:

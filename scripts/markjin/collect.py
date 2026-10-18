@@ -706,6 +706,35 @@ _HOST_REQ = frozenset({"status", "reason", "category", "unrecoverable"})
 _HOST_KEYS = _HOST_REQ | {"review", "since", "origin", "imported_at"}
 
 
+# r15 ⑦：公开输出（skipped detail、source-health 报告、GROK-BOT-REVIEW）只写固定代码；旧表停用原因、人工 --reason
+# 等自由文本只留在私有状态文件（source_health.py report 只打到终端时可看）。
+CONTENT_SUSPECT_CODES = frozenset({"html", "gzip_undecodable", "xml_internal_subset_or_entity", "xml_unparseable",
+                                   "json_unparseable", "xml_root"})
+_PUBLIC_CODES = SUSPICIOUS_ERRORS | frozenset({"network", "too_large", "rate_lock_invalid"})
+
+
+def public_code(reason):
+    """把内部记录的原因收成固定代码（未知一律 other）：suspected_challenge:xml_root:<根元素> → suspected_challenge:xml_root。"""
+    r = str(reason or "")
+    if r in _PUBLIC_CODES:
+        return r
+    if r.startswith("suspected_challenge:"):
+        sub = r.split(":", 2)[1]
+        return f"suspected_challenge:{sub if sub in CONTENT_SUSPECT_CODES else 'other'}"
+    return "other"
+
+
+def status_code(rec):
+    """源状态的固定代码（不含 status_reason 原文）。"""
+    if rec["status"] == "pending-disable":
+        return "pending-disable:suspicious-threshold"
+    if rec["status"] == "disabled":
+        legacy = str(rec.get("status_reason") or "").startswith(f"legacy {LEGACY_HOSTS_FILE}")
+        code = "disabled:legacy-import" if legacy else "disabled:manual-confirm"
+        return code + (":unrecoverable" if rec.get("unrecoverable") else "")
+    return "ok"
+
+
 def is_suspicious(error):
     """是否算「可疑结果」（计入源的可疑轮数，并让该主机本轮停止）。网络错误、404、5xx、robots 禁止、
     因冷却 / 本轮主机已停 / 旧表停用而没发请求等都不算。"""
@@ -944,7 +973,7 @@ class SourceHealth:
             return None
         if rec["status"] == "pending-disable" and rid and rid <= rec["pending_round"]:
             return None                                    # 触发 pending 的那一轮照常跑完
-        return f"source {rec['status']}: {rec['status_reason']}"
+        return f"source {status_code(rec)}"              # r15 ⑦：只写固定代码，不写 status_reason 原文
 
     def host_blocked(self, host):
         """旧表迁移来的停用主机（或状态文件损坏）→ 拒绝原因；否则 None。对这些主机不发任何请求（含 robots.txt）。"""
@@ -952,9 +981,8 @@ class SourceHealth:
         if bad:
             return f"source health invalid ({bad}); refusing requests"
         rec = self.data["hosts"].get((host or "").lower())
-        if rec:
-            return (f"host disabled (awaiting manual review{', unrecoverable' if rec['unrecoverable'] else ''}): "
-                    f"{rec['reason']}")
+        if rec:                                            # r15 ⑦：只写固定代码（类别），不写旧表原因原文
+            return f"host disabled:legacy-import:{rec['category']}{':unrecoverable' if rec['unrecoverable'] else ''}"
         return None
 
     def host_stopped(self, host, rid):
@@ -963,7 +991,7 @@ class SourceHealth:
         if bad:
             return f"source health invalid ({bad}); refusing requests"
         rec = self.data["host_stops"].get(rid or "", {}).get((host or "").lower())
-        return rec["reason"] if rec else None
+        return public_code(rec["reason"]) if rec else None
 
     def url_cooling(self, url, now=None):
         """该 URL（规范化后）在任一轮被拒且仍在冷却期 → 原因；否则 None。损坏 → 拒绝原因。"""
@@ -975,7 +1003,7 @@ class SourceHealth:
         for rid in sorted(self.data["urls"], reverse=True):
             rec = self.data["urls"][rid].get(k)
             if rec and rec["until"] > t:
-                return rec["reason"]
+                return public_code(rec["reason"])
         return None
 
     @staticmethod
@@ -1159,9 +1187,10 @@ class SourceHealth:
         self._strict()
         return [dict(rec, host=h) for h, rec in sorted(self.data["hosts"].items())]
 
-    def report(self, sids=None):
+    def report(self, sids=None, include_text=False):
         """报告条目：所有非 ok 的源，以及最近 WINDOW_ROUNDS 轮内有可疑轮的源（watch）。pending-disable 标明交 Grok Bot 复核。
-        读取失败 → StateError（不输出旧缓存）。"""
+        r15 ⑦：只写固定代码（reason_code、各轮 reasons 经 public_code），可写进公开目录；include_text=True 时另附
+        status_reason 原文（只给 source_health.py report 打到终端，不得写进公开目录）。读取失败 → StateError（不输出旧缓存）。"""
         self._strict()
         out = []
         for sid, rec in sorted(self.data["sources"].items()):
@@ -1170,8 +1199,8 @@ class SourceHealth:
             n = self.suspicious_in_window(rec)
             if rec["status"] == "ok" and n == 0:
                 continue
-            recent = [{"round": r, "suspicious": rec["rounds"][r]["suspicious"], "reasons": rec["rounds"][r]["reasons"]}
-                      for r in self.window(rec)]
+            recent = [{"round": r, "suspicious": rec["rounds"][r]["suspicious"],
+                       "reasons": sorted({public_code(x) for x in rec["rounds"][r]["reasons"]})} for r in self.window(rec)]
             e = {"id": sid, "status": rec["status"] if rec["status"] != "ok" else "watch",
                  "suspicious_rounds_in_window": n, "window": WINDOW_ROUNDS, "threshold": PENDING_AFTER, "recent": recent}
             if rec["status"] == "pending-disable":
@@ -1179,7 +1208,11 @@ class SourceHealth:
                          effective="from the round after pending_round",
                          action="confirm-disable or enable (scripts/source_health.py)")
             elif rec["status"] == "disabled":
-                e.update(since=rec.get("status_at"), reason=rec.get("status_reason"))
+                e.update(since=rec.get("status_at"))
+            if rec["status"] != "ok":
+                e["reason_code"] = status_code(rec)
+            if include_text and rec.get("status_reason"):
+                e["status_reason_private"] = rec["status_reason"]
             out.append(e)
         return out
 
