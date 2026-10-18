@@ -628,6 +628,32 @@ class R3FormatTest(unittest.TestCase):
         self.assertFalse(S.format_migration_only(old, new, False))
         self.assertTrue(S.format_migration_only(OLD_SEC, NEW_SEC, False))
 
+    def test_body_leading_rule_does_not_hide_section(self):
+        b = "---\n## 更正\n\n**2026-10-18**：甲。\n---\n\n## 更正\n\n**2026-10-18**：乙。\n"
+        self.assertEqual(R.correction_section(b, False)[0], 2)
+        self.assertFalse(R.correction_heading_ok(b, "2026-10-18", en=False))
+
+    def test_bold_year_month_prose_ok(self):
+        b = "## 更正\n\n**2026-10-17**：乙。\n\n**2026年10月以来**，数据持续上升。\n"
+        self.assertTrue(R.correction_heading_ok(b, "2026-10-17", en=False))
+        for bad in ("**2026-10-18**", "**2026年10月18日**：中文日期。", "- [ ] **2026-10-18**：遗漏。", "**2026-1-18**：畸形。", "**2026-10-18*：畸形。"):
+            self.assertFalse(R.correction_heading_ok("## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n", "2026-10-17", en=False), bad)
+
+    def test_heading_only_old_format_migration(self):
+        head = OLD_SEC.split("*本文于")[0]
+        old = head + "导语。\n\n## 更正 2026-10-17：修正一处错字。\n"
+        new = head + "导语。\n\n## 更正\n\n**2026-10-17**：修正一处错字。\n"
+        self.assertTrue(S.format_migration_only(old, new, False))
+        head_en = OLD_SEC_EN.split("*This article")[0]
+        old_en = head_en + "Lead.\n\n## Correction 2026-10-18: Fixed a typo.\n"
+        new_en = head_en + "Lead.\n\n## Corrections\n\n**2026-10-18**: Fixed a typo.\n"
+        self.assertTrue(S.format_migration_only(old_en, new_en, True))
+        self.assertFalse(S.format_migration_only(old, new.replace("修正一处错字。", "修正两处错字。"), False))
+        generic = head + "导语。\n\n## 更正 2026-10-17：本次修订的具体内容见下方更正说明。\n"
+        self.assertFalse(S.format_migration_only(generic, new.replace("修正一处错字。", "本次修订的具体内容见下方更正说明。"), False))
+        bare = head + "导语。\n\n## 更正 2026-10-17\n"
+        self.assertFalse(S.format_migration_only(bare, new, False))
+
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
         old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")
@@ -673,6 +699,19 @@ class R3CheckTest(unittest.TestCase):
         base = self.s.commit("base")
         self.s.write(P, head + "导语。\n\n### 更正 2026-10-17：合法。\n\n```\n## 更正\n\n**2026-10-16**：代码样本。\n```\n")
         self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_body_leading_rule_two_sections_via_check(self):
+        base_txt = NEW_SEC; self.s.write(P, base_txt); base = self.s.commit("base")
+        fm, body = base_txt.split("---\n", 2)[1], base_txt.split("---\n", 2)[2]
+        hidden = "---\n## 更正\n\n**2026-10-17**：藏起来的第二个更正区。\n---\n\n"
+        self.s.write(P, "---\n" + fm + "---\n" + hidden + body.replace("导语。", "导语！").replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-17**：导语改标点。\n"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_heading_only_migration_via_check(self):
+        head = OLD_SEC.split("*本文于")[0]
+        self.s.write(P, head + "导语。\n\n## 更正 2026-10-17：修正一处错字。\n"); base = self.s.commit("base")
+        self.s.write(P, head + "导语。\n\n## 更正\n\n**2026-10-17**：修正一处错字。\n")
+        self.assertEqual(self.check(base)[P], [])
 
     def test_old_format_unrelated_dated_heading_same_day(self):
         self.s.write(P, corr()); base = self.s.commit("base")

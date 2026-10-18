@@ -581,7 +581,7 @@ def correction_section(body, en=None):
     en=None 时中英两种写法都认；en=True/False 只认对应语言。"""
     langs = (False, True) if en is None else (bool(en),)
     heads, entries, inside = 0, [], None
-    for ln in visible_text(body).splitlines():
+    for ln in visible_text(body, body_only=True).splitlines():
         if _HEADING_LINE_RE.match(ln):
             inside = None
             m = _HEADING_PARTS_RE.match(_heading_shown(ln))
@@ -604,9 +604,12 @@ _OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?
 # 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：…，以及前面带列表、引用符号的写法），都要过严格
 # 条目校验；「2026年之后…」「* 1. 免责声明」这类普通文字不算（PR #52 r3 MEDIUM 4、r4 MEDIUM 1）
 # r5：任务列表前缀也算；不加粗的日期只有紧跟 ** 或冒号时才算（「2026-10-18 的数据仍待核。」这类叙述不算，PR #52 r5 MEDIUM 1）
+# r6：加粗的也须是完整年月日形态才算（「**2026年10月以来**，…」这类叙述不算，PR #52 r6 MEDIUM 3）
 _ENTRY_LIKE_RE = re.compile(
     r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)*"
-    r"(?:\*{1,2}[ \t]*\d{4}[-/.年]\d"
+    r"(?:\*{1,2}[ \t]*\d{4}"
+    r"(?:[-/.]\d{1,2}[-/.]\d{1,2}|年\d{1,2}月\d{1,2}日?)"
+    r"(?:\*{1,2}|[ \t]*[：:]|$)"
     r"|\d{4}(?:[-/.]\d{1,2}[-/.]\d{1,2}|年\d{1,2}月\d{1,2}日?)"
     r"(?:\*{1,2}|[ \t]*[：:]))"
 )
@@ -615,7 +618,7 @@ _ENTRY_LIKE_RE = re.compile(
 def old_correction_heading_dates(body):
     """渲染后可见的旧格式更正标题的日期列表（每个标题一项）。"""
     out = []
-    for ln in visible_text(body).splitlines():
+    for ln in visible_text(body, body_only=True).splitlines():
         if _HEADING_LINE_RE.match(ln):
             m = _OLD_DATED_HEADING_RE.match(_heading_shown(ln))
             if m:
@@ -626,7 +629,7 @@ def old_correction_heading_dates(body):
 def _section_malformed(body):
     """新格式更正区里任何以「**YYYY-MM-DD**」开头、却不合本区语言条目格式或日期不是真实日期的行 → True（PR #52 r2 MEDIUM 2）。"""
     lang = None
-    for ln in visible_text(body).splitlines():
+    for ln in visible_text(body, body_only=True).splitlines():
         if _HEADING_LINE_RE.match(ln):
             m = _HEADING_PARTS_RE.match(_heading_shown(ln))
             lang = next((lg for lg in (False, True)
@@ -807,12 +810,17 @@ def disclaimer_required(did, date, corr=None):
     return needs_disclaimer(did, date) or bool(corr)
 
 
-def visible_text(text):
-    """r13：去掉 HTML 注释（含未闭合注释到文末）与围栏代码块；r12（整体验收）：再用 HTML 解析器去掉整篇范围内的隐藏元素子树。免责声明、更正标题只在可见文本里认。"""
-    try:
-        body = front_matter(text)[1]                  # r14：front matter 是元数据，不算页面可见文字
-    except FrontMatterError:
-        m = _FM_RE.match(text); body = text[m.end():]  # 解析失败的稿件在 _route_one 已判失败；这里只为诊断
+def visible_text(text, *, body_only=False):
+    """r13：去掉 HTML 注释（含未闭合注释到文末）与围栏代码块；r12（整体验收）：再用 HTML 解析器去掉整篇范围内的隐藏元素子树。免责声明、更正标题只在可见文本里认。
+    body_only=True：text 已是剥掉 front matter 的正文，不再剥一次（正文以分隔线 --- 开头时不能被当成 front matter，PR #52 r6 MEDIUM 1）。"""
+    if body_only:
+        body = text
+    else:
+        try:
+            body = front_matter(text)[1]              # r14：front matter 是元数据，不算页面可见文字
+        except FrontMatterError:
+            m = _FM_RE.match(text)                    # 解析失败的稿件在 _route_one 已判失败；这里只为诊断
+            body = text[m.end():] if m else text
     return _hide_html(_FENCE_RE.sub("", _COMMENT_RE.sub("", body)))
 
 

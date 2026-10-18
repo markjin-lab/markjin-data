@@ -185,7 +185,7 @@ def _corrections_dated(body, at, en):
     heads, entries = R.correction_section(body, en)
     if heads:
         return sum(1 for d, _ in entries if d == at)
-    vis = R.visible_text(body).splitlines()
+    vis = R.visible_text(body, body_only=True).splitlines()
     dated_heads = R.old_correction_heading_dates(body).count(at)   # 只数旧格式更正标题（PR #52 r3 MEDIUM 3）
     notes = sum(1 for ln in vis if (m := _OLD_NOTE_RE[en].match(ln.strip())) and m.group(1) == at)
     return max(dated_heads, notes)
@@ -219,17 +219,28 @@ def format_migration_only(old, new, en):
     keep = set(oidx)
     if any(ln.strip() and i not in keep for i, ln in enumerate(ol[o0:o1 + 1], o0)):
         return False
-    notes = sorted((m.group(1), m.group(2)) for m in (_OLD_NOTE_RE[en].match(ln) for ln in ol[o0:o1 + 1]) if m)
-    # 旧标题的日期都须有同日期的更正说明行对应（不多于说明行数）；旧标题若有通用句以外的实质说明，须原样出现在更正说明里
-    # （PR #52 r2 MEDIUM 4）
+    raw_notes = sorted((m.group(1), m.group(2)) for m in (_OLD_NOTE_RE[en].match(ln) for ln in ol[o0:o1 + 1]) if m)
+    # 某日期有更正说明行时：该日期的旧标题不多于说明行，旧标题若有通用句以外的实质说明，须原样出现在说明里（PR #52 r2 MEDIUM 4）。
+    # 某日期只有旧标题、没有说明行时：旧标题的实质说明就是这次更正的说明，迁成同文字的条目；说明为空或只是通用句则不算迁移
+    # （PR #52 r6 MEDIUM 2）。
     old_heads = [m for m in (_OLD_HEAD_RE[en].match(ln) for ln in ol[o0:o1 + 1]) if m]
-    note_dates = Counter(d for d, _ in notes)
-    if any(n > note_dates[d] for d, n in Counter(m.group(1) for m in old_heads).items()):
+    note_dates = Counter(d for d, _ in raw_notes)
+    head_dates = Counter(m.group(1) for m in old_heads)
+    if any(note_dates[d] and n > note_dates[d] for d, n in head_dates.items()):
         return False
+    notes = list(raw_notes)
     for m in old_heads:
-        expl = m.group(0).split(m.group(1), 1)[1].lstrip("：: ").strip()
-        if expl and expl != _OLD_HEAD_GENERIC[en] and (m.group(1), expl) not in notes:
+        d = m.group(1)
+        expl = m.group(0).split(d, 1)[1].lstrip("：: ").strip()
+        substantive = bool(expl) and expl != _OLD_HEAD_GENERIC[en]
+        if note_dates[d]:
+            if substantive and (d, expl) not in raw_notes:
+                return False
+        elif not substantive:
             return False
+        else:
+            notes.append((d, expl))
+    notes.sort()
     hidx = [i for i, ln in enumerate(nl) if ln == _NEW_HEAD[en]]
     if len(hidx) != 1:
         return False
@@ -244,10 +255,12 @@ def format_migration_only(old, new, en):
     if [d for d, _ in entries] != sorted(d for d, _ in entries) or sorted(entries) != notes:
         return False
     # 新旧更正区都须渲染后可见：代码块、注释、隐藏元素里的同形行不能冒充迁移（PR #52 r5 MEDIUM 2）
-    visible_notes = Counter((m.group(1), m.group(2)) for ln in R.visible_text(old[mo.end():]).splitlines()
-                            if (m := _OLD_NOTE_RE[en].match(ln.strip())))
+    old_vis = R.visible_text(old[mo.end():], body_only=True).splitlines()
+    visible_notes = Counter((m.group(1), m.group(2)) for ln in old_vis if (m := _OLD_NOTE_RE[en].match(ln.strip())))
+    visible_old_heads = Counter(m.group(1) for ln in old_vis if (m := _OLD_HEAD_RE[en].match(ln)))
     visible_heads, visible_entries = R.correction_section(new[mn.end():], en)
-    if visible_notes != Counter(notes) or visible_heads != 1 or visible_entries != entries:
+    if visible_notes != Counter(raw_notes) or visible_old_heads != head_dates \
+            or visible_heads != 1 or visible_entries != entries:
         return False
     pre_o, pre_n, suf_o, suf_n = ol[:o0], nl[:n0], ol[o1 + 1:], nl[eidx[-1] + 1:]
     if suf_o != suf_n or len(pre_o) != len(pre_n):

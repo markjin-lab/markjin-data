@@ -407,6 +407,6 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
 - **纯格式迁移例外（Grok Bot 2026-10-18，Issue #71）**：只把旧格式更正区改成新格式、不动其他内容的改动，不算新更正，不要求 `corrected_at` 变化或新增条目；只豁免这一条，迁移后的页面仍须通过 `corrects`/`corrected_at` 字段与新格式更正区的全部校验（一页一个本语言标题等）。脚本 `sitecheck.format_migration_only` 逐项核对，任何一项不满足就按普通更正处理（通常因同日未新增条目判 `E-ROUTE-CORRECTION-NOTE`）：
   - front matter 原文逐字节相同；
   - 旧版更正区：从第一条到最后一条旧格式更正行（`*更正说明（YYYY-MM-DD）：…*` / `*Correction note (YYYY-MM-DD): …*` 与 `## 更正 YYYY-MM-DD…` / `## Correction YYYY-MM-DD…` 标题），中间只能有这两种行和空行；新版更正区：唯一的 `## 更正` / `## Corrections` 标题及紧随其后的条目行和空行；两个更正区以外的正文逐字节相同；
-  - 旧版每条更正说明的（日期, 说明文字）与新版条目一一对应、文字完全相同，新版条目按日期升序；旧格式标题的日期都须有同日期的更正说明行对应（同一日期的旧标题不多于说明行），旧标题如有通用句（「本次修订的具体内容见下方更正说明。」/ "The note below lists the changes in this revision."）以外的实质说明，须原样出现在同日期的更正说明里；
+  - 旧版每条更正说明的（日期, 说明文字）与新版条目一一对应、文字完全相同，新版条目按日期升序；某日期有更正说明行时，该日期的旧格式标题不多于说明行，旧标题如有通用句（「本次修订的具体内容见下方更正说明。」/ "The note below lists the changes in this revision."）以外的实质说明，须原样出现在同日期的更正说明里；某日期只有旧格式标题、没有说明行时，标题日期后的实质说明即该次更正的说明，须迁成同日期、同文字的条目（说明为空或只是通用句则不算迁移）；新旧更正区都只认渲染后可见的行（代码块、注释、隐藏元素里的不算）；
   - 页首一行的白名单：只允许在「`*本文于 <日期列表> 更正，说明见文末。*`」与「`*本文于 <日期列表> 更正，说明见文末「更正」。*`」之间互换，英文稿在「`… see the note(s) at the end.*`」与「`… see Corrections at the end.*`」之间互换；日期列表必须一字不差。只适用于第一个标题（ATX 或 Setext）之前唯一的那一行页首提示，正文里其他同形句不在白名单内。
 - 这个脚本不接 CI，也不替代 `route_pr`、Codex 审查或站点 smoke；审查站点 PR 时与 smoke、pytest 一起运行。
