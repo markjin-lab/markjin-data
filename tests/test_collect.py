@@ -2525,6 +2525,153 @@ class R15Fixes(unittest.TestCase):
         self.assertTrue(collect.SourceHealth(d / "st.json").url_cooling("https://a.org/data", time.time() + 23 * 3600))
         self.assertTrue(f.get("https://b.org/fred", sid="t").ok)             # FRED 式页面（id="signin-wrap"）不误伤
 
+    # ---- r3（FRED 审查）补充：冷却键去掉 API key / token；换 key 不能绕过冷却，状态里也不留 key
+    def test_r15_cooldown_identity_strips_credentials(self):
+        k = collect.url_key
+        base = "https://api.example.org/series/obs?series_id=GDP"
+        self.assertEqual(k(base + "&api_key=AAA111"), k(base + "&api_key=BBB222"))
+        self.assertEqual(k(base + "&api_key=AAA111&token=x&Signature=y"), k(base))
+        self.assertNotEqual(k(base + "&api_key=A"), k("https://api.example.org/series/obs?series_id=CPI&api_key=A"))
+        self.assertEqual(k("https://user:pw@a.org/x"), k("https://a.org/x"))
+        self.assertNotIn("AAA111", collect.cooldown_identity(base + "&api_key=AAA111"))
+        d = self.tmpdir()
+        f = self.fetcher(d, {base + "&api_key=AAA111": Resp(403), base + "&api_key=BBB222": Resp(200, b"ok")})
+        self.assertEqual(f.get(base + "&api_key=AAA111", sid="s").error, "http_403")
+        st = collect.SourceHealth(d / "st.json")
+        self.assertTrue(st.url_cooling(base + "&api_key=BBB222"))                # 换一把 key 仍在冷却
+        self.assertNotIn("AAA111", (d / "st.json").read_text())
+
+    # ---- r3 补充：来源级冷却在跨进程锁内、限速等待之后、发送之前从磁盘重读
+    def test_r15_source_cooldown_rechecked_in_lock_after_wait(self):
+        d = self.tmpdir()
+        p = d / "st.json"
+        other = []
+
+        def during_wait(w):                    # /two 的限速等待期间「另一个进程」（补跑 r1）给来源 s 写下冷却记录
+            if not other and "https://a.org/one" in [u for u, _ in f.opener.calls]:
+                other.append(1)
+                collect.SourceHealth(p).stop(["https://c.org/z"], "2026-10-12/r1", "s", "login_wall")
+        f = self.fetcher(d, {"https://a.org/one": Resp(200, b"ok"), "https://a.org/two": Resp(200, b"ok")},
+                         sleep=during_wait, state=collect.SourceHealth(p))
+        f.round_id = "2026-10-12/r2"
+        self.assertTrue(f.get("https://a.org/one", sid="t").ok)
+        r = f.get("https://a.org/two", sid="s")                                 # 同站：要等 60 秒
+        self.assertTrue(other)
+        self.assertEqual((r.error, r.detail), ("source_blocked", "source cooldown:login_wall"))
+        self.assertNotIn("https://a.org/two", [u for u, _ in f.opener.calls])
+
+    # ---- r3 补充：来源由 URL 主机推出；请求带的来源与主机所属来源冲突 → 拒绝
+    def test_r15_source_derived_from_host_conflict_refused(self):
+        d = self.tmpdir()
+        f = self.fetcher(d, {"https://a.org/x": Resp(200, b"ok"), "https://cdn.net/y": Resp(200, b"ok")},
+                         host_sources={"a.org": {"s"}})
+        r = f.get("https://a.org/x", sid="t")
+        self.assertEqual((r.error, r.detail), ("source_mismatch", "source mismatch:host-belongs-to-other-source"))
+        self.assertEqual(f.opener.calls, [])                                    # 一个请求都不发（含 robots）
+        self.assertIn("source_mismatch", collect.NO_CONTACT)
+        self.assertTrue(f.get("https://a.org/x", sid="s").ok)
+        self.assertTrue(f.get("https://cdn.net/y", sid="t").ok)                 # 表里没有的主机不推断
+        st = collect.SourceHealth(d / "st2.json")                               # 没有 sid 的旧记录按主机推出来源
+        st.stop(["https://a.org/old"], "2026-10-12/r1", None, "http_403")
+        st.host_sources = {"a.org": frozenset({"s"})}
+        self.assertEqual(st.blocked("s", "2026-10-12/r2"), "source cooldown:http_403")
+        self.assertIsNone(st.blocked("t", "2026-10-12/r2"))
+
+    # ---- r3 补充：登录墙还要认登录链接 / 提示中间页、无密码（邮箱）登录表单、300KB 之后的表单；词边界防误判
+    def test_r15_login_wall_interstitial_passwordless_and_late_form(self):
+        H = "text/html"
+        PROMPT = (b'<html><head><title>Example Research</title></head><body><p>Please sign in to continue reading.</p>'
+                  b'<a href="https://login.example.com/?next=/r/1">Continue</a></body></html>')
+        LINK_TITLE = (b'<html><head><title>Log in required</title></head><body><a href="/account/login">Go</a></body></html>')
+        MAGIC = (b'<html><head><title>Example</title></head><body><form action="/magic-link" method="post">'
+                 b'<p>Sign in with your email</p><input type="email" name="e"><button>Send link</button></form></body></html>')
+        MAGIC_T = (b'<html><head><title>Login</title></head><body><form method="post"><input name="email">'
+                   b'<button>Continue</button></form></body></html>')
+        LATE = (b'<html><head><title>Sign in</title></head><body><script>' + b"/*" + b"x" * 400_000 + b"*/" +
+                b'</script><form action="/s"><input type="password" name="p"></form></body></html>')
+        for name, body in (("PROMPT", PROMPT), ("LINK_TITLE", LINK_TITLE), ("MAGIC", MAGIC), ("MAGIC_T", MAGIC_T), ("LATE", LATE)):
+            self.assertTrue(collect.login_page(H, body, "https://a.org/p"), name)
+            self.assertEqual(collect.Fetcher._classify(200, {"Content-Type": H}, body, "https://a.org/p"), "login_wall", name)
+        BLOG = (b'<html><head><title>FRED Blog Index</title></head><body><a href="/login">Sign In</a>'
+                b'<form action="/searchresults"><input name="st"></form><p>' + b"Posts about data. " * 60 + b'</p></body></html>')
+        NEWSLETTER = (b'<html><head><title>Weekly notes</title></head><body><p>' + b"Analysis text. " * 60 + b'</p>'
+                      b'<form action="/subscribe"><input type="email" name="e"><button>Subscribe</button></form></body></html>')
+        SHORT_LINK = b'<html><head><title>Data</title></head><body><a href="/login">Sign in</a><p>Table below.</p></body></html>'
+        for name, body in (("BLOG", BLOG), ("NEWSLETTER", NEWSLETTER), ("SHORT_LINK", SHORT_LINK)):
+            self.assertFalse(collect.login_page(H, body, "https://a.org/p"), name)
+        for t in ("FRED Blog Index", "Bloginfo tips", "loginx and xlogin", "Signing up", "Passwords101"):
+            self.assertIsNone(collect._LOGIN_WORDS.search(t), t)                # 词边界
+        for t in ("Sign in", "Log-in | Example", "LOGIN", "用户登录"):
+            self.assertTrue(collect._LOGIN_WORDS.search(t), t)
+
+    # ---- r3 补充：登录墙 → 主机本轮停止、URL 冷却、下一轮整个来源停（stop-source）
+    def test_r15_login_wall_stops_host_then_whole_source_next_round(self):
+        t = [2_000_000.0]
+        d = self.tmpdir()
+        hs = lambda: collect.SourceHealth(d / "st.json", clock=lambda: t[0])
+        PROMPT = b'<html><title>x</title><body><p>Please log in to view this page.</p><a href="/login">Log in</a></body></html>'
+        routes = {"https://a.org/r": Resp(200, PROMPT, {"Content-Type": "text/html"}), "https://a.org/q": Resp(200, b"ok"),
+                  "https://b.org/feed": Resp(200, b"ok")}
+
+        def fx(rid):
+            return collect.Fetcher(hs(), opener=FakeOpener(routes), sleep=lambda w: None, clock=lambda: t[0],
+                                   resolver=PUBLIC_DNS, lock_dir=d / "locks", round_id=rid)
+        f = fx(ROUND)
+        self.assertEqual(f.get("https://a.org/r", sid="s").error, "login_wall")
+        self.assertEqual(f.get("https://a.org/q", sid="t").error, "host_stopped_this_round")
+        t[0] += 6 * 3600
+        f = fx("2026-10-12/r2")
+        r = f.get("https://b.org/feed", sid="s")
+        self.assertEqual((r.error, r.detail), ("source_blocked", "source cooldown:login_wall"))
+        self.assertEqual(f.opener.calls, [])
+        self.assertTrue(f.get("https://a.org/q", sid="t").ok)                  # 别的来源：主机停止已解除
+
+    # ---- r3 补充：没有入口能绕过门禁：运行时调松常量、自带会跟随跳转的 opener / opener 子类
+    def test_r15_no_entry_point_bypasses_gates(self):
+        import urllib.request as ur
+        from unittest import mock
+        d = self.tmpdir()
+        f = self.fetcher(d, {"https://a.org/x": Resp(200, b"ok")})
+        for name, val in (("SITE_INTERVAL", 1.0), ("HOST_INTERVAL", 0.0), ("COOLDOWN_SECONDS", 60), ("WINDOW_ROUNDS", 9),
+                          ("PENDING_AFTER", 5), ("MAX_REDIRECTS", 50), ("NET_RETRIES", 10), ("MAX_BYTES", 10 ** 10),
+                          ("REFUSED_HOSTS", frozenset()), ("REFUSED_HOSTS", {"t.co"}), ("REDIRECT_CODES", frozenset({301})),
+                          ("SUSPICIOUS_ERRORS", frozenset({"http_403"}))):
+            with mock.patch.object(collect, name, val):
+                with self.assertRaises(collect.ConfigError, msg=name):
+                    collect.Fetcher(opener=FakeOpener({}), resolver=PUBLIC_DNS)
+                with self.assertRaises(collect.ConfigError, msg=name):
+                    f.get("https://a.org/x", sid="s")
+        self.assertEqual(f.opener.calls, [])
+        self.assertTrue(f.get("https://a.org/x", sid="s").ok)                   # 恢复后照常
+
+        class Sub(ur.OpenerDirector):
+            pass
+        bad = [ur.build_opener(), ur.build_opener(collect._NoRedirect, ur.HTTPCookieProcessor()), Sub()]
+        class Follow(collect._NoRedirect):
+            def redirect_request(self, *a, **k):
+                return ur.HTTPRedirectHandler.redirect_request(self, *a, **k)
+        bad.append(ur.build_opener(Follow))
+        patched = ur.build_opener(collect._NoRedirect); patched.open = lambda *a, **k: None
+        bad.append(patched)
+        for o in bad:
+            with self.assertRaises(collect.ConfigError, msg=repr(o)):
+                collect.Fetcher(opener=o, resolver=PUBLIC_DNS)
+        collect.Fetcher(opener=ur.build_opener(collect._NoRedirect), resolver=PUBLIC_DNS)   # 默认形态可用
+
+        class R2(Resp):                        # 替身 opener 自己跟随了跳转：响应 URL 不是请求的 URL → 拒绝、丢弃正文
+            def geturl(self):
+                return "https://evil.org/landing"
+        f = self.fetcher(d, {"https://a.org/y": R2(200, b"secret page")})
+        r = f.get("https://a.org/y", sid="s")
+        self.assertEqual(r.error, "opener_redirected")
+        self.assertFalse(r.body)
+        # 入口脚本不自带 opener、不改门禁常量
+        import re as _re
+        for py in (Path(collect.__file__).resolve().parents[1]).glob("*.py"):
+            src = py.read_text(encoding="utf-8")
+            self.assertNotRegex(src, r"opener\s*=", py.name)
+            self.assertIsNone(_re.search(r"collect\.[A-Z][A-Z_]+\s*=(?!=)", src), py.name)
+
 
 if __name__ == "__main__":
     unittest.main()
