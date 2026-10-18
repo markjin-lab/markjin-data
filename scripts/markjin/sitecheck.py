@@ -19,8 +19,8 @@ Hugo 以同一时钟（默认当前时间）构建，`hugo list published` 中 k
     base 版 front matter 须有合法 date → 否则 E-ROUTE-CORRECTION-TARGET；
   · corrected_at 须是 YYYY-MM-DD，不早于页面日期（base 版 date 按 SGT 取日期）、不晚于今天（SGT）、不早于 base 版已有的
     corrected_at；head 版 date 须与 base 版完全相同 → 否则 E-ROUTE-CORRECTION-DATE；
-  · corrected_at 须出现在某个标题行渲染后可见的文字里（route.correction_heading_ok）→ 否则 E-ROUTE-CORRECTION-NOTE；
-    corrected_at 与 base 版相同（同日再次更正）时，还须新增一条写有该日期的可见标题行，沿用旧标题 → E-ROUTE-CORRECTION-NOTE。
+  · 更正区须有与 corrected_at 对应的新格式条目或过渡期旧格式标题（route.correction_heading_ok）→ 否则 E-ROUTE-CORRECTION-NOTE；
+    普通改动（无论同日或跨日）还须让写有本次 corrected_at 的更正次数比 base 版多，纯格式迁移例外 → 否则 E-ROUTE-CORRECTION-NOTE。
 - 路径推不出合法 draft_id 的已发布页面被改动 → E-ROUTE-CORRECTION-TARGET（不能用怪路径绕开规则）。
 - front matter 解析失败 → E-ROUTE-FRONT-MATTER。
 - 读不到对象、非 UTF-8 路径或内容、Hugo 缺失或版本与站点部署不符、构建失败 → E-SITE-INPUT（失败关闭）。
@@ -243,6 +243,12 @@ def format_migration_only(old, new, en):
     entries = [(m.group(1), m.group(2)) for m in (R.CORRECTION_ENTRY_RE[en].match(nl[k]) for k in eidx)]
     if [d for d, _ in entries] != sorted(d for d, _ in entries) or sorted(entries) != notes:
         return False
+    # 新旧更正区都须渲染后可见：代码块、注释、隐藏元素里的同形行不能冒充迁移（PR #52 r5 MEDIUM 2）
+    visible_notes = Counter((m.group(1), m.group(2)) for ln in R.visible_text(old[mo.end():]).splitlines()
+                            if (m := _OLD_NOTE_RE[en].match(ln.strip())))
+    visible_heads, visible_entries = R.correction_section(new[mn.end():], en)
+    if visible_notes != Counter(notes) or visible_heads != 1 or visible_entries != entries:
+        return False
     pre_o, pre_n, suf_o, suf_n = ol[:o0], nl[:n0], ol[o1 + 1:], nl[eidx[-1] + 1:]
     if suf_o != suf_n or len(pre_o) != len(pre_n):
         return False
@@ -311,9 +317,9 @@ def check_page(repo, mb, head, path, status, today, base_pages, head_pages):
                 or (ofm is not None and fm.get("date") != ofm.get("date")) \
                 or (isinstance(prev, str) and R.valid_date(prev) and ca < dt.date.fromisoformat(prev)):
             codes.append("E-ROUTE-CORRECTION-DATE")     # date 按完整值比较（r1 MEDIUM 4）
-        elif not migration and isinstance(prev, str) and prev == fm["corrected_at"] and old != new and \
-                _corrections_dated(body, prev, en) <= _corrections_dated(old_body, prev, en):
-            codes.append("E-ROUTE-CORRECTION-NOTE")     # 同日再次更正须新增写有该日期的标题或条目（r1 HIGH 1）
+        elif not migration and old != new and \
+                _corrections_dated(body, fm["corrected_at"], en) <= _corrections_dated(old_body, fm["corrected_at"], en):
+            codes.append("E-ROUTE-CORRECTION-NOTE")     # 无论同日或跨日，本次日期的更正次数须比 base 多（r1 HIGH 1、PR #52 r5 MEDIUM 3）
     if not R.correction_heading_ok(body, fm["corrected_at"], en=en):
         codes.append("E-ROUTE-CORRECTION-NOTE")
     return sorted(set(codes))

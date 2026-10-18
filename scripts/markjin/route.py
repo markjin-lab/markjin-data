@@ -603,7 +603,13 @@ def correction_section(body, en=None):
 _OLD_DATED_HEADING_RE = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(?:更正|Corrections?)[ \t]+(\d{4}-\d{2}-\d{2})(?!\d)")
 # 更正区里像日期条目的行（含 **2026-1-18**、**2026-10-18*、2026-10-18：…，以及前面带列表、引用符号的写法），都要过严格
 # 条目校验；「2026年之后…」「* 1. 免责声明」这类普通文字不算（PR #52 r3 MEDIUM 4、r4 MEDIUM 1）
-_ENTRY_LIKE_RE = re.compile(r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+)*(?:\*{1,2}[ \t]*)?\d{4}[-/.年]\d")
+# r5：任务列表前缀也算；不加粗的日期只有紧跟 ** 或冒号时才算（「2026-10-18 的数据仍待核。」这类叙述不算，PR #52 r5 MEDIUM 1）
+_ENTRY_LIKE_RE = re.compile(
+    r"^[ \t]*(?:(?:[-+*>]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)*"
+    r"(?:\*{1,2}[ \t]*\d{4}[-/.年]\d"
+    r"|\d{4}(?:[-/.]\d{1,2}[-/.]\d{1,2}|年\d{1,2}月\d{1,2}日?)"
+    r"(?:\*{1,2}|[ \t]*[：:]))"
+)
 
 
 def old_correction_heading_dates(body):
@@ -695,7 +701,7 @@ def _correction(rel, text, did, date, now, site_repo):
     if orig == text:
         return "E-ROUTE-CORRECTION-TARGET"
     if not correction_heading_ok(body, fm["corrected_at"], en=did.endswith(EN_SUFFIX)):
-        return "E-ROUTE-CORRECTION-NOTE"             # 整体验收 r2（王总定）：更正日期须出现在标题行（# … 行）里
+        return "E-ROUTE-CORRECTION-NOTE"             # 整体验收 r2（王总定）、Issue #71：更正区须有与 corrected_at 对应的新格式条目或过渡期旧格式标题
     sec = did.split("-", 1)[0]
     return {"corrected_at": ca, "wang": _orig_needs_wang(sec, ofm)}
 

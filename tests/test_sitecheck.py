@@ -612,6 +612,22 @@ class R3FormatTest(unittest.TestCase):
             b = "## 更正\n\n**2026-10-17**：乙。\n\n" + ok + "\n"
             self.assertTrue(R.correction_heading_ok(b, "2026-10-17", en=False), ok)
 
+    def test_task_list_entries_and_date_led_prose(self):
+        for bad in ("- [ ] **2026-10-18**：遗漏。", "1. [x] **2026-10-18**：遗漏。", "2026-10-18：没加粗。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n" + bad + "\n"
+            self.assertFalse(R.correction_heading_ok(b, "2026-10-17", en=False), bad)
+        for ok in ("2026年10月以来，数据持续上升。", "2026-10-18 的数据仍待核。"):
+            b = "## 更正\n\n**2026-10-17**：乙。\n\n" + ok + "\n"
+            self.assertTrue(R.correction_heading_ok(b, "2026-10-17", en=False), ok)
+
+    def test_code_block_cannot_pose_as_migration(self):
+        fm = OLD_SEC.split("---\n", 2)
+        head = "---\n" + fm[1] + "---\n"
+        old = head + "导语。\n\n### 更正 2026-10-17：合法。\n\n```\n*更正说明（2026-10-16）：代码样本。*\n```\n"
+        new = head + "导语。\n\n### 更正 2026-10-17：合法。\n\n```\n## 更正\n\n**2026-10-16**：代码样本。\n```\n"
+        self.assertFalse(S.format_migration_only(old, new, False))
+        self.assertTrue(S.format_migration_only(OLD_SEC, NEW_SEC, False))
+
     def test_setext_heading_ends_top_area(self):
         mid = "*本文于 2026-10-16、2026-10-17 更正，说明见文末。*"
         old = OLD_SEC.replace(mid + "\n\n导语。", "标题\n=====\n\n" + mid + "\n\n导语。")
@@ -639,6 +655,23 @@ class R3CheckTest(unittest.TestCase):
         self.s.write(P, OLD_SEC + "\n## Corrections\n"); base = self.s.commit("base")
         self.s.write(P, NEW_SEC + "\n## Corrections\n")
         self.assertTrue(S.format_migration_only(OLD_SEC + "\n## Corrections\n", NEW_SEC + "\n## Corrections\n", False))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+
+    def test_cross_day_reuses_prewritten_entry(self):
+        base_txt = NEW_SEC.replace("**2026-10-17**：只改措辞。\n", "**2026-10-17**：只改措辞。\n**2026-10-18**：预先写好。\n")
+        self.s.write(P, base_txt); base = self.s.commit("base")
+        self.s.write(P, base_txt.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！"))
+        self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
+        self.s.write(P, base_txt.replace("corrected_at: 2026-10-17", "corrected_at: 2026-10-18").replace("导语。", "导语！")
+                     .replace("**2026-10-18**：预先写好。\n", "**2026-10-18**：预先写好。\n**2026-10-18**：导语改标点。\n"))
+        self.assertEqual(self.check(base)[P], [])
+
+    def test_code_block_migration_via_check(self):
+        fm = OLD_SEC.split("---\n", 2)
+        head = "---\n" + fm[1] + "---\n"
+        self.s.write(P, head + "导语。\n\n### 更正 2026-10-17：合法。\n\n```\n*更正说明（2026-10-16）：代码样本。*\n```\n")
+        base = self.s.commit("base")
+        self.s.write(P, head + "导语。\n\n### 更正 2026-10-17：合法。\n\n```\n## 更正\n\n**2026-10-16**：代码样本。\n```\n")
         self.assertEqual(self.check(base)[P], ["E-ROUTE-CORRECTION-NOTE"])
 
     def test_old_format_unrelated_dated_heading_same_day(self):

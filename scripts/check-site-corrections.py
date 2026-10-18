@@ -7,7 +7,7 @@
 
 检查 merge-base(base, head)..head 中改动的 content/posts/<section>/<name>[.en].md 与 content/cards/<name>[.en].md：
 “已发布”按站点部署所用版本的 Hugo 实际构建判定（需本机 hugo，版本须与站点 .github/workflows/hugo.yml 一致）。
-改已发布页面必须是更正（corrects + corrected_at），更正日期合法且出现在标题行可见文字里；删除已发布页面判失败。
+改已发布页面必须是更正（corrects + corrected_at），更正日期合法，更正区须有与 corrected_at 对应的新格式条目或过渡期旧格式标题，且本次日期的更正次数比 base 多（纯格式迁移例外）；删除已发布页面判失败。
 规则与错误码见 docs/approvals.md「站点 PR 页面检查」。输出 JSON；退出码 0 = 通过，1 = 有页面不合规或输入无效（含参数错误）。"""
 import argparse, json, sys
 from pathlib import Path

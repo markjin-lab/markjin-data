@@ -403,7 +403,7 @@ git add state/publish-state.json && git commit -m "state: heartbeat" && git push
   - `corrects` 必须等于由路径推出的 draft_id（`<section>-<name>[-en]`，卡片为 `cards-<name>[-en]`；`a-en.md` 这类推不出合法 draft_id 的路径不算），页面在 base 上已发布，且 base 版有合法 `date`，否则 → `E-ROUTE-CORRECTION-TARGET`；
   - `corrected_at` 不是 YYYY-MM-DD、早于页面日期、晚于今天（SGT）、早于 base 版已有的 `corrected_at`，或者 head 版 `date` 与 base 版不完全相同（同日改时间、改时区写法都算） → `E-ROUTE-CORRECTION-DATE`；
   - 更正区须符合上文「更正区格式」（新格式，或过渡期旧格式），否则 → `E-ROUTE-CORRECTION-NOTE`；
-  - 再次更正：跨日的，`corrected_at` 要改成本次日期并有对应条目（或旧格式标题）；同日的（`corrected_at` 与 base 版相同），写有该日期的更正次数必须比 base 多（新格式页只数更正区里该日期的条目，其他带日期的标题不算；旧格式页取带该日期的旧格式更正标题数与更正说明行数中较大者，其他带日期的标题不算），沿用旧条目或旧标题 → `E-ROUTE-CORRECTION-NOTE`。
+  - 再次更正：无论同日或跨日，写有本次 `corrected_at` 的更正次数必须比 base 版多（新格式页只数更正区里该日期的条目，其他带日期的标题不算；旧格式页取带该日期的旧格式更正标题数与更正说明行数中较大者，其他带日期的标题不算）；沿用旧条目或旧标题，或复用 base 上已预先写好的同日期条目 → `E-ROUTE-CORRECTION-NOTE`。纯格式迁移例外见下。
 - **纯格式迁移例外（Grok Bot 2026-10-18，Issue #71）**：只把旧格式更正区改成新格式、不动其他内容的改动，不算新更正，不要求 `corrected_at` 变化或新增条目；只豁免这一条，迁移后的页面仍须通过 `corrects`/`corrected_at` 字段与新格式更正区的全部校验（一页一个本语言标题等）。脚本 `sitecheck.format_migration_only` 逐项核对，任何一项不满足就按普通更正处理（通常因同日未新增条目判 `E-ROUTE-CORRECTION-NOTE`）：
   - front matter 原文逐字节相同；
   - 旧版更正区：从第一条到最后一条旧格式更正行（`*更正说明（YYYY-MM-DD）：…*` / `*Correction note (YYYY-MM-DD): …*` 与 `## 更正 YYYY-MM-DD…` / `## Correction YYYY-MM-DD…` 标题），中间只能有这两种行和空行；新版更正区：唯一的 `## 更正` / `## Corrections` 标题及紧随其后的条目行和空行；两个更正区以外的正文逐字节相同；
