@@ -27,6 +27,7 @@ Usage:
     帖文原文等完整线索只进私有 PRIVATE/raw/DATE/primary/leads-<run>.json。日志（含私有 fetch-log）只写脱敏 URL。
 线索身份：每条线索保持 label: 线索、source_role: lead；抓取结果只写 fetch_status。HTTP 200 不等于核验：
   primary_verification 恒为 unverified，只有人工/独立核验（来源身份、页面内容、原断言一致）后另行改写。
+Exit code: 0 = ok, 1 = 来源健康状态更新失败（StateError/OSError；上层须停下）, 2 = 参数/配置错误或拒绝运行.
 """
 import argparse, hashlib, html, json, os, re, subprocess, sys, tempfile
 from html.parser import HTMLParser
@@ -248,12 +249,14 @@ def main(argv=None, fetcher=None):
     # 本轮实际发出过请求（或有可疑事件）的伪源各记一轮；没发请求的（冷却、主机已停、停用）不记
     psids = {s for s in set(f.contacted) | set(f.suspicious) if isinstance(s, str) and s.startswith("primary:")}
     ran = {sid: sorted({e["reason"] for e in f.suspicious.get(sid, [])}) for sid in psids}
+    health_failed = False
     try:
         newly = health.record_round(rid, ran) if ran else {}
         report = health.report(sids=set(ran) | {primary_sid(x["url"]) for x in index if x.get("fetch_status") == "source_blocked"})
     except (collect.StateError, OSError) as e:
         print(f"source health not updated: {type(e).__name__}: {e}", file=sys.stderr)
         newly, report = {}, []
+        health_failed = True            # r15（#60）MEDIUM：健康状态没更新 → 退出码非 0，让上层停下
     if report:
         pub.put_json(f"primary/source-health-{run}.json", [dict(e, newly_flagged=bool(newly.get(e["id"]))) for e in report])
     pend = [e for e in report if e["status"] == "pending-disable"]
@@ -275,6 +278,9 @@ def main(argv=None, fetcher=None):
     for r in cache.values(): c[(r["fetch_status"], r["stored"])] = c.get((r["fetch_status"], r["stored"]), 0) + 1
     print("summary:", json.dumps({f"{s}/{l}": v for (s, l), v in c.items()}, ensure_ascii=False),
           f"pending_disable={len(pend)}", file=sys.stderr)
+    if health_failed:
+        print("source health update failed; exiting 1 so the caller stops", file=sys.stderr)
+        return 1
     return 0
 
 

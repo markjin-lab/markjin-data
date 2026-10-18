@@ -1550,3 +1550,19 @@ class R15Primary(Primary):
         self.assertEqual(idx[0]["stored"], None)                                    # 登录页不当文章存成功
         self.assertTrue(collect.SourceHealth(self.base / "st.json").data["sources"]["primary:pub.org"]["rounds"][
             "2026-10-12/r1"]["suspicious"])
+
+    # ---- MEDIUM：健康状态更新失败 → 返回非 0
+    def test_r15_fetch_primary_health_update_failure_nonzero(self):
+        import contextlib, io
+        from unittest import mock
+        for exc in (collect.StateError("boom"), OSError("disk full")):
+            st = collect.SourceHealth(tmp() / "st.json")
+            lp = self.base / "leads.json"
+            lp.write_text(json.dumps({"items": [{"id": "1", "expanded_url": "https://ok.org/a"}]}), encoding="utf-8")
+            f, _ = mk({"https://ok.org/a": Resp(200, b"<html><title>a</title></html>", self.HTML)}, state=st)
+            err = io.StringIO()
+            with mock.patch.object(collect.SourceHealth, "record_round", side_effect=exc), contextlib.redirect_stderr(err):
+                rc = FP.main(["--leads", str(lp), "--date", "2026-10-12", "--round", "1", "--out-root", str(self.out),
+                              "--private-root", str(self.priv)], fetcher=f)
+            self.assertEqual(rc, 1, exc)
+            self.assertIn("source health not updated", err.getvalue())
