@@ -206,9 +206,9 @@
 依据站点 PR #79 路线图 v1.12 第六节“产业分段分支”、15.2、15.3、15.5（审查与治理）。本节改动的合入等 PR #79 合并。
 
 - **小节白名单**：标题“产业与经济数据 / Industry and economic data”与固定栏目名同等对待（不算自由文字）。
-- **E-FRED-NOT-ARCHIVED**：正文引用的 FRED 代码（`fred.stlouisfed.org/series/<代码>`、`graph/?id=<代码>` 链接，或“FRED <代码>”写法）必须在某个不晚于稿件日期的 `raw/<日期>/MANIFEST.sha256` 里登记了 `fred/<代码>.json`（或 `round2/fred/<代码>.json`），文件逐字节一致、不是符号链接，且是该序列的存档。
-- **E-CANDIDATE-DATA-CITED**：正文引用 15.3 所列新数据机构的网址（主机名相同或为其子域），或 arxiv / fred / x / fulltext 以外的 `raw/` 存档，即判失败；候选数据转常规之前只作线索。
-- **E-INTERNAL-LABEL**：内部分类标签的通用写法与“若……此归类不成立”句式（中英，含跨行）。具体标签词属于内部用语，不写进本仓库，由 E-INTERNAL-TERM 按本机清单检查。
-- **E-INTERNAL-TERM**：清单只在仓库外的本机文件（每行一词），用 `scripts/selfcheck.py --private-terms <路径>` 或环境变量 `MARKJIN_PRIVATE_TERMS` 指定。没给或文件不存在 → 跳过并在结果（`internal_term_check: "skipped"`）与 CLI 输出里写明；清单在任何 git 仓库内（含被检查的仓库）、不是普通文件、读不出、不是 UTF-8 或为空 → `E-INTERNAL-TERM-LIST`（fail-closed）。命中只记错误码与计数（`internal_term_hits`，错误行号记 0），不回显词与位置。NFKC 会改变字形的词只按原字形匹配，避免被折叠成普通数字或字母误中。测试只用中性占位词。
-- **E-BRANCH-METHOD-MISSING / E-BRANCH-AGGREGATE**：`industry.check_branch(row)` 在登记产业分段分支前核对：observed_variable 与 unit 须写全目标观测期、公式、基期、单位、季调口径、舍入位数；endpoint_method、input_version（含 YYYY-MM-DD）与 raw_sha256 必须齐全；观测变量或数据来源为全国总量序列（INDPRO、TCU、PPIACO、Y033RC1Q027SBEA、A053RC1Q027SBEA）即拒绝。分支台账（PR #20）合并后由登记流程调用；本 PR 不改台账 schema。
-- **R-INDUSTRY-STRAINED**：Codex 判产业链接牵强，只计数。日报审查提示词要求 Codex 输出一行 `R-INDUSTRY-STRAINED: <计数>`，`industry.strained_count()` 读出后写公开台账；自检本身不产生这个码。
+- **E-FRED-NOT-ARCHIVED**：正文引用的 FRED 代码（`fred.stlouisfed.org/series/<代码>` 链接、`graph/?id=<代码>[,<代码>…]` 链接里的全部代码，或“FRED <代码>”写法；代码须含字母，年份、季度写法不算）必须在某个不晚于稿件日期的 `raw/<日期>/MANIFEST.sha256` 里登记了 `fred/<代码>.json`（或 `round2/fred/<代码>.json`），文件逐字节一致、不是符号链接，且是该序列的存档。
+- **E-CANDIDATE-DATA-CITED**：正文引用 15.3 所列新数据机构（及第十节第 2 阶段候选 World Bank）的网址（主机名相同或为其子域）、arxiv / fred / x / fulltext 以外的 `raw/` 存档，或用文字引用这些机构（或公司月度营收）的数据（机构名与“据/数据/显示/according to/figures…”等引用语境同现；只出现机构名不算），即判失败；候选数据转常规之前只作线索。逐字核对通过的原文直引，引文本身不做文字类检查（链接与 raw 路径照查）。
+- **E-INTERNAL-LABEL**：“内部分类标签”这类写法与“若……此归类不成立”句式（中英，含跨行；逐字核对通过的原文直引除外）。具体标签词属于内部用语，不写进本仓库，由 E-INTERNAL-TERM 按本机清单检查。
+- **E-INTERNAL-TERM**：清单只在仓库外的本机文件（每行一词），用 `scripts/selfcheck.py --private-terms <路径>` 或环境变量 `MARKJIN_PRIVATE_TERMS` 指定。没给或文件不存在 → 跳过并在结果（`internal_term_check: "skipped"`）与 CLI 输出里写明；清单在任何 git 仓库内（含被检查的仓库）、不是普通文件、读不出、不是 UTF-8 或为空 → `E-INTERNAL-TERM-LIST`（fail-closed）。命中只记错误码与计数（`internal_term_hits`，错误行号记 0），不回显词与位置。NFKC 会改变字形的词只按原字形（不改大小写）匹配，避免被折叠成普通数字或字母误中。测试只用中性占位词。
+- **E-BRANCH-METHOD-MISSING / E-BRANCH-AGGREGATE**：`industry.check_branch(row)` 在登记产业分段分支前核对：observed_variable 与 unit 须写全目标观测期、写出来的公式（括号内含运算符与操作数）、基期（同比/环比等相对口径或写明基期年份）、单位、季调口径、舍入位数；data_source 须为“FRED <代码>”且观测变量写明同一代码；endpoint_method 须写出含等号与数字的计算式；input_version 须含版本词（realtime_start/vintage/版本/发布）与 YYYY-MM-DD；raw_sha256 为 64 位十六进制（可多个）；观测变量或数据来源为全国总量序列（INDPRO、TCU、PPIACO、Y033RC1Q027SBEA、A053RC1Q027SBEA）即拒绝。分支台账（PR #20）合并后由登记流程调用；本 PR 不改台账 schema。
+- **R-INDUSTRY-STRAINED**：Codex 判产业链接牵强，只计数。日报审查提示词要求 Codex 输出一行 `R-INDUSTRY-STRAINED: <计数>`，`industry.record_strained(repo, date, result_text)` 读出唯一计数后经 `ledger.append` 写公开台账（读不出就不写，交人工核对）；自检本身不产生这个码。提示词改动在本机审查模板（不在本仓库）。

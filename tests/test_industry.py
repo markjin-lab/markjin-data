@@ -66,7 +66,14 @@ class FredArchive(unittest.TestCase):
             self.assertIn("E-FRED-NOT-ARCHIVED", codes(r), ln)
 
     def test_non_code_words_ignored(self):
-        self.assertEqual(industry.fred_codes("通过 FRED API 取数，FRED series 页面"), [])
+        self.assertEqual(industry.fred_codes("通过 FRED API 取数，FRED series 页面，FRED 2026 年度更新，FRED Q3"), [])
+        self.assertNotIn("E-FRED-NOT-ARCHIVED", codes(run(TITLE + quote_line() + "\nFRED 2026 年度更新。")))
+
+    def test_graph_link_all_ids(self):
+        self.assertEqual(industry.fred_codes("https://fred.stlouisfed.org/graph/?g=1&id=UNRATE,SAMPLEX1&id=samplex2"),
+                         ["UNRATE", "SAMPLEX1", "SAMPLEX2"])
+        r = run(TITLE + quote_line() + "\n见 https://fred.stlouisfed.org/graph/?id=UNRATE,SAMPLEX1 。")
+        self.assertIn("E-FRED-NOT-ARCHIVED", codes(r))
 
     def test_bad_sha_future_date_other_series(self):
         body = '{"series_id": "SAMPLEX1", "observations": []}'
@@ -100,6 +107,30 @@ class Candidate(unittest.TestCase):
             self.assertIn("E-CANDIDATE-DATA-CITED", codes(r), ln)
             self.assertEqual(r["status"], "FAIL", ln)
 
+    def test_text_citation(self):
+        for ln in ("据 EIA 数据，样例库存上升。", "国家统计局数据显示样例产量增加。", "According to BEA figures, the sample rose.",
+                   "样例公司月度营收公布的数字为 10。"):
+            self.assertIn("E-CANDIDATE-DATA-CITED", codes(run(TITLE + quote_line() + "\n" + ln)), ln)
+        for ln in ("SEC 起诉了一家样例公司。", "财政部宣布一项样例政策。", "The BEAM model is fast."):
+            self.assertFalse(industry.candidate_cited(ln), ln)
+
+    def test_verified_quote_exempt_from_text_checks(self):
+        aid = "2610.00009"
+        body = (f"<feed><entry><id>http://arxiv.org/abs/{aid}v1</id><summary>We train on EIA data for the sample grid. "
+                "If the sample condition fails, this classification does not hold.</summary></entry></feed>")
+        files = dict(FILES)
+        files["arxiv/cs.LG.xml"] = body
+        repo = make_repo(files)
+        url = f"https://arxiv.org/abs/{aid}v1"
+        for q in ("We train on EIA data for the sample grid.", "If the sample condition fails, this classification does not hold."):
+            r = run(TITLE + quote_line(q, raw="arxiv/cs.LG.xml", url=url), repo=repo)
+            self.assertNotIn("E-CANDIDATE-DATA-CITED", codes(r), q)
+            self.assertNotIn("E-INTERNAL-LABEL", codes(r), q)
+        # 同样的话不作逐字直引（转述）照拦
+        r = run(TITLE + quote_line() + "\n作者用 EIA 数据训练。\n若样例条件不满足，此归类不成立。", repo=repo)
+        self.assertIn("E-CANDIDATE-DATA-CITED", codes(r))
+        self.assertIn("E-INTERNAL-LABEL", codes(r))
+
     def test_regular_sources_not_flagged(self):
         for ln in ("https://notbea.gov/a", "https://example.org/eia.gov", f"`raw/{DATE}/fulltext/a.md`"):
             self.assertFalse(industry.candidate_cited(ln), ln)
@@ -116,7 +147,10 @@ class Label(unittest.TestCase):
         self.assertIn("E-INTERNAL-LABEL", codes(r))
 
     def test_neutral_text(self):
-        self.assertFalse(industry.internal_label("若样例条件满足，结果成立。该分类方法见论文第 3 节。"))
+        for t in ("若样例条件满足，结果成立。该分类方法见论文第 3 节。", "模型的内部分类器效果更好。",
+                  "The internal classification layers are frozen."):
+            self.assertFalse(industry.internal_label(t), t)
+        self.assertTrue(industry.internal_label("样例条目的内部分类标签"))
 
 
 class InternalTerm(unittest.TestCase):
@@ -153,6 +187,7 @@ class InternalTerm(unittest.TestCase):
         p = str(term_file(NEUTRAL))
         self.assertEqual(run(TITLE + quote_line() + "\n版本 XII 发布。", private_terms=p)["internal_term_hits"], 0)
         self.assertEqual(run(TITLE + quote_line() + "\n版本 Ⅻ 发布。", private_terms=p)["internal_term_hits"], 1)
+        self.assertEqual(run(TITLE + quote_line() + "\n版本 ⅻ 发布。", private_terms=p)["internal_term_hits"], 0)
 
     def test_list_in_git_repo_or_checked_repo_rejected(self):
         g = Path(tempfile.mkdtemp())
@@ -189,7 +224,8 @@ class InternalTerm(unittest.TestCase):
 
 def branch(**kw):
     row = {"observed_variable": "IPG2211S 2026 年 10 月读数的同比（%，(本期/上年同期−1)×100，保留两位小数，季调序列）",
-           "unit": "%", "data_source": "FRED IPG2211S", "endpoint_method": "近 12 期同比的样例分位数，保留两位小数",
+           "unit": "%", "data_source": "FRED IPG2211S",
+           "endpoint_method": "a = 近 12 期同比的 25% 分位数，b = 75% 分位数，保留两位小数",
            "input_version": "realtime_start 2026-10-17", "raw_sha256": [SHA]}
     row.update(kw)
     return row
@@ -205,7 +241,11 @@ class Branch(unittest.TestCase):
                dict(observed_variable="IPG2211S 2026 年 10 月读数（%，保留两位小数，季调序列）"),                  # 无公式、基期
                dict(observed_variable="IPG2211S 2026 年 10 月读数的同比（%，(本期/上年同期−1)×100，季调序列）"),  # 无舍入
                dict(observed_variable="IPG2211S 2026 年 10 月读数的同比（%，(本期/上年同期−1)×100，保留两位小数）"),  # 无季调口径
-               dict(unit=""), dict(endpoint_method=""), dict(endpoint_method=None), dict(input_version="最新"),
+               dict(observed_variable="IPG2211S 2026 年 10 月读数（公式，基期，季调，保留两位小数）"),          # 只有关键词
+               dict(data_source="FRED SAMPLEX1"), dict(data_source="样例机构"),                                  # 来源与观测变量不符
+               dict(unit=""), dict(endpoint_method=""), dict(endpoint_method=None),
+               dict(endpoint_method="按样例分位数方法计算端点"),                                                 # 没写计算式
+               dict(input_version="最新"), dict(input_version="2026-10-17"),
                dict(raw_sha256=[]), dict(raw_sha256=["xyz"]), dict(raw_sha256=None)]
         for kw in bad:
             self.assertIn("E-BRANCH-METHOD-MISSING", industry.check_branch(branch(**kw)), kw)
@@ -216,6 +256,7 @@ class Branch(unittest.TestCase):
                    dict(observed_variable="TCU 2026 年 10 月读数的环比（%，(本期/上期−1)×100，保留两位小数，季调序列）")):
             self.assertIn("E-BRANCH-AGGREGATE", industry.check_branch(branch(**kw)), kw)
         self.assertNotIn("E-BRANCH-AGGREGATE", industry.check_branch(branch(data_source="FRED TCUX")))
+        self.assertNotIn("E-BRANCH-AGGREGATE", industry.check_branch(branch()))
 
 
 class Strained(unittest.TestCase):
@@ -224,6 +265,14 @@ class Strained(unittest.TestCase):
         self.assertIsNone(industry.strained_count("VERDICT zh: APPROVED\n"))
         self.assertIsNone(industry.strained_count("R-INDUSTRY-STRAINED: 1\nR-INDUSTRY-STRAINED: 3"))
         self.assertIsNone(industry.strained_count(None))
+
+    def test_record_to_ledger(self):
+        repo = make_repo()
+        (repo / "review" / "ledger").mkdir(parents=True)
+        self.assertIsNone(industry.record_strained(repo, DATE, "VERDICT zh: APPROVED\n"))
+        p = industry.record_strained(repo, DATE, "VERDICT zh: APPROVED\nR-INDUSTRY-STRAINED: 3\n")
+        self.assertEqual([json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()],
+                         [{"count": 3, "date": DATE, "error_code": "R-INDUSTRY-STRAINED"}])
 
 
 if __name__ == "__main__":

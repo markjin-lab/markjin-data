@@ -644,6 +644,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
 
     mlines = []
     mquote = []
+    verified_quotes = {}
     for i, s in enumerate(lines, 1):
         if not s:
             continue
@@ -733,6 +734,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                 flags["quote_unverified"] = True; counts["other"] += 1
             else:
                 counts["quotes"] += 1; counts["replayable"] += 1
+                verified_quotes[i] = q                  # v1.12：逐字核对通过的直引，引文不做文字类产业检查
                 for k in quote_struct_risk(q):      # r9 结构性收紧：只移出低风险（R-*），不硬拦
                     flags[k] = True
             continue
@@ -833,7 +835,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     if not flags["religion"] and has_any(doc_compact, LEX["religion"]):
         flags["religion"] = True
     # —— 路线图 v1.12（产业与经济数据）：候选来源、内部分类标签、FRED 存档、仓库外内部用语清单
-    _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms)
+    _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms, verified_quotes)
     # 双语规则（t141u，经 Grok Bot 转达）：出现“译文：”行即 R-TRANSLATION，不算低风险
     if any(TRANSLATION_RE.search(norm(ln)) for ln in text.splitlines()):
         flags["translation"] = True
@@ -1396,16 +1398,20 @@ def _fred_archived(ctx, code):
     return False
 
 
-def _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms):
+def _industry_checks(ctx, raw_lines, lines, repo, err, errors, meta, private_terms, verified_quotes):
     """路线图 v1.12 15.5 审查与治理的自检项（industry.py）。E-INTERNAL-TERM 只记错误码与计数（行号 0），不回显词与位置。"""
+    prose = []                                         # 文字类检查用的行：逐字核对通过的原文直引去掉引文本身
     for i, s in enumerate(lines, 1):
+        q = verified_quotes.get(i)
+        t = s.replace(q, " ", 1) if q else s          # 论文原文里的机构名、句式不是本站的引用或内部标签
+        prose.append(t)
         if not s:
             continue
-        if industry.candidate_cited(raw_lines[i - 1]) or industry.candidate_cited(s):
+        if industry.candidate_link(raw_lines[i - 1]) or industry.candidate_link(s) or industry.candidate_text(t):
             err("E-CANDIDATE-DATA-CITED", i)
-        if industry.internal_label(s):
+        if industry.internal_label(t):
             err("E-INTERNAL-LABEL", i)
-    if not any(e["code"] == "E-INTERNAL-LABEL" for e in errors) and industry.internal_label(" ".join(lines)):
+    if not any(e["code"] == "E-INTERNAL-LABEL" for e in errors) and industry.internal_label(" ".join(prose)):
         err("E-INTERNAL-LABEL", 0)                     # 跨行拼接后才出现的句式
     archived = {}
     for i, s in enumerate(lines, 1):
