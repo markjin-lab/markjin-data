@@ -1546,7 +1546,7 @@ class R15Primary(Primary):
                                      {"id": "2", "expanded_url": "https://pub.org/b"}],
                                     {"https://pub.org/a": Resp(200, self.LOGIN, self.HTML),
                                      "https://pub.org/b": Resp(200, b"<html><title>ok</title></html>", self.HTML)}, state=st)
-        self.assertEqual([x["fetch_status"] for x in items], ["login_wall", "host_stopped_this_round"])
+        self.assertEqual([x["fetch_status"] for x in items], ["login_wall", "source_blocked"])   # 登录墙按停源处理（先于主机停止判定）
         self.assertNotIn("https://pub.org/b", [u for u, _ in f.opener.calls])
         self.assertEqual(idx[0]["stored"], None)                                    # 登录页不当文章存成功
         self.assertTrue(collect.SourceHealth(self.base / "st.json").data["sources"]["primary:pub.org"]["rounds"][
@@ -1602,6 +1602,38 @@ class R15Primary(Primary):
         for body in (self.PROMPT, self.MAGIC):
             with self.assertRaisesRegex(scrapers.ScrapeError, "login wall"):
                 scrapers.check_body(200, body, None, "text/html")
+
+    # ---- #60 r15 HIGH（审查原文：200 状态、不跳转的登录页（Sign in 标题加密码表单）被记为抓取成功，同主机继续请求）
+    SIGNIN_200 = (b'<!doctype html><html><head><title>Sign in</title></head><body><form method="post" action="/session">'
+                  b'<input type="email" name="email"><input type="password" name="password"><button>Sign in</button>'
+                  b'</form></body></html>')
+    CONTENT_200 = (b'<!doctype html><html><head><title>Press release: quarterly results</title></head><body>'
+                   b'<header><a href="/login">Sign in</a><form action="/search"><input name="q"></form></header><article><p>'
+                   + b"Revenue increased in the quarter. " * 40 + b'</p></article></body></html>')
+
+    def test_r15_60_high_fetch_primary_200_login_page_not_success_and_source_stopped(self):
+        st = collect.SourceHealth(self.base / "st.json")
+        items, idx, f = self.run_fp([{"id": "1", "expanded_url": "https://pub.org/a"},
+                                     {"id": "2", "expanded_url": "https://pub.org/b"}],
+                                    {"https://pub.org/a": Resp(200, self.SIGNIN_200, self.HTML),
+                                     "https://pub.org/b": Resp(200, self.CONTENT_200, self.HTML)}, state=st)
+        self.assertEqual([x["fetch_status"] for x in items], ["login_wall", "source_blocked"])   # 不算成功；停源
+        self.assertEqual(idx[0]["stored"], None)
+        self.assertNotIn("https://pub.org/b", [u for u, _ in f.opener.calls])                    # 同主机不再请求
+        import scrapers
+        with self.assertRaisesRegex(scrapers.ScrapeError, "login wall"):
+            scrapers.check_body(200, self.SIGNIN_200, None, "text/html")
+
+    def test_r15_60_high_fetch_primary_ordinary_content_page_ok(self):
+        st = collect.SourceHealth(self.base / "st.json")
+        items, idx, f = self.run_fp([{"id": "1", "expanded_url": "https://pub.org/a"},
+                                     {"id": "2", "expanded_url": "https://pub.org/b"}],
+                                    {"https://pub.org/a": Resp(200, self.CONTENT_200, self.HTML),
+                                     "https://pub.org/b": Resp(200, self.CONTENT_200, self.HTML)}, state=st)
+        self.assertEqual([x["fetch_status"] for x in items], ["fetched", "fetched"])
+        self.assertFalse(collect.SourceHealth(self.base / "st.json").data["host_stops"].get("2026-10-12/r1"))
+        import scrapers
+        self.assertEqual(scrapers.check_body(200, self.CONTENT_200, None, "text/html"), self.CONTENT_200)
 
     # ---- MEDIUM：健康状态更新失败 → 返回非 0
     def test_r15_fetch_primary_health_update_failure_nonzero(self):
