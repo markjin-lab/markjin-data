@@ -387,8 +387,8 @@ class _Ctx:
                     bad = True; break
                 name = mm.group(2)
                 pp = PurePosixPath(name)
-                if pp.is_absolute() or ".." in pp.parts or name != name.strip() or name in entries:
-                    bad = True; break
+                if pp.is_absolute() or ".." in pp.parts or name != name.strip() or (name in entries and name != "RETRACTIONS.md"):
+                    bad = True; break      # RETRACTIONS.md 按 raw/README.md 规则可重复登记，以最后一条为准
                 entries[name] = mm.group(1)
             res = (None, "E-MANIFEST-PARSE") if bad or not entries else (entries, None)
         self.manifests[day_dir] = res

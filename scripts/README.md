@@ -54,7 +54,7 @@
 | 来源 URL 类型未知（段落中另允许本组织 GitHub 链接） | `E-REPLAY-005` → FAIL |
 | raw 与 URL 不成对、不在目标日期目录、类型与 URL 不一致、路径越界 | `E-REPLAY-006` → FAIL |
 | raw 缺失 / 哈希不符 / 标识不在存档 / 读取或解码失败 | `E-REPLAY-002`/`003`/`004`/`E-REPLAY-READ` → FAIL |
-| MANIFEST 非法行、重复路径、越界路径、为空 | `E-MANIFEST-PARSE` → FAIL |
+| MANIFEST 非法行、重复路径（`RETRACTIONS.md` 按 raw/README.md 规则重登记除外，以最后一条为准）、越界路径、为空 | `E-MANIFEST-PARSE` → FAIL |
 | counts 注释多于一个、未知键、重复键、非法值、非整行 | `E-COUNT-002` → FAIL |
 | 断言中的数字不能全部在 raw 中找到 | `R-SUPPORT-UNVERIFIED`，非低风险 |
 | 日报中的断言（原文直引、结构化断言、带来源的行）只有 X 来源支撑 | `E-X-ONLY` 硬拦（r6 协调方定：X 只作线索）；有其他可回放来源同时支撑则不拦 |

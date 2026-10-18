@@ -184,7 +184,7 @@ _MANIFEST_LINE = re.compile(r"^([0-9a-f]{64})  (?:\./)?([^\s].*)$")   # 与 self
 
 def _manifest_lines(text):
     """整体验收 r6 MEDIUM：与 selfcheck._Ctx.manifest() 同一口径严格解析。任一非空行格式不对、路径为绝对路径或含 ..、
-    路径首尾有空白、同一路径重复，或没有任何条目 → 整份 MANIFEST 无效，返回空集合（其中的二进制一律不算登记）。"""
+    路径首尾有空白、同一路径重复（RETRACTIONS.md 除外，以最后一条为准），或没有任何条目 → 整份 MANIFEST 无效，返回空集合（其中的二进制一律不算登记）。"""
     out, names = set(), set()
     for ln in text.splitlines():
         if not ln.strip():
@@ -194,8 +194,12 @@ def _manifest_lines(text):
             return set()
         name = m.group(2)
         pp = PurePosixPath(name)
-        if pp.is_absolute() or ".." in pp.parts or name != name.strip() or name in names:
+        if pp.is_absolute() or ".." in pp.parts or name != name.strip():
             return set()
+        if name in names:
+            if name != "RETRACTIONS.md":      # raw/README.md：RETRACTIONS.md 每次追加后在 MANIFEST 末尾重登记，只认最后一条
+                return set()
+            out = {x for x in out if x[1] != name}
         names.add(name); out.add((m.group(1), name))
     return out
 
