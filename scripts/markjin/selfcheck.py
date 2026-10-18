@@ -994,6 +994,22 @@ def _pair_words(s):
         {"@" + w for w in _OBJ_RE.findall(s) if w.lower() not in _PAIR_STOP}
 
 
+def _pair_canon(ws):
+    """r8（审查 HIGH）：配对词去掉复数与第三人称单数屈折（improves → improve、processes → process、
+    studies → study），对象词（@ 开头）不动。只用于无代号分句配对，避免屈折差异被当作区分词。"""
+    out = set()
+    for w in ws:
+        if not w.startswith("@"):
+            if w.endswith("ies") and len(w) > 5:
+                w = w[:-3] + "y"
+            elif w.endswith(("ches", "shes", "sses", "xes", "zes")):
+                w = w[:-2]
+            elif w.endswith("s") and not w.endswith(("ss", "us", "is")) and len(w) > 4:
+                w = w[:-1]
+        out.add(w)
+    return out
+
+
 def _neg_state(seg):
     """(否定奇偶, 是否带审慎说法)。"""
     m, h = _neg_main(seg)
@@ -1001,7 +1017,7 @@ def _neg_state(seg):
 
 
 def _neg_parity_ok(claim, loc, kind=None):
-    """#32 r4–r7：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
+    """#32 r4–r8：按具体说法核对否定，不整行判断。返回 (是否成立, 提示集合)。
     1. without / 无需 只否定后面的动作：先挖出这类短语（numnorm.strip_scoped）。断言里有、原文里没有 → 错配；
        原文有、断言没写同样的短语 → 提示 support_scope（R-SUPPORT-SCOPE，人工必查：断言是否写成了相反前提，
        如原文 without fine-tuning、断言“经过微调”）。
@@ -1012,7 +1028,9 @@ def _neg_parity_ok(claim, loc, kind=None):
        （不含否定词、审慎说法）重合度找最高分候选；最高分候选的否定/审慎状态都相同才可比，否则判错配；
        剩余分句状态不一时，只重合 1 个词不算配上；r7（审查 HIGH）：剩余分句状态不一时，先看断言分句命中了哪些原文分句
        的区分词（只出现在该分句、不出现在其他剩余分句的配对词）：命中的分句状态不一 → 错配；只命中状态一致的分句 →
-       只在这些分句里配对。
+       只在这些分句里配对。r8（审查 HIGH）：配对词先去掉复数/三单屈折（improves → improve），屈折差异不算区分词；
+       剩余分句状态不一时，断言分句有原文剩余分句里没有的配对词（异名对象，如 substitute 对 replacement）、
+       断言带中文而剩余原文没有中文、或一个区分词都没命中 → 分不清对象，判错配。
     3. 比较挖掉短语后主干的否定词个数奇偶（双重否定抵消；no longer、难以、从未、hardly、yet to 等计为否定）。
        审慎/待定说法（有待修订、尚未经同行评审、yet to be peer reviewed…）不计否定，出现就提示 support_hedge
        （R-SUPPORT-HEDGE）；但配对的原文窗口带审慎说法而整条断言没有，或断言分句带审慎说法而整个片段没有 → 错配；“难以置信”“无与伦比”“从未如此”“never before”等固定说法不算否定（r5，审查 r4 MEDIUM）。"""
@@ -1057,20 +1075,26 @@ def _neg_parity_ok(claim, loc, kind=None):
     if rest_claim:
         lrest = [c for c in (numnorm.clauses(rest_loc) or []) if re.search(r"[A-Za-z0-9\u4e00-\u9fff]", c)]
         states = {_neg_state(c) for c in lrest} or {(0, False)}
-        lw = [_pair_words(c) for c in lrest]
-        # r7：各剩余原文分句的区分词（只出现在该分句里的配对词）
+        lw = [_pair_canon(_pair_words(c)) for c in lrest]
+        all_lw = set().union(*lw)
+        # r7：各剩余原文分句的区分词（只出现在该分句里的配对词）；r8：先去掉屈折，improve/improves 不算区分
         dist = [w - set().union(*(lw[:i] + lw[i + 1:])) for i, w in enumerate(lw)]
         for cc in rest_claim:
-            cw = _pair_words(cc)
+            cw = _pair_canon(_pair_words(cc))
             pool = lrest
             hit = [i for i, d in enumerate(dist) if cw & d]
-            if len(states) > 1 and hit:
+            if len(states) > 1:
+                # r8（审查 HIGH）：剩余分句状态不一时，断言里有原文剩余分句没有的配对词（异名对象）、断言带中文而剩余原文
+                # 没有中文、或没命中任何区分词 → 分不清断言说的是哪个对象，判错配，不让共享谓语词把断言拉向带否定的分句
+                unmatched = {w for w in cw if w not in all_lw and not (w.startswith("@") and w[1:].lower() in all_lw)}
+                if unmatched or _CJK_RE.search(cc) and not _CJK_RE.search(rest_loc) or not hit:
+                    return False, hints
                 # r7（审查 HIGH）：断言同时命中两个对象分句的区分词（如 baseline 与 new method 分句里的 long documents）
-                # 且二者否定/审慎状态不一 → 分不清对象；否则只在命中的分句里配对，不让共享的谓语词把断言拉向另一对象
+                # 且二者否定/审慎状态不一 → 分不清对象；否则只在命中的分句里配对
                 if len({_neg_state(lrest[i]) for i in hit}) > 1:
                     return False, hints
                 pool = [lrest[i] for i in hit]
-            scored = sorted(((len(cw & _pair_words(lc)), lc) for lc in pool), key=lambda t: -t[0])
+            scored = sorted(((len(cw & _pair_canon(_pair_words(lc))), lc) for lc in pool), key=lambda t: -t[0])
             cstate = _neg_state(cc)
             top = [lc for n, lc in scored if scored[0][0] > 0 and n == scored[0][0]]
             if top and (scored[0][0] < 2 and len(states) > 1 or len({_neg_state(lc) for lc in top}) != 1):
