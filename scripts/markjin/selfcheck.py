@@ -58,13 +58,16 @@ URL_KINDS = {
     "fred": re.compile(r"^https://fred\.stlouisfed\.org/series/([A-Z0-9]{2,30})$"),
 }
 # —— 路线图 v1.12（FRED 撤回，王总 2026-10-18 18:13 SGT 决定；data PR #87）：不得新增 FRED 链接或数据（E-FRED-CITED）
-# 链接与 raw/ 下 fred/ 目录里的文件：稿件日期或 front matter corrected_at 不早于 FRED_LINK_CUTOFF 即拦（含更正稿新加的内容）；
-# 文字提到 FRED（FRED、ALFRED、FRED-MD 等写法，或 Federal Reserve Economic Data、圣路易斯联储经济数据）：稿件日期不早于 FRED_WORD_CUTOFF 即拦，
-# 逐字核对的原文直引行除外（引的是论文原文，不是本项目取数）。10-18 及以前的稿件文字已发布，不回溯。
-FRED_LINK_CUTOFF = "2026-10-18"
-FRED_WORD_CUTOFF = "2026-10-19"
+# 稿件日期不早于 FRED_CUTOFF，或是更正稿（front matter 有 corrects / corrected_at，不看 corrected_at 填的日期），
+# 或 front matter 解析不出，即检查：FRED 链接、raw/ 下 fred/ 目录里的文件、文字提到 FRED（全大写 FRED、ALFRED、FRED-MD 等，
+# 或 Federal Reserve Economic Data、圣路易斯联储经济数据）。逐行查，并对整篇拼接后的文字再查一遍（防跨行）；
+# 匹配前去掉默认不可见字符（变体选择符等）。原文直引行不豁免。
+FRED_CUTOFF = "2026-10-18"
 FRED_LINK_RE = re.compile(r"(?:(?:al)?fred|api)\.stlouisfed\.org|stlouisfed\.org/fred|raw/[^\s`]*/fred/[^\s`/]", re.I)
 FRED_WORD_CASE_RE = re.compile(r"(?<![A-Za-z0-9_])(?:AL)?FRED(?![A-Za-z0-9_])")   # 英文简称只认全大写（Fred 等人名不算）
+FRED_NAME_RE = re.compile(r"federal\s*reserve\s*economic\s*data|圣\s*路\s*易\s*斯\s*联\s*(?:邦\s*)?储\s*(?:备\s*)?经\s*济\s*数\s*据", re.I)
+# 默认不可见字符（Unicode Default_Ignorable_Code_Point 中 norm() 未去掉的部分：组合用字形连接符、韩文填充符、蒙古文变体选择符、变体选择符等）
+_IGNORABLE_RE = re.compile("[\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u3164\ufe00-\ufe0f\uffa0\U000e0100-\U000e01ef]")
 
 MANIFEST_LINE = re.compile(r"^([0-9a-f]{64})  (?:\./)?([^\s].*)$")
 
@@ -627,7 +630,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     tongyi_fm = isinstance(fm_parsed, dict) and isinstance(fm_parsed.get("type"), str) \
         and fm_parsed["type"].strip().lower() == TONGYI_TYPE
     tongyi_path = is_tongyi_path(rel)
-    _check_fred(lines, date, fm_end, fm_parsed, err)
+    _check_fred(lines, date, fm_end, fm_parsed, err, text)
     long_form = False
     if tongyi_fm or tongyi_path:
         if tongyi_fm and tongyi_path:
@@ -966,32 +969,30 @@ def _fm_value(s, fm_parsed=None, raw=None):
     return v
 
 
-def _fred_word(s):
-    """文字提到 FRED：全大写简称（含 ALFRED、FRED-MD 等），或英文全称、中文名（不分大小写）。"""
-    if FRED_WORD_CASE_RE.search(s):
-        return True
-    return bool(re.search(r"federal\s*reserve\s*economic\s*data|圣路易斯联储经济数据|圣路易斯联邦储备经济数据", s, re.I))
+def _fred_hit(s):
+    """一段文字里是否有 FRED 链接、raw/…/fred/ 文件或文字提到 FRED（先去掉默认不可见字符）。"""
+    s = _IGNORABLE_RE.sub("", s)
+    return bool(FRED_LINK_RE.search(s) or FRED_WORD_CASE_RE.search(s) or FRED_NAME_RE.search(s))
 
 
-def _check_fred(lines, date, fm_end, fm_parsed, err):
+def _check_fred(lines, date, fm_end, fm_parsed, err, text=""):
     """路线图 v1.12（FRED 撤回）：不得新增 FRED 链接或数据 → E-FRED-CITED（硬拦）。lines 为规范化后的行（含 front matter）。
-    更正稿：front matter 有 corrected_at 时按其日期判断链接；front matter 存在但解析不出时从严按已过截止日处理。"""
-    corrected = None
+    更正稿（front matter 有 corrects / corrected_at 键，或原文出现这两个键行）不论稿件日期与 corrected_at 填什么都检查；
+    front matter 存在但解析不出时从严检查。"""
+    correction = bool(re.search(r"(?m)^\s*(?:corrects|corrected_at)\s*:", text or ""))
     if fm_end:
         if isinstance(fm_parsed, dict):
-            v = _iso(fm_parsed.get("corrected_at"))
-            corrected = v[:10] if isinstance(v, str) else None
+            correction = correction or "corrects" in fm_parsed or "corrected_at" in fm_parsed
         else:
-            corrected = FRED_LINK_CUTOFF        # 解析不出 front matter：从严
-    link_ban = date >= FRED_LINK_CUTOFF or (corrected is not None and corrected >= FRED_LINK_CUTOFF)
-    word_ban = date >= FRED_WORD_CUTOFF
-    if not (link_ban or word_ban):
+            correction = True                   # 解析不出 front matter：从严
+    if not (date >= FRED_CUTOFF or correction):
         return
+    hit = False
     for i, s in enumerate(lines, 1):
-        if link_ban and FRED_LINK_RE.search(s):
-            err("E-FRED-CITED", i)
-        elif word_ban and not QUOTE_LINE_RE.match(s) and _fred_word(s):
-            err("E-FRED-CITED", i)
+        if _fred_hit(s):
+            err("E-FRED-CITED", i); hit = True
+    if not hit and _fred_hit(" ".join(lines)):
+        err("E-FRED-CITED", 0)                  # 跨行写法（如 YAML 折叠值）
 
 
 def _check_free_text_sources(ctx, s, i, err, counts, flags, card_type):

@@ -87,10 +87,15 @@ class FredCited(unittest.TestCase):
         self.assertEqual(r["status"], "PASS", r["error_codes"])
 
     def test_correction_of_old_draft(self):
-        for corr in ("2026-10-18", "'2026-10-19'", "2026-10-20T08:00:00+08:00"):
+        # 更正稿不论 corrected_at 填什么（含截止日以前的日期）都检查；文字与链接都拦
+        for corr in ("2026-10-18", "'2026-10-19'", "2026-10-17", "2026-01-05"):
             fm = f"---\ntitle: x\ncorrects: daily-2026-01-05\ncorrected_at: {corr}\n---\n"
             self.fail(run(fm + f"# 日报 {DATE}\n" + fred_line(), DATE, OLD_REPO))
-        fm = "---\ntitle: x\ncorrects: daily-2026-01-05\ncorrected_at: 2026-10-17\n---\n"
+            self.fail(run(fm + f"# 日报 {DATE}\n" + arxiv_line() + "\nFRED data 显示 4.2%。", DATE, OLD_REPO))
+        fm = "---\ntitle: x\ncorrects: daily-2026-01-05\n---\n"
+        self.fail(run(fm + f"# 日报 {DATE}\n" + arxiv_line() + "\nFRED data。", DATE, OLD_REPO))
+        # 非更正的旧稿照旧
+        fm = "---\ntitle: x\n---\n"
         self.absent(run(fm + f"# 日报 {DATE}\n" + fred_line(), DATE, OLD_REPO))
 
     def test_unparseable_front_matter_strict(self):
@@ -98,29 +103,35 @@ class FredCited(unittest.TestCase):
         self.fail(run(fm + f"# 日报 {DATE}\n" + fred_line(), DATE, OLD_REPO))
 
     def test_word_new_draft(self):
-        for s in ("UNRATE 为 4.2%（FRED）。", "据 ALFRED 的版本数据。", "论文用的是 FRED-MD 数据集。",
-                  "Data from Federal Reserve Economic Data.", "数据取自圣路易斯联储经济数据库。",
-                  "UNRATE 为 4.2%（ＦＲＥＤ）。", "UNRATE 为 4.2%（FR\u200bED）。", "<!-- FRED -->"):
-            self.fail(run(f"# 日报 {NEW}\n" + arx(NEW) + "\n" + s, NEW, NEW_REPO))
+        for day, repo in ((NEW, NEW_REPO), (CUT, CUT_REPO)):
+            for s in ("UNRATE 为 4.2%（FRED）。", "据 ALFRED 的版本数据。", "论文用的是 FRED-MD 数据集。",
+                      "Data from Federal Reserve Economic Data.", "数据取自圣路易斯联储经济数据库。",
+                      "UNRATE 为 4.2%（ＦＲＥＤ）。", "UNRATE 为 4.2%（FR\u200bED）。", "UNRATE 为 4.2%（FRE\ufe0fD）。",
+                      "UNRATE 为 4.2%（F\u034fRED）。", "<!-- FRED -->", "| 来源 | FRED |", "## FRED 数据"):
+                self.fail(run(f"# 日报 {day}\n" + arx(day) + "\n" + s, day, repo))
+
+    def test_cross_line(self):
+        fm = "---\ntitle: x\nsummary: >\n  data from Federal Reserve\n  Economic Data\n---\n"
+        self.fail(run(fm + f"# 日报 {NEW}\n" + arx(NEW), NEW, NEW_REPO))
+        self.fail(run(f"# 日报 {NEW}\n" + arx(NEW) + "\n数据取自圣路易斯联储\n经济数据。", NEW, NEW_REPO))
 
     def test_word_not_matched(self):
         for s in ("Fred Smith 发布了新模型。", "FREDDIE 不相干。", "数据取自 Federal Reserve Board。"):
             self.absent(run(f"# 日报 {NEW}\n" + arx(NEW) + "\n" + s, NEW, NEW_REPO))
 
-    def test_word_cutoff_day_not_retroactive(self):
-        # 10-18 稿件的文字已在撤回决定前发布：只拦链接与 raw 路径，不拦文字
-        self.absent(run(f"# 日报 {CUT}\n" + arx(CUT) + "\n- FRED：本期未选用。", CUT, CUT_REPO))
+    def test_old_digest_meta_line_only_on_correction(self):
+        line = "- FRED：本期未选用（raw/2026-10-15/fred/ 五个序列已采集，无需单列）。"
+        self.absent(run(f"# 日报 {DATE}\n" + arxiv_line() + "\n" + line, DATE, OLD_REPO))
+        fm = "---\ntitle: x\ncorrects: daily-2026-01-05\ncorrected_at: 2026-10-19\n---\n"
+        self.fail(run(fm + f"# 日报 {DATE}\n" + arxiv_line() + "\n" + line, DATE, OLD_REPO))
 
-    def test_verbatim_quote_exempt_from_word(self):
+    def test_verbatim_quote_not_exempt(self):
         q = f"> 「We use monthly FRED data for the method.」 — `raw/{NEW}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
-        r = run(f"# 日报 {NEW}\n" + q, NEW, NEW_REPO)
+        self.fail(run(f"# 日报 {NEW}\n" + q, NEW, NEW_REPO))
+        ok = f"> 「The model reaches 90% accuracy on MMLU.」 — `raw/{NEW}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
+        r = run(f"# 日报 {NEW}\n" + ok, NEW, NEW_REPO)
         self.absent(r)
         self.assertEqual(r["status"], "PASS", r["error_codes"])
-        # 直引行里的 FRED 链接照拦
-        bad = "> 「We use monthly FRED data for the method.」 — `raw/2026-10-19/fred/UNRATE.json` · https://fred.stlouisfed.org/series/UNRATE"
-        self.fail(run(f"# 日报 {NEW}\n" + bad, NEW, NEW_REPO))
-        # 不是逐字直引格式的引号行不豁免
-        self.fail(run(f"# 日报 {NEW}\n" + arx(NEW) + "\n> FRED 数据显示 UNRATE 为 4.2%", NEW, NEW_REPO))
 
 
 if __name__ == "__main__":
