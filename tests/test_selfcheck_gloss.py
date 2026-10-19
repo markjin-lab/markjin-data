@@ -1,13 +1,13 @@
-"""selfcheck 括号句豁免（scope-r4）：表 A 单行、表 B 行类别、表 C 不放宽回归、表 E tongyi 路径、表 D 10-19 digest。
+"""selfcheck 括号句豁免（scope-r4，最小版本）：表 A 单行、表 B 行类别、表 C 不放宽回归、表 E tongyi 路径、表 D 10-19 digest。
 每条用例单独成一个测试方法，便于与声明逐条对照。"""
-import collections, types, unittest
+import collections, importlib.util, subprocess, types, unittest
 from pathlib import Path
 from helpers import make_repo, DUMMY_INTERNAL, DATE
 import markjin.selfcheck as _sc
 
-# 括号句代码已并入 selfcheck.py（r3 LOW 2）；这里只起个短名字
-g = types.SimpleNamespace(ZH_RE=_sc.GLOSS_ZH_RE, EN_RE=_sc.GLOSS_EN_RE, AUTHOR_WHITELIST=_sc.GLOSS_AUTHOR_WHITELIST,
-                          find_glosses=_sc.gloss_find, strip_glosses=_sc.gloss_strip, has_label=_sc.gloss_has_label)
+# r3 LOW 2：括号句代码在 selfcheck.py 里（真实模块路径），这里只起短名字
+g = types.SimpleNamespace(ZH_RE=_sc.GLOSS_ZH_RE, EN_RE=_sc.GLOSS_EN_RE, find_glosses=_sc.gloss_find,
+                          strip_glosses=_sc.gloss_strip, has_label=_sc.gloss_has_label)
 
 _sc.load_internal_terms = lambda: list(DUMMY_INTERNAL)
 REPO = make_repo()
@@ -72,30 +72,6 @@ POS = {
     "zh_wanyi": Z("备份一般指为防万一而另存的副本"),
     "zh_yidian_adjacent": Z("有一点一般指数量很少"),          # “一点”后紧接“一般”，不因拼接误拦
     "en_manifold": E("a manifold usually means a smooth surface in a higher space"),
-    # Grok Bot 10:13 + 15:10「作者」整词白名单五词：只在行首、空白、标点或“的/和/与/及”之后放行
-    "zh_author_wl_gongzuozhe": Z("医疗行业的工作者一般指在医疗机构从事诊疗与护理的人员"),
-    "zh_author_wl_chuangzuozhe": Z("平台上的创作者一般指在平台上发布原创内容的人"),
-    "zh_author_wl_hezuozhe": Z("开发者与合作者一般指共同维护开源项目的人"),
-    "zh_author_wl_xiezuozhe": Z("技术文档的写作者一般指专门撰写技术文档的人"),
-    "zh_author_wl_after_space": Z("AI 创作者一般指借助生成工具发布内容的人"),
-    "zh_author_wl_after_punct": Z("编辑、写作者一般指参与成稿的人"),
-    # r3 MEDIUM 1：论文词表的常见误伤
-    "zh_m1_suotigong": Z("接口一般指系统所提供的调用方式"),
-    "zh_m1_yincimoxing": Z("过拟合一般指训练误差小而测试误差大，因此模型泛化差"),
-    "zh_m1_yinggaisheji": Z("接口一般指模块之间应该设计好的调用方式"),
-    "zh_m1_zhengwenzhong": Z("脚注一般指正文中另附的说明"),
-    "zh_m1_tuiwenzhong": Z("话题标签一般指推文中用井号标出的关键词"),
-    "zh_m1_yirenweiben": Z("以人为本设计一般指围绕使用者需求做设计"),
-    "zh_m1_bijiben": Z("笔记本系统一般指便携电脑上的操作环境"),
-    "en_m1_study_of": E("linguistics usually means the study of language"),
-    "en_m1_the_us": E("a federal agency usually means a government body in the US"),
-    "en_m1_work_of": E("curation usually means the work of selecting items"),
-    "en_m1_new_model": E("retraining usually means fitting a new model on fresh data"),
-    # r3 MEDIUM 2：固定术语窄例外
-    "en_m2_one_another": E("calibration usually means making scores comparable with one another"),
-    "en_m2_first_order": E("a first-order method usually means a method that uses only gradients"),
-    "zh_m2_ercihanshu": Z("抛物线一般指二次函数的图像"),
-    "zh_author_wl_xiezuozhe2": Z("协作者一般指在同一项目中分工配合的人"),
 }
 
 # ---------------------------------------------------------------- 表 A-2 反例（应不豁免，标签残留 → E-GLOSS-FORMAT）
@@ -133,28 +109,7 @@ NEG = {
     # 英文数词、序数、罗马数字（大小写）
     "en_zero": (E("it usually means zero errors"), "number-word"),
     "en_one": (E("it usually means one model"), "number-word"),
-    "en_one_another_plus_number": (E("it usually means comparing ten scores with one another"), "number-word"),   # 例外不遮挡同句数值
-    "en_first_order_plus_number": (E("it usually means a first-order method with two steps"), "number-word"),
-    "zh_ercihanshu_plus_number": (Z("一般指含两个变量的二次函数"), "number-word"),
-    # r3 HIGH 1：r3 仍豁免的写法
-    "zh_h1_manfenweishi": (Z("评分一般指满分为十的打分"), "number-word"),
-    "zh_h1_manfenweishifen": (Z("评分一般指满分为十分的打分"), "number-word"),
-    "zh_h1_fenwudang": (Z("评级一般分五档"), "number-word"),
-    "zh_h1_wufenzhi": (Z("评分一般用五分制"), "number-word"),
-    "zh_h1_yigeyue": (Z("观察期一般为一个月"), "number-word"),
-    "zh_h1_banxiaoshi": (Z("训练一般持续半小时"), "number-word"),
-    "zh_h1_fanliangfan": (Z("规模一般翻两番"), "number-word"),
-    "zh_h1_shimeiyuan": (Z("订阅一般收十美元"), "number-word"),
-    "zh_h1_yibai_daxie": (Z("参数一般有壹佰个"), "number-word"),
-    "zh_h1_nian": (Z("训练一般持续廿天"), "number-word"),
-    "zh_h1_suzhou": (Z("参数一般有〤个"), "number-word"),
-    "en_h1_tens_of_times": (E("it usually runs tens of times faster"), "number-word"),
-    "en_h1_tenths": (E("it usually means a few tenths of the data"), "number-word"),
-    "en_h1_per_cent_hyphen": (E("it usually means a per-cent drop"), "number-word"),
-    "pct_arabic": (E("it usually means an error below \u066a"), "percent"),
-    "en_h1_phase_i": (E("it usually means a phase-i trial"), "roman"),
-    "en_h1_cyrillic_one": (E("it usually means \u043ene model"), "number-word"),
-    "en_h1_cyrillic_mixed": (E("it usually means \u043ene model"), "mixed-script"),
+    "en_one_another": (E("calibration usually means making scores comparable with one another"), "number-word"),
     "en_ten": (E("it usually means ten layers"), "number-word"),
     "en_billion_upper": (E("it usually means a Billion parameters"), "number-word"),
     "en_first": (E("it usually ranks first"), "number-word"),
@@ -184,21 +139,6 @@ NEG = {
     "zh_women": (Z("我们说的分数一般指换算后的分数"), "paper"),
     "zh_zheyifangfa": (Z("这一方法一般指先训练再微调"), "paper"),
     "zh_cifangfa": (Z("此方法一般指先训练再微调"), "paper"),
-    # r3 HIGH 2：插入修饰语、换指示词
-    "zh_h2_gaixunlianfangfa": (Z("该训练方法一般指先训练再微调"), "paper"),
-    "zh_h2_benxiangyanjiu": (Z("本项研究里的分数一般指换算后的分数"), "paper"),
-    "zh_h2_cociyanjiu": (Z("此次研究里的分数一般指换算后的分数"), "paper"),
-    "zh_h2_lunwende": (Z("论文的分数一般指换算后的分数"), "paper"),
-    "en_h2_this_training_method": (E("this training method usually means fine-tuning"), "paper"),
-    "en_h2_current_study": (E("in the current study it usually means a converted score"), "paper"),
-    "en_h2_this_arxiv_preprint": (E("in this arXiv preprint it usually means a converted score"), "paper"),
-    "en_h2_that_method": (E("that method usually means fine-tuning"), "paper"),
-    "en_h2_its_model": (E("its model usually means a language model"), "paper"),
-    # r3 HIGH 4：“作”“者”之间插 VS16、组合符
-    "zh_h4_vs16": (Z("作\ufe0f者所说的分数一般指换算后的分数"), "paper"),
-    "zh_h4_combining": (Z("作\u0301者所说的分数一般指换算后的分数"), "paper"),
-    # 「文本摘要」按定论②照拦（Grok Bot 15:10）
-    "zh_wenbenzhaiyao": (Z("文本摘要一般指把长文压缩成短文"), "paper"),
     "en_proposed_method": (E("the proposed method usually means training twice"), "paper"),
     "en_proposed_model": (E("the proposed model usually means a language model"), "paper"),
     "en_proposed_approach": (E("the proposed approach usually means fine-tuning"), "paper"),
@@ -227,13 +167,21 @@ NEG = {
     "zh_author_yuan": (Z("原作者所说的分数一般指换算后的分数"), "paper"),
     "zh_author_men": (Z("作者们一般用它指换算后的分数"), "paper"),
     "zh_author_zhuzuozhe": (Z("著作者一般指写书的人"), "paper"),
-    "zh_author_wl_not_mask_bengongzuo": (Z("本工作者一般指参与本项目的人"), "paper"),   # 白名单不遮挡“本工作”
-    # Grok Bot 15:10：白名单词前紧挨汉字按「作者」硬拦
+    "zh_author_wl_not_mask_bengongzuo": (Z("本工作者一般指参与本项目的人"), "paper"),
+    # Grok Bot 15:21 最小版本：任何「作者」都拦，没有白名单
+    "zh_author_xiezuozhe": (Z("写作者一般指以写作为业的人"), "paper"),
+    "zh_author_gongzuozhe": (Z("医疗工作者一般指在医疗机构从事诊疗与护理的人员"), "paper"),
+    "zh_author_chuangzuozhe": (Z("内容创作者一般指在平台上发布原创内容的人"), "paper"),
+    "zh_author_hezuozhe": (Z("开源合作者一般指共同维护开源项目的人"), "paper"),
+    "zh_author_xiezuozhe2": (Z("协作者一般指在同一项目中分工配合的人"), "paper"),
     "zh_author_yuanchuangzuozhe": (Z("原创作者一般指首先创作作品的人"), "paper"),
-    "zh_author_lunwenhezuozhe": (Z("论文合作者一般指共同署名的人"), "paper"),
-    "zh_author_zhuchuangzuozhe": (Z("主创作者一般指主要负责创作的人"), "paper"),
-    "zh_author_yiliaogongzuozhe": (Z("医疗工作者一般指在医疗机构从事诊疗与护理的人员"), "paper"),
-    "zh_author_latin_prev": (Z("AI创作者一般指借助生成工具发布内容的人"), "paper"),
+    "zh_author_after_de": (Z("医疗行业的工作者一般指医务人员"), "paper"),
+    # r3 HIGH 4：“作”“者”之间插 VS16、组合符
+    "zh_author_vs16": (Z("作\ufe0f者所说的分数一般指换算后的分数"), "paper"),
+    "zh_author_combining": (Z("作\u0301者所说的分数一般指换算后的分数"), "paper"),
+    "zh_author_vs16_gongzuozhe": (Z("工作\ufe0f者一般指上班的人"), "paper"),
+    # 「文本摘要」照拦（定论②）
+    "zh_wenbenzhaiyao": (Z("文本摘要一般指把长文压缩成短文"), "paper"),
     # r2 HIGH 3（保留）：解码、归一化后复验
     "zh_halfdot": (Z("一般指把分数换算到同一尺度上. 这样便于比较"), "multi-sentence"),
     "zh_fwdot": (Z("一般指把分数换算到同一尺度上．这样便于比较"), "multi-sentence"),
@@ -250,11 +198,10 @@ NEG = {
     "pos_list_punct": (Z("一般指换算后的分数", pre="- 。[2]。"), "position"),
     "pos_listonly": ("- [2]。（本站补充的通用解释：一般指换算后的分数。）", "position"),
     "pos_cite_after_cite": (Z("一般指换算后的分数", pre="某事实 [2]。[3]。"), "position"),
-    # r3 HIGH 3：下划线、仅序号、仅链接不算事实句片段
+    # r3 HIGH 3：单独的下划线、只有数字不算事实句片段
     "pos_underscore": (Z("一般指换算后的分数", pre="_ [2]。"), "position"),
+    "pos_underscore_en": (E("it usually means a converted score", pre="_ [2]. "), "position"),
     "pos_number_only": (Z("一般指换算后的分数", pre="- 3 [2]。"), "position"),
-    "pos_link_only": (Z("一般指换算后的分数", pre="[链接](https://example.org/x) [2]。"), "position"),
-    "pos_url_only_en": (E("it usually means a converted score", pre="https://example.org/x [2]. "), "position"),
 }
 
 # 第二处括号句：前一处括号句不算事实句（只断言第二处）
@@ -288,8 +235,8 @@ class TableA(unittest.TestCase):
     def test_regexes_compile(self):
         self.assertTrue(g.ZH_RE.pattern and g.EN_RE.pattern)
 
-    def test_author_whitelist_is_exactly_five(self):
-        self.assertEqual(g.AUTHOR_WHITELIST, ("工作者", "创作者", "合作者", "写作者", "协作者"))
+    def test_no_author_whitelist(self):               # 15:21 最小版本：不设白名单
+        self.assertFalse(hasattr(_sc, "GLOSS_AUTHOR_WHITELIST"))
 
 
 def _mk_pos(line):
@@ -472,11 +419,8 @@ class TableE_Tongyi(unittest.TestCase):
     def test_second_gloss_not_pass(self):
         self.assertEqual(self.ecodes(F + GZ + "[3]。（本站补充的通用解释：微调一般指继续训练。）"), ("FAIL", ["E-GLOSS-FORMAT"]))
 
-    def test_author_whitelist_passes(self):           # 10:13 + 15:10 口径：白名单词在“的”之后放行
-        self.assertEqual(self.ecodes(F + "（本站补充的通用解释：医疗行业的工作者一般指在医疗机构从事诊疗与护理的人员。）"), ("PASS", []))
-
-    def test_author_han_prefixed_fails(self):         # 15:10：白名单词前紧挨汉字照拦
-        self.assertEqual(self.ecodes(F + "（本站补充的通用解释：原创作者一般指首先创作作品的人。）"), ("FAIL", ["E-GLOSS-FORMAT"]))
+    def test_author_compound_fails(self):             # 15:21 最小版本：「工作者」也拦
+        self.assertEqual(self.ecodes(F + "（本站补充的通用解释：医疗工作者一般指在医疗机构从事诊疗与护理的人员。）"), ("FAIL", ["E-GLOSS-FORMAT"]))
 
     def test_author_bare_fails(self):
         self.assertEqual(self.ecodes(F + "（本站补充的通用解释：作者说的对抗训练一般指加入诱使模型出错的输入。）"), ("FAIL", ["E-GLOSS-FORMAT"]))
@@ -497,18 +441,38 @@ class Low1(unittest.TestCase):
         self.assertNotIn("E-INFER-UNCLEAR", c)
 
 
-# ---------------------------------------------------------------- 表 D：10-19 digest 计数固定为改前实测值（r3 MEDIUM 3）
-# 预期值是改前脚本（data main d709439，scripts/ 与 10f7b74 相同）对 digest/2026-10-19.md（f422756 更正后版）的实测计数，
-# 写死在这里，不再从 git HEAD 取“改前”脚本（提交后会变成自己与自己比）。
+# ---------------------------------------------------------------- 表 D：10-19 digest 计数与真实改前版本相同（r3 MEDIUM 3）
+# “改前”取 PR base 的 main 提交 BEFORE_REV 上的 selfcheck.py（不取 HEAD：提交后会变成自己与自己比）；
+# 拿不到该提交时（浅克隆）退回固定计数 DIGEST_1019_BEFORE（即在 BEFORE_REV 上实测的值）。
+BEFORE_REV = "d709439fd6c8268a77c82aef2ba12e25df4c84b6"
 DIGEST_1019_BEFORE = {"E-INFER-UNCLEAR": 82, "E-REPLAY-001": 67, "E-BLOCK-MACRO-OPINION": 2, "E-REPLAY-006": 4}
 
 
 class TableD(unittest.TestCase):
+    def _before_module(self):
+        try:
+            src = subprocess.run(["git", "-C", str(ROOT), "show", f"{BEFORE_REV}:scripts/markjin/selfcheck.py"],
+                                 capture_output=True, text=True, check=True).stdout
+        except Exception:                                          # noqa: BLE001
+            return None
+        p = ROOT / "scripts" / "markjin" / "_selfcheck_before_for_test.py"   # 同目录：词表路径按 __file__ 解析
+        p.write_text(src, encoding="utf-8")
+        try:
+            spec = importlib.util.spec_from_file_location("markjin._selfcheck_before_for_test", p)
+            m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        finally:
+            p.unlink()
+        m.load_internal_terms = lambda: list(DUMMY_INTERNAL)
+        return m
+
     def test_digest_1019_unchanged(self):
-        f = ROOT / "digest" / "2026-10-19.md"
-        text = f.read_text(encoding="utf-8")
-        r = _sc.check_text(text, ROOT, "2026-10-19", "daily", link_checker=lambda u: True)
-        self.assertEqual(dict(collections.Counter(e["code"] for e in r["errors"])), DIGEST_1019_BEFORE)
+        text = (ROOT / "digest" / "2026-10-19.md").read_text(encoding="utf-8")
+        cnt = lambda mod: dict(collections.Counter(e["code"] for e in mod.check_text(text, ROOT, "2026-10-19", "daily",
+                                                                                 link_checker=lambda u: True)["errors"]))
+        before = self._before_module()
+        if before is not None:
+            self.assertEqual(cnt(before), DIGEST_1019_BEFORE)
+        self.assertEqual(cnt(_sc), DIGEST_1019_BEFORE)
         labelled = [l for l in text.splitlines() if g.has_label(l)]
         self.assertEqual(sum(len(g.find_glosses(l)) for l in labelled), 3)
         self.assertTrue(all(not g.has_label(g.strip_glosses(l)) for l in labelled))
