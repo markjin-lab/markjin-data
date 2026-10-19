@@ -80,6 +80,14 @@
 词表只从本机内部目录的 `topics-private.md` 读取，仓库内不含任何内部主题词。内部目录由环境变量 `MARKJIN_INTERNAL_DIR` 指定（推荐显式设置）；未设置时用相对路径：仓库根目录的同级目录 `../markjin-internal`。**仓库克隆不在内部目录的同级位置时（例如克隆到别的父目录、用 git worktree 放在别处，或 CI），必须设置 `MARKJIN_INTERNAL_DIR` 指向内部目录**，否则找不到清单，`check-internal` 按 `E-INTERNAL-LIST-MISSING` 拒绝（fail-closed）。代码和文档里都不写本机绝对路径。
 清单严格解析：恰好一张三列表格，表头必须是 `名称 | 识别条件 | 来源`，各行三列非空、名称不重复；三列内容都受保护。缺失、不可读或结构不完整 → `E-INTERNAL-LIST-MISSING`（FAIL）。
 
+### 本站补充的通用解释括号句（E-GLOSS-FORMAT）
+
+- 依据：docs/approvals.md「术语白话解释（王总 t461s2020）」一节。只接受两种格式：中文「[n]。（本站补充的通用解释：XX 一般指……。）」，英文「[n]. (General explanation added by this site: XX usually refers to ….)」。
+- 豁免范围：括号句与带引注的事实句同行、紧接在引注之后，引注紧挨的前文是事实句片段（去掉链接、括号组、引注后须含汉字或字母），且括号句内容合规时，selfcheck 在无出处判断（E-INFER-UNCLEAR、E-REPLAY-001）里把它剔除；行分类、硬拦、来源核对和整篇扫描仍用完整原行。
+- 内容合规：一句话；不含引注、括号、数字、中英文数值词（含大写数字、苏州码子、序数、百分号、罗马数字、混脚本冒充的数词）；不提到本篇论文或本篇方法、模型、工作。「作者」只按白名单五词放行（工作者、创作者、合作者、写作者、协作者），且白名单词只在行首、空白、标点或“的/和/与/及”之后放行，前面紧挨其他汉字的照拦；加词须先报 Grok Bot。
+- 标签可识别但格式、位置或内容不合规，报硬错误 E-GLOSS-FORMAT（status FAIL）；完整标签出现在其他任何行（更正区、引用块、标题、表格、注释、front matter）同样报。
+- 机器保证的边界：selfcheck 只保证标签可识别的违规句被报出。没有标签或标签被改写的括号句不报 E-GLOSS-FORMAT，交审稿人判断。普通日报和 digest 的正文段落、列表项（同行无 raw 路径或 URL）本来就会报两个旧码；tongyi 长文路径和带来源的行没有这层兜底。
+
 ## route（#10 审查路由）
 
 `python3 scripts/route.py --pr N --repo REPO --date YYYY-MM-DD --card-type daily|signal [--site-repo DIR] [--dry-run [--now ISO]]`（整体验收 r2：时间只用真实时钟；`--now` 只在 `--dry-run` 下可用，演练结果永远不可发布；`--no-link-check` 已取消）（r13：只接受 PR 编号，base/head/文件列表由 `gh pr view` 取得；稿件、raw/、MANIFEST 从 head 提交读取）

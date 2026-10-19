@@ -28,6 +28,7 @@ import hashlib
 import json
 import xml.etree.ElementTree as ET
 import re
+import unicodedata as _ud
 from pathlib import Path, PurePosixPath
 
 from .deps import DEP_CODE, have_yaml
@@ -35,6 +36,7 @@ from . import strictjson
 from .fmkeys import FM_CATEGORY_KEYS
 from .internal import load_internal_terms
 from .textnorm import compact, has_any, norm
+from .textnorm import unescape as _unescape
 
 CARD_TYPES = ("daily", "signal")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -496,6 +498,231 @@ def _claim_of(s):
     return URL_RE.sub(" ", RAW_RE.sub(" ", s))
 
 
+# ================================================================ 本站补充的通用解释括号句（王总 t461s2020 术语白话解释；scope-r4）
+# 只豁免标签可识别、并严格符合两种格式的括号句；标签可识别但格式、位置或内容不合规的报 E-GLOSS-FORMAT。
+GLOSS_ZH_LABEL = "本站补充的通用解释"
+GLOSS_EN_LABEL = "General explanation added by this site"
+_GL_LABELS_C = (compact(GLOSS_ZH_LABEL), compact(GLOSS_EN_LABEL))
+GLOSS_ZH_RE = re.compile(r"(?P<pre>\[[0-9]{1,3}\]。)(?P<gloss>（本站补充的通用解释：(?P<body>[^（）()\[\]【】。！？!?\n]+)。）)")
+GLOSS_EN_RE = re.compile(r"(?P<pre>\[[0-9]{1,3}\]\. )(?P<gloss>\(General explanation added by this site: (?P<body>[^()\[\]\n.!?]+)\.\))")
+_GL_LIST_MARK_RE = re.compile(r"^\s*(?:[-*+]|\d{1,3}[.)、])\s*")
+
+
+def _gl_strip_marks(s):
+    """去掉组合符（Mn/Me，含变体选择符 VS1–VS16）与格式控制符（Cf）：「作︎者」「作́者」按「作者」查。"""
+    return "".join(ch for ch in s if _ud.category(ch) not in ("Mn", "Me", "Cf"))
+
+
+# —— 混脚本：西里尔、希腊字母冒充拉丁字母（оne、οne）。先映射到拉丁字母再查英文数词；与拉丁字母混在一个词里另报 mixed-script
+_GL_CONFUSABLE = str.maketrans({
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d",
+    "һ": "h", "ӏ": "l", "ԛ": "q", "ԝ": "w", "ν": "v", "ο": "o", "α": "a", "ι": "i", "κ": "k", "τ": "t", "υ": "u",
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X",
+    "І": "I", "Ј": "J", "Ѕ": "S", "Α": "A", "Β": "B", "Ε": "E", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N",
+    "Ο": "O", "Ρ": "P", "Τ": "T", "Χ": "X", "Ζ": "Z"})
+_GL_WORD_TOKEN_RE = re.compile(r"[^\W\d_]+")
+
+
+def _gl_mixed_script(s):
+    for w in _GL_WORD_TOKEN_RE.findall(s):
+        latin = any("LATIN" in _ud.name(ch, "") for ch in w)
+        other = any(any(k in _ud.name(ch, "") for k in ("CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE")) for ch in w)
+        if latin and other:
+            return True
+    return False
+
+
+# —— 中文数值（r4：除“一”以外的中文数字字符一律拦，只排除下列固定词；“一”按量词、单位判）
+_GL_D = "零〇一二两三四五六七八九十百千万亿"
+_GL_D2 = "零〇二两三四五六七八九十百千万亿"
+_GL_DX_RE = re.compile(r"[壹贰叁肆伍陆柒捌玖拾佰仟兩貳參陸萬億廿卅卌皕〡〢〣〤〥〦〧〨〩〸〹〺]")   # 大写数字、廿卅、苏州码子：出现即拦
+_GL_UNIT_YI = "年月日天周岁秒倍成次轮届批米克吨亩度半亿万千百十"
+_GL_UNIT_W = "小时|分钟|周年|公里|公斤|千克|毫秒"
+_GL_TIME_W = "月|小时|钟头|星期|礼拜|季度|世纪|周|年代|分钟|学期"
+# 固定误伤排除：先换成占位符；前后紧挨数字字符时不换（“十一种”“三十一般”“三十分”照拦）。
+# “十分”前面是“为/是/到/得/打/满”等计分用法时不排除（“满分为十分”照拦）；“二次函数”是 r3 M2 点名的固定术语。
+_GL_ZH_NUM_SAFE_RE = re.compile(
+    r"(?<![" + _GL_D + r"])(?:一(?:般|种|些|致|定|样|直|起|旦|切|再|向|边|同|律|并|贯|味|带|下)"
+    r"|(?:一一|万一)(?![" + _GL_D + r"]))"
+    r"|(?:之|统|单|同|唯|均|划|专|逐)一(?![" + _GL_D + r"])"
+    r"|(?<![" + _GL_D + r"为是到至得打给拿满共计有达约近超过逾足])十分(?![" + _GL_D + r"])"
+    r"|(?<![" + _GL_D + r"])(?:零样本|三维|二维|二元|三角形|两者|三合一|二次函数)")
+GLOSS_ZH_NUM_RE = re.compile(
+    r"[" + _GL_D2 + r"]"                                                   # 除“一”外任何中文数字字符：两种、分五档、五分制、满分为十、翻两番、十美元
+    r"|[" + _GL_D + r"]{2,}"
+    r"|一(?:[" + _GL_UNIT_YI + r"]|" + _GL_UNIT_W + r")"                  # 一年、一倍、一成、一次、一半、一小时
+    r"|一个(?:" + _GL_TIME_W + r")"                                       # 一个月、一个小时
+    r"|半(?:" + _GL_TIME_W + r"|[年天日秒个])"                           # 半小时、半年、半天
+    r"|[" + _GL_D + r"](?:余|多|来)|[" + _GL_D + r"]点[" + _GL_D + r"]|第[" + _GL_D + r"]"
+    r"|[上成][百千万亿]|[几数][十百千万亿]|好几|几[倍成]|数倍"
+    r"|[百千万]分之|分之[" + _GL_D + r"]|个?百分点|半数|过半|大半|翻倍|翻番")
+GLOSS_PCT_RE = re.compile(r"[%‰‱٪؉؊]")
+
+_GL_EN_CARD = (r"zero(?:e?s)?|ones?|twos?|threes?|fours?|fives?|sixe?s?|sevens?|eights?|nines?|tens?|elevens?|twelves?|thirteens?"
+               r"|fourteens?|fifteens?|sixteens?|seventeens?|eighteens?|nineteens?|twent(?:y|ies)|thirt(?:y|ies)|fort(?:y|ies)"
+               r"|fift(?:y|ies)|sixt(?:y|ies)|sevent(?:y|ies)|eight(?:y|ies)|ninet(?:y|ies)|hundreds?|thousands?|millions?"
+               r"|billions?|trillions?|dozens?")
+_GL_EN_ORD = (r"(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth"
+              r"|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth|fortieth|fiftieth|sixtieth"
+              r"|seventieth|eightieth|ninetieth|hundredth|thousandth|millionth|billionth|quarter)s?|thirds|halves|half")
+# 固定术语排除：zero-shot、one-shot、one-hot（r3 保留），one another、first-order（r3 M2 点名）。同句另有数值时仍拦。
+_GL_EN_NUM_SAFE_RE = re.compile(r"\b(?:zero|one)-(?:shot|hot)\b|\bone\s+another\b|\bfirst-order\b", re.I)
+GLOSS_EN_NUM_RE = re.compile(
+    r"\b(?:" + _GL_EN_CARD + r")\b|\b(?:" + _GL_EN_ORD + r")\b"
+    r"|\bper[\s\-]*cent\b|\bpercent(?:age)?s?\b|\bbasis\s+points?\b"
+    r"|\b(?:" + _GL_EN_CARD + r"|many|several|multi)-?fold\b|\btwice\b|\bthrice\b|\b(?:double|triple|quadruple)[sd]?\b"
+    r"|\bdecimal\s+point\b", re.I)
+
+_GL_ROMAN_UNI_RE = re.compile("[\u2160-\u2188]")
+_GL_ROMAN_ASCII_RE = re.compile(
+    r"(?<![A-Za-z])(?:[IVX]{2,4}|[IVX](?=\s*(?:级|期|类|型|阶段|代|版|号|度)))(?![A-Za-z])"
+    r"|(?<![A-Za-z])(?=[ivx]{2,4}(?![A-Za-z]))x{0,3}(?:ix|iv|v?i{0,3})(?![A-Za-z])"
+    r"|(?i:\b(?:level|grade|phase|stage|type|class|tier|category|step|part|chapter|version|round|section)[\s\-_]*[ivx]{1,4}\b)"
+    r"|(?i:(?<![A-Za-z])[ivx]{1,4}\s*(?:级|期|类|型|阶段|代|版|号|度))")
+
+_GL_SENT_END_RE = re.compile(r"[.。．!?！？;；…‥]")
+_GL_BRACKET_RE = re.compile(r"[()\[\]{}（）【】〔〕〈〉《》<>]")
+_GL_RESIDUE_RE = re.compile(r"&[#A-Za-z0-9]+;|https?://|`|@\w")
+
+# —— 提到本篇论文 / 本篇方法（定论②）。r4：指示词与对象词之间允许最多 6 个修饰字（该训练方法、本项研究、此次研究）；
+#    修饰字不含“的是指为在把将对与和及或”，避免跨到定义部分。前置排除按 r3 M1 点名的误伤补齐。
+_GL_MOD = r"(?:项|个|种|次|篇|份|款|套)?(?:(?![的是指为在把将对与和及或])[\u4e00-\u9fffa-z]){0,6}?"
+_GL_NB = r"(?<![样文版基根资成剧脚课读范日账原副标书为记])"
+_GL_OBJ = r"(?:文|篇|论文|研究|工作|预印本|模型|方法|算法|框架|系统|方案|技术|架构|网络|实验|数据集|基准|任务|设计|策略|结果|发现|团队|研究者)"
+GLOSS_ZH_PAPER_RE = re.compile(
+    _GL_NB + r"本(?![质身来地土领能科事钱性色意职分末源着就当月周年日届期])" + _GL_MOD + _GL_OBJ
+    + r"|(?<![应活])该" + _GL_MOD + _GL_OBJ
+    + r"|(?<![因如从由对彼据借凭为至特故于在自])此" + _GL_MOD + _GL_OBJ
+    + r"|这(?:篇|份|项|次)|这(?:个|一)" + _GL_MOD + _GL_OBJ
+    + r"|这些研究(?:者|人员)"
+    + r"|所提(?!供|醒|交|问|高|升|示|取|炼|名|前|倡|拔|携)|提出的(?:方法|模型|算法|框架|系统|方案)|我们|笔者"
+    + r"|(?<![中英日韩德法俄外正推])文中"
+    + r"|论文(?:中|里|的|称|指出|提出|认为|发现|显示|表明|写道|所)|研究团队|摘要")
+# 「作者」（Grok Bot 10:13 + 2026-10-19 15:10 裁定）：只按整词白名单放行；白名单词前紧挨汉字（原创作者、论文合作者、主创作者）
+# 按「作者」硬拦；只在行首、空白、标点之后，或“的/和/与/及”之后放行。以后加词须先报 Grok Bot。
+GLOSS_AUTHOR_WHITELIST = ("工作者", "创作者", "合作者", "写作者", "协作者")
+_GL_AUTHOR_OK_PREV = "的和与及"
+
+
+def _gl_author_blocked(t):
+    """t：norm 后去掉组合符的文本（保留空白）。任何不满足白名单条件的「作者」都返回 True。"""
+    for m in re.finditer("作者", t):
+        i = m.start() - 1
+        if i < 0 or t[i:i + 3] not in GLOSS_AUTHOR_WHITELIST:
+            return True
+        j = i - 1
+        if j < 0:
+            continue
+        p = t[j]
+        if p.isspace() or p in _GL_AUTHOR_OK_PREV or _ud.category(p)[0] in "PS":
+            continue
+        return True
+    return False
+
+
+_GL_EN_OBJ = (r"(?:method|model|approach|framework|system|algorithm|technique|architecture|network|design|pipeline|benchmark"
+              r"|dataset|study|work|paper|article|abstract|preprint|manuscript|report|experiment|results?|findings?|team)s?")
+_GL_EN_MOD = r"(?:(?!(?:the|a|an|is|are|was|were|be|to|of|in|on|for|and|or|it|they|we|that|this|usually|means?|refers?)\b)[a-z][\w\-]*\s+){0,3}?"
+_GL_EN_OBJ_SG = (r"(?:method|model|approach|framework|system|algorithm|technique|architecture|network|design|pipeline|benchmark"
+                 r"|dataset|study|work|paper|article|abstract|preprint|manuscript|report|experiment|team)")
+GLOSS_EN_PAPER_RE = re.compile(
+    r"\bthe\s+(?:paper|article|abstract|preprint|manuscript)s?\b"
+    r"|\b(?:this|these|our|its)\s+" + _GL_EN_MOD + _GL_EN_OBJ + r"\b"           # this training method、this arXiv preprint、its model
+    r"|(?<!so )(?<!such )(?<!means )(?<!mean )(?<!meaning )\bthat\s+" + _GL_EN_MOD + _GL_EN_OBJ_SG + r"\b"   # that method（连词 so that 不算）
+    r"|\b(?:the\s+)?(?:proposed|present|presented|introduced|current)\s+" + _GL_EN_OBJ + r"\b"
+    r"|\bthe\s+new\s+" + _GL_EN_OBJ + r"\b"
+    r"|\bproposed\s+(?:here|in)\b"
+    r"|\bauthors?\b|\bthe\s+researchers?\b|\bthe\s+research\s+team\b|\b(?:this|the)\s+team\b", re.I)
+_GL_EN_WE_RE = re.compile(r"\b(?:[Ww]e|[Oo]urs?|us)\b")     # “us”只认小写，免得误伤 the US
+
+
+def gloss_body_reasons(body):
+    """返回不合规原因列表；空列表 = 合规。检查在 unescape + NFKC + 去 Cf（norm）并去掉组合符之后的文本上做。"""
+    r = []
+    raw_u = _unescape(body)
+    bn = _gl_strip_marks(norm(body))
+    bc = _gl_strip_marks(compact(body))
+    sk = bn.translate(_GL_CONFUSABLE)
+    if len(bc) < 2:
+        r.append("empty")
+    if re.search(r"\d", bn):
+        r.append("digit")
+    zc = _GL_ZH_NUM_SAFE_RE.sub("\u0000", bc)
+    en = _GL_EN_NUM_SAFE_RE.sub(" ", sk)
+    if GLOSS_ZH_NUM_RE.search(zc) or _GL_DX_RE.search(bc) or GLOSS_EN_NUM_RE.search(en):
+        r.append("number-word")
+    if _gl_mixed_script(bn):
+        r.append("mixed-script")
+    if GLOSS_PCT_RE.search(raw_u) or GLOSS_PCT_RE.search(bn) or GLOSS_PCT_RE.search(_ud.normalize("NFKC", raw_u)):
+        r.append("percent")
+    if _GL_ROMAN_UNI_RE.search(raw_u) or _GL_ROMAN_ASCII_RE.search(bn) or _GL_ROMAN_ASCII_RE.search(sk):
+        r.append("roman")
+    if _GL_SENT_END_RE.search(bn):
+        r.append("multi-sentence")
+    if _GL_BRACKET_RE.search(bn):
+        r.append("bracket")
+    if _GL_RESIDUE_RE.search(bn):
+        r.append("residue")
+    if any(l in bc for l in _GL_LABELS_C):
+        r.append("nested-label")
+    if (GLOSS_ZH_PAPER_RE.search(bc) or _gl_author_blocked(bn) or GLOSS_EN_PAPER_RE.search(sk)
+            or _GL_EN_WE_RE.search(sk)):
+        r.append("paper")
+    return r
+
+
+# —— 位置（定论③）：逐个引注核对紧挨的前文是事实句片段
+_GL_BOUNDARY_RE = re.compile(r"\[[0-9]{1,3}\](?:。|\. ?)|[。！？!?]|\.(?=\s|$)")
+_GL_PAREN_GROUP_RE = re.compile(r"（[^（）]*）|\([^()]*\)")
+_GL_LINK_RE = re.compile(r"!?\[[^\[\]]*\]\([^()]*\)|<https?://[^>]*>|https?://\S+")
+
+
+def _gl_fact_fragment_ok(raw, pre_start, prev_gloss_end=0):
+    """紧挨 [n] 的前文去掉链接、括号组、引注后必须含字母类字符（Unicode L 类：汉字、字母）；
+    下划线、数字、序号、只有链接都不算事实句片段（r3 H3）。"""
+    seg = raw[prev_gloss_end:pre_start]
+    last = 0
+    for m in _GL_BOUNDARY_RE.finditer(seg):
+        last = m.end()
+    frag = seg[last:]
+    if prev_gloss_end == 0 and last == 0:
+        frag = _GL_LIST_MARK_RE.sub("", frag, count=1)
+    frag = _GL_LINK_RE.sub("", _unescape(frag))
+    frag = norm(frag)
+    prev = None
+    while prev != frag:
+        prev, frag = frag, _GL_PAREN_GROUP_RE.sub("", frag)
+    frag = re.sub(r"\[[0-9]{1,3}\]", "", frag)
+    return any(_ud.category(ch).startswith("L") for ch in frag)
+
+
+def gloss_find(raw):
+    """[(start, end, lang, reasons)]：start/end 是括号句（不含前缀）在原始行中的跨度。"""
+    ms = sorted([(m, "zh") for m in GLOSS_ZH_RE.finditer(raw)] + [(m, "en") for m in GLOSS_EN_RE.finditer(raw)],
+                key=lambda x: x[0].start())
+    out = []
+    prev_end = 0
+    for m, lang in ms:
+        reasons = [] if _gl_fact_fragment_ok(raw, m.start("pre"), prev_end) else ["position"]
+        reasons += gloss_body_reasons(m.group("body"))
+        out.append((m.start("gloss"), m.end("gloss"), lang, reasons))
+        prev_end = m.end("gloss")
+    return out
+
+
+def gloss_strip(raw):
+    s = raw
+    for a, b, _, reasons in reversed(gloss_find(raw)):
+        if not reasons:
+            s = s[:a] + s[b:]
+    return s
+
+
+def gloss_has_label(text):
+    c = compact(text)
+    return any(l in c for l in _GL_LABELS_C)
+
+
 def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
@@ -592,6 +819,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
 
     raw_lines = text.splitlines()
     lines = [norm(l) for l in raw_lines]
+    slines = [norm(gloss_strip(l)) for l in raw_lines]   # 同索引的剔除后副本：只给无出处判断用
+    sb_all = []
     doc = "\n".join(lines)
     doc_compact = compact(doc)
 
@@ -644,6 +873,14 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
         if not s:
             continue
         in_fm = 1 < i < fm_end
+        eligible = (not in_fm and not COUNTS_ANY.search(s) and "<!--" not in s and "-->" not in s
+                    and not HEADING_RE.match(s) and not TABLE_RE.match(s) and not QUOTE_RE.match(s)
+                    and not re.fullmatch(r"[-*_ ]{3,}", s) and not QUOTE_LINE_RE.match(s)
+                    and not SOURCE_LINE_RE.match(s) and not STRICT_ASSERT_RE.match(s))
+        sb = slines[i - 1] if eligible else s
+        sb_all.append(sb)
+        if gloss_has_label(sb):
+            err("E-GLOSS-FORMAT", i)
         if in_fm and _correction_fm_ok(raw_lines[i - 1], fm_parsed):
             flags["structure_other"] = True; counts["other"] += 1   # 更正稿元数据（corrects / corrected_at），非断言、非低风险
             continue
@@ -779,7 +1016,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                 flags["inference_unclear"] = True
                 counts["unclear"] += 1
                 body_err("E-INFER-UNCLEAR", i)        # 无来源、又无法判别是否含推断 → UNCLEAR（不发布）
-                if infer(s) or CLAIM_TOKEN_RE.search(LIST_RE.sub("", s, count=1)):
+                if infer(sb) or CLAIM_TOKEN_RE.search(LIST_RE.sub("", sb, count=1)):
                     body_err("E-REPLAY-001", i)       # 含推断/转述词或数字却无来源 → FAIL
                 continue
             _check_loose_sources(ctx, s, i, err, counts, flags, count_replay=True, card_type=card_type)
@@ -792,7 +1029,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
         if self_only and not (in_fm or disclaimer or is_table_header):
             # 整体验收 r3 HIGH：本组织说明链接不是来源，不能解除无来源检查——含推断或数字 → 硬错
             # （只有“详见 <链接>”这类不含断言的指引行仍放行）
-            if infer(s) or CLAIM_TOKEN_RE.search(URL_RE.sub("", s)):
+            if infer(sb) or CLAIM_TOKEN_RE.search(URL_RE.sub("", sb)):
                 flags["inference_unclear"] = True; counts["unclear"] += 1
                 body_err("E-INFER-UNCLEAR", i); body_err("E-REPLAY-001", i)
         elif has_src:
@@ -807,10 +1044,12 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
             # 含推断/转述词或数字 → 硬错误
             flags["inference_unclear"] = True; counts["unclear"] += 1
             body_err("E-INFER-UNCLEAR", i)
-            if infer(s) or CLAIM_TOKEN_RE.search(s):
+            if infer(sb) or CLAIM_TOKEN_RE.search(sb):
                 body_err("E-REPLAY-001", i)
 
     # —— 整篇（跨行）层面
+    if gloss_has_label("\n".join(sb_all)) and not any(e["code"] == "E-GLOSS-FORMAT" for e in errors):
+        err("E-GLOSS-FORMAT", 0)            # 标签被拆在两行
     if terms and not flags["internal"] and has_any(doc_compact, terms):
         flags["internal"] = True; err("E-BLOCK-INTERNAL", 0)
     if any(r.search(doc_compact) for r in FUND_RES) or has_any(doc_compact, LEX["invest"]) or en_alloc_position(text):
