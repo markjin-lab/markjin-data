@@ -668,16 +668,15 @@ def gloss_has_label(text):
 # ================================================================ 产业与经济数据小节（站点 PR #125 的 industry-* 短代码；Grok Bot 2026-10-19 15:28 裁定）
 # 站点用 {{< industry-data >}}…{{< /industry-data >}}（内含 industry-datum）和 {{< industry-link … >}}…{{< /industry-link >}}
 # 渲染“产业与经济数据 / Industry and economic data”小节与产业链接段，稿件里没有字面的 Markdown 标题。selfcheck 把这些块
-# （含短代码参数）当作该小节，检查块内文字：任何数值（阿拉伯数字、百分号）和任何数据机构链接一律硬拦。
+# （含短代码参数）当作该小节，检查块内文字：任何数值（Unicode 十进制数字、百分号类）和任何数据机构链接一律硬拦。
 # 这比路线图 L393 的 ③④ 更严，在开放数字之前代替它们；开放数字时须先完整落实 ③④。
-# 例外只有出处编号：正文里的 [n]，短代码参数 cite（出处编号）与 item（条目编号，只作锚点）。
+# 数值的例外只有：industry-* 短代码自身的 cite、item 参数（值须是出处编号 / 正整数格式），以及块内正文（短代码标签以外）的真实引注 [n]。
 INDUSTRY_SHORTCODES = ("industry-data", "industry-datum", "industry-link")
-_IND_OPEN_RE = re.compile(r"\{\{[<%]\s*(industry-(?:data|link))\b[^}]*?[>%]\}\}")
-_IND_CLOSE_RE = {n: re.compile(r"\{\{[<%]\s*/\s*" + re.escape(n) + r"\s*[>%]\}\}") for n in ("industry-data", "industry-link")}
-_IND_DATUM_RE = re.compile(r"\{\{[<%]\s*industry-datum\b[^}]*?[>%]\}\}")
-_IND_EXEMPT_RE = re.compile(r"\[[0-9]{1,3}\]|\b(?:cite|item)\s*=\s*\"[0-9,\s]*\"")
-_IND_NUMBER_RE = re.compile(r"[0-9%‰‱]")
-# 数据机构域名（含子域名）。新增机构只改这里。
+_IND_PAIRED = ("industry-data", "industry-link")
+_IND_EXEMPT_PARAMS = {"cite": re.compile(r"[1-9][0-9]*(?:\s*,\s*[1-9][0-9]*)*"), "item": re.compile(r"[1-9][0-9]*")}
+_IND_BODY_CITE_RE = re.compile(r"\[[1-9][0-9]{0,2}\]")
+_IND_PCT = set("%％﹪٪‰‱؉؊")
+# 数据机构域名（主机等于该域名或是其子域名才算）。新增机构只改这里。
 INDUSTRY_AGENCY_DOMAINS = (
     "bea.gov", "bls.gov", "census.gov", "eia.gov", "federalreserve.gov", "stlouisfed.org", "treasury.gov", "dol.gov",
     "sec.gov", "ferc.gov", "usda.gov", "commerce.gov", "energy.gov", "fhfa.gov", "fdic.gov", "cbo.gov", "whitehouse.gov",
@@ -685,51 +684,186 @@ INDUSTRY_AGENCY_DOMAINS = (
     "mofcom.gov.cn", "csrc.gov.cn", "nea.gov.cn", "imf.org", "worldbank.org", "oecd.org", "bis.org", "iea.org",
     "ecb.europa.eu", "ec.europa.eu", "eurostat.ec.europa.eu", "ons.gov.uk", "bankofengland.co.uk", "boj.or.jp",
     "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
-_IND_AGENCY_RE = re.compile(r"(?<![a-z0-9.\-])(?:[a-z0-9\-]+\.)*(?:" + "|".join(re.escape(d) for d in INDUSTRY_AGENCY_DOMAINS)
-                            + r")(?![a-z0-9\-])", re.I)
-# 整篇：E-FRED-CITED（fred.stlouisfed.org 链接，含子域名；大写词 FRED）
-_FRED_WORD_CS_RE = re.compile(r"(?<![A-Za-z])FRED(?![A-Za-z])")
-_FRED_URL_RE = re.compile(r"(?<![a-z0-9.\-])(?:[a-z0-9\-]+\.)*fred\.stlouisfed\.org", re.I)
+FRED_DOMAIN = "fred.stlouisfed.org"
+
+
+def _sc_skip_ws(s, k):
+    while k < len(s) and s[k].isspace():
+        k += 1
+    return k
+
+
+def _sc_parse_tag(s, k):
+    """在 s[k] == "{" 处按 Hugo 短代码语法解析一个标签：{{< name p="v" … >}} 或 {{% … %}}，以及 {{< /name >}}。
+    引号参数按引号状态解析（值里可以有 }}、>、换行），支持 "…"（含 \\ 转义）与 `…`。
+    返回 dict(start, end, name, closing, params=[(pname or None, value_start, value_end)])；不是短代码返回 None。"""
+    if not (s.startswith("{{<", k) or s.startswith("{{%", k)):
+        return None
+    delim = s[k + 2]
+    end_tok = (">" if delim == "<" else "%") + "}}"
+    j = _sc_skip_ws(s, k + 3)
+    closing = False
+    if j < len(s) and s[j] == "/":
+        closing, j = True, _sc_skip_ws(s, j + 1)
+    m = re.compile(r"[A-Za-z0-9_\-/.]+").match(s, j)
+    if not m:
+        return None
+    name, j = m.group(0), m.end()
+    params = []
+    while True:
+        j = _sc_skip_ws(s, j)
+        if j >= len(s):
+            return dict(start=k, end=len(s), name=name, closing=closing, params=params, unterminated=True)
+        if s.startswith(end_tok, j):
+            return dict(start=k, end=j + len(end_tok), name=name, closing=closing, params=params, unterminated=False)
+        pm = re.compile(r"([A-Za-z_][\w\-]*)\s*=\s*").match(s, j)
+        pname = None
+        if pm:
+            pname, j = pm.group(1), pm.end()
+        if j < len(s) and s[j] in "\"`":
+            q = s[j]; v0 = j + 1; j += 1
+            while j < len(s) and s[j] != q:
+                j += 2 if (q == '"' and s[j] == "\\") else 1
+            params.append((pname, v0, min(j, len(s))))
+            j += 1
+        else:
+            v0 = j
+            while j < len(s) and not s[j].isspace() and not s.startswith(end_tok, j):
+                j += 1
+            if j == v0:
+                j += 1                                    # 无法识别的字符：跳过，继续找结束符
+            params.append((pname, v0, j))
+
+
+def _sc_tags(s):
+    out, k = [], 0
+    while True:
+        k = s.find("{{", k)
+        if k < 0:
+            return out
+        t = _sc_parse_tag(s, k)
+        if t:
+            out.append(t)
+            k = t["end"]
+        else:
+            k += 2
 
 
 def industry_blocks(doc):
-    """[(start, end)]：doc 中 industry-data / industry-link 块（含起止短代码）与块外的 industry-datum 短代码的跨度。
-    缺少结束短代码时一直算到文末（fail-closed）。"""
-    out, pos = [], 0
-    while True:
-        m = _IND_OPEN_RE.search(doc, pos)
-        if not m:
-            break
-        c = _IND_CLOSE_RE[m.group(1)].search(doc, m.end())
-        end = c.end() if c else len(doc)
-        out.append((m.start(), end))
-        pos = end
-    for m in _IND_DATUM_RE.finditer(doc):
-        if not any(a <= m.start() < b for a, b in out):
-            out.append((m.start(), m.end()))
-    return sorted(out)
+    """[(start, end, tags)]：industry-data / industry-link 块（同名嵌套按层数配对；缺结束短代码时算到文末），
+    以及不在块内的单独 industry-datum 标签。tags 是块内全部短代码标签。"""
+    tags = _sc_tags(doc)
+    spans, i = [], 0
+    while i < len(tags):
+        t = tags[i]
+        if not t["closing"] and t["name"] in _IND_PAIRED:
+            depth, end, j = 1, len(doc), i + 1
+            while j < len(tags):
+                u = tags[j]
+                if u["name"] == t["name"]:
+                    depth += -1 if u["closing"] else 1
+                    if depth == 0:
+                        end = u["end"]; break
+                j += 1
+            spans.append((t["start"], end))
+            while i < len(tags) and tags[i]["start"] < end:
+                i += 1
+            continue
+        if not t["closing"] and t["name"] == "industry-datum":
+            spans.append((t["start"], t["end"]))
+        i += 1
+    return [(a, b, [t for t in tags if a <= t["start"] < b]) for a, b in spans]
+
+
+def _ind_exempt_spans(doc, a, b, tags):
+    """数值豁免跨度：industry-* 短代码自身的 cite / item 参数值（格式合规时），以及标签以外正文里的 [n]。"""
+    ex = []
+    for t in tags:
+        if t["name"] in INDUSTRY_SHORTCODES and not t["closing"]:
+            for pname, v0, v1 in t["params"]:
+                rx = _IND_EXEMPT_PARAMS.get(pname or "")
+                if rx and rx.fullmatch(doc[v0:v1]):
+                    ex.append((v0, v1))
+    pos = a
+    for t in sorted(tags, key=lambda t: t["start"]) + [dict(start=b, end=b)]:
+        for m in _IND_BODY_CITE_RE.finditer(doc, pos, max(pos, t["start"])):
+            ex.append(m.span())
+        pos = max(pos, t["end"])
+    return ex
+
+
+def _has_number(text):
+    t = _ud.normalize("NFKC", _unescape(text))
+    return any(_ud.category(ch) == "Nd" or ch in _IND_PCT for ch in t) or any(ch in _IND_PCT for ch in text)
+
+
+_HOST_DOTS = str.maketrans({"。": ".", "．": ".", "｡": ".", "︒": ".", "\u2024": "."})
+_HOST_RE = re.compile(r"(?<![a-z0-9\-.])((?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)(?![a-z0-9\-]|\.[a-z0-9])")
+
+
+def _hosts(text):
+    """文本里所有主机名（链接里的或裸域名）：先解码实体、NFKD、去 Mn/Cf、统一各种句点为“.”、转小写，再按完整主机边界提取。"""
+    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(text))).translate(_HOST_DOTS)
+    t = _ud.normalize("NFKC", t).translate(_HOST_DOTS).lower()
+    return [h.rstrip(".") for h in _HOST_RE.findall(t)]
+
+
+def _host_in(host, domains):
+    return any(host == d or host.endswith("." + d) for d in domains)
 
 
 def industry_violations(doc):
-    """[(code, line)]：块内数值 → E-INDUSTRY-NUMBER；块内数据机构链接或域名 → E-INDUSTRY-AGENCY-LINK。"""
-    res = []
-    for a, b in industry_blocks(doc):
-        seg = doc[a:b]
-        for code, rx, text in (("E-INDUSTRY-NUMBER", _IND_NUMBER_RE, _IND_EXEMPT_RE.sub(lambda m: " " * len(m.group(0)), seg)),
-                               ("E-INDUSTRY-AGENCY-LINK", _IND_AGENCY_RE, seg)):
-            lines_hit = sorted({doc.count("\n", 0, a + m.start()) + 1 for m in rx.finditer(text)})
-            res += [(code, ln) for ln in lines_hit]
-    return res
+    """[(code, line)]：块内数值 → E-INDUSTRY-NUMBER；块内数据机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。"""
+    res = set()
+    for a, b, tags in industry_blocks(doc):
+        ex = _ind_exempt_spans(doc, a, b, tags)
+        masked = list(doc[a:b])
+        for x0, x1 in ex:
+            for p in range(x0, x1):
+                masked[p - a] = " "
+        masked = "".join(masked)
+        off = a
+        for raw_ln, m_ln in zip(doc[a:b].split("\n"), masked.split("\n")):
+            line_no = doc.count("\n", 0, off) + 1
+            if _has_number(m_ln):
+                res.add(("E-INDUSTRY-NUMBER", line_no))
+            if any(_host_in(h, INDUSTRY_AGENCY_DOMAINS) for h in _hosts(raw_ln)):
+                res.add(("E-INDUSTRY-AGENCY-LINK", line_no))
+            off += len(raw_ln) + 1
+    return sorted(res, key=lambda x: (x[1], x[0]))
 
 
-def fred_cited_lines(lines):
-    return [i for i, s in enumerate(lines, 1) if _FRED_URL_RE.search(s) or _FRED_WORD_CS_RE.search(s)]
+# —— E-FRED-CITED（Grok Bot 15:28 + 15:43）：fred.stlouisfed.org（含子域名）或大写 FRED 字样；只管新增或改动的行
+_FRED_WORD_RE = re.compile(r"(?<![A-Za-z])FRED(?![A-Za-z])")
 
 
-def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
+def fred_line_hit(raw_line):
+    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(raw_line)))      # 去 Mn/Cf：FRE︎D、FRÉD（E+U+0301）照拦
+    t = _ud.normalize("NFKC", t)
+    return bool(_FRED_WORD_RE.search(t)) or any(_host_in(h, (FRED_DOMAIN,)) for h in _hosts(raw_line))
+
+
+def changed_lines(text, baseline):
+    """新稿中新增或改动的行号（1 起）。baseline 为 None（新稿）时返回全部行。
+    用 difflib.SequenceMatcher(autojunk=False) 逐行比对，取非 equal 段的新稿行。"""
+    new = text.splitlines()
+    if baseline is None:
+        return set(range(1, len(new) + 1))
+    import difflib
+    sm = difflib.SequenceMatcher(None, baseline.splitlines(), new, autojunk=False)
+    return {j + 1 for tag, _i1, _i2, j1, j2 in sm.get_opcodes() if tag != "equal" for j in range(j1, j2)}
+
+
+def fred_cited_lines(raw_lines, baseline=None):
+    todo = changed_lines("\n".join(raw_lines), baseline)
+    return [i for i, s in enumerate(raw_lines, 1) if i in todo and fred_line_hit(s)]
+
+
+def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None, baseline=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
-    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。"""
+    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。
+    baseline：已发布旧版的全文（可信来源，如 git 上的旧提交）。只用于 E-FRED-CITED：给出时只查新增或改动的行；None 表示新稿，查全部行。"""
     errors = []
     flags = {k: False for k in FLAG_KEYS}
     counts = {k: 0 for k in COUNT_KEYS}
@@ -1053,7 +1187,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     # —— 整篇（跨行）层面
     for code, ln in industry_violations(doc):          # 产业与经济数据小节（industry-* 短代码块）
         err(code, ln)
-    for ln in fred_cited_lines(lines):                  # 整篇：不得引用 FRED
+    # E-FRED-CITED 只管新增或改动的行（Grok Bot 15:43）：baseline 为已发布旧版文本时与之逐行比对；新稿（baseline=None）查全部行
+    for ln in fred_cited_lines(raw_lines, baseline):
         err("E-FRED-CITED", ln)
     if gloss_has_label("\n".join(sb_all)) and not any(e["code"] == "E-GLOSS-FORMAT" for e in errors):
         err("E-GLOSS-FORMAT", 0)            # 标签被拆在两行

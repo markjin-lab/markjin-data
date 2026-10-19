@@ -11,7 +11,7 @@ from markjin import route as R
 def legacy_fred(fn):
     from unittest import mock as _mock
     import markjin.selfcheck as _scm
-    return _mock.patch.object(_scm, "fred_cited_lines", lambda lines: [])(fn)
+    return _mock.patch.object(_scm, "fred_cited_lines", lambda *a, **k: [])(fn)
 from markjin import approvals as _A
 from markjin.selfcheck import check_text, compute_low_risk
 

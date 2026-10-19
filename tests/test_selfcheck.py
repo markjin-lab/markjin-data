@@ -11,7 +11,7 @@ from markjin.selfcheck import check_text, check_file, compute_low_risk
 def legacy_fred(fn):
     from unittest import mock as _mock
     import markjin.selfcheck as _scm
-    return _mock.patch.object(_scm, "fred_cited_lines", lambda lines: [])(fn)
+    return _mock.patch.object(_scm, "fred_cited_lines", lambda *a, **k: [])(fn)
 from markjin.internal import parse_internal_list, load_internal_terms as _real_load
 import markjin.selfcheck as _sc
 
