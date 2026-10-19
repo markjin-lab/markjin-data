@@ -871,7 +871,7 @@ _IND_URL_RAW_RE = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//[^\s<>\"'）)\]]*
 
 
 def _ind_markup_bad(seg):
-    """从严，不尝试解析：HTML 属性里出现 >；URL 里有百分号编码，或主机前有 @。"""
+    """从严，不尝试解析：HTML 属性里出现 > 或 HTML 标签不结束；块内任何 @；链接里有百分号编码。"""
     for m in re.finditer(r"<[A-Za-z]", seg):         # 从 < 开始按引号找标签结束；引号里出现 > 或标签不结束都算坏
         q = None
         for ch in seg[m.end():]:
@@ -886,10 +886,10 @@ def _ind_markup_bad(seg):
                 break
         else:
             return True
+    if "@" in seg or "＠" in seg or "﹫" in seg or "&#64;" in seg.lower() or "&commat;" in seg.lower():
+        return True                                  # 从严：块内任何 @（链接任意位置、裸域名、邮箱、参数里）都报
     for m in _IND_URL_RAW_RE.finditer(seg):
-        u = m.group(0)
-        auth = u.split("//", 1)[1].split("/", 1)[0]
-        if "%" in u or "@" in auth or "@" in u.split("//", 1)[1].split("?", 1)[0].split("#", 1)[0]:
+        if "%" in m.group(0):                        # 链接里有百分号编码
             return True
     return False
 
@@ -940,20 +940,17 @@ FRED_LEGACY_ALLOWLIST = frozenset({
 })
 
 
-def _rel_in_repo(repo, rel):
-    if not rel:
+def _rel_ok(rel):
+    """rel 须是规范的仓库内相对路径（不以 / 开头，没有 . 或 .. 段，不含反斜杠）；不看磁盘上的文件。"""
+    if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
         return False
-    try:
-        root = Path(repo).resolve()
-        f = (root / rel).resolve()
-        return f.relative_to(root).as_posix() == rel and f.is_file()
-    except (ValueError, OSError, TypeError):
-        return False
+    return all(part not in ("", ".", "..") for part in rel.split("/"))
 
 
 def fred_cited_lines(text, repo=None, rel=None):
-    """全文逐行检查 E-FRED-CITED；只有 FRED_LEGACY_ALLOWLIST 里逐项相同的行放行。"""
-    in_repo = _rel_in_repo(repo, rel)
+    """全文逐行检查 E-FRED-CITED。放行只看受检文本本身：(rel, 行号, 受检文本里这一行的 sha256) 在 FRED_LEGACY_ALLOWLIST 里
+    才放行；rel 为空或不是规范相对路径（仓库外稿件经 check_file 得到 rel=None）一律不放行。"""
+    in_repo = _rel_ok(rel)
     out = []
     for i, line in enumerate(text.split("\n"), 1):
         if not fred_line_hit(line):

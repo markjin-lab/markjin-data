@@ -359,10 +359,37 @@ class R7FredAllowlist(unittest.TestCase):
     def test_different_line_number_blocked(self):
         self.assertEqual(self.fred("\n" + self.text(), self.REL), [6, 141])
 
-    def test_copied_into_new_digest_blocked(self):
+    def test_copied_into_new_digest_blocked(self):     # 真实存在、但不在清单里的 digest 文件（临时仓库目录）
+        with _tmp.TemporaryDirectory() as d:
+            (_P(d) / "digest").mkdir()
+            f = _P(d) / "digest" / "2026-10-20.md"
+            f.write_text(self.text(), encoding="utf-8")
+            self.assertTrue(f.is_file())
+            r = _sc.check_file(str(f), d, "2026-10-20", "daily", link_checker=lambda u: True)
+            self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [5, 140])
+
+    def test_listed_path_in_temp_repo_same_text_passes(self):   # 放行只看受检文本，不看磁盘上是不是原文件
+        with _tmp.TemporaryDirectory() as d:
+            (_P(d) / "digest").mkdir()
+            f = _P(d) / "digest" / "2026-10-15.md"
+            f.write_text(self.text(), encoding="utf-8")
+            r = _sc.check_file(str(f), d, "2026-10-15", "daily", link_checker=lambda u: True)
+            self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [])
+
+    def test_path_matches_but_checked_line_differs_blocked(self):
         L = self.text().split("\n")
-        self.assertEqual(self.fred(self.text(), "digest/2026-10-20.md"), [5, 140])
-        self.assertEqual(self.fred(TITLE + L[4] + "\n", "digest/2026-10-20.md"), [3])
+        L[139] = L[139] + " "
+        self.assertEqual(self.fred("\n".join(L), self.REL), [140])
+        with _tmp.TemporaryDirectory() as d:
+            (_P(d) / "digest").mkdir()
+            f = _P(d) / "digest" / "2026-10-15.md"
+            f.write_text("\n".join(L), encoding="utf-8")
+            r = _sc.check_file(str(f), d, "2026-10-15", "daily", link_checker=lambda u: True)
+            self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [140])
+
+    def test_unnormalized_rel_blocked(self):
+        for rel in ("./digest/2026-10-15.md", "digest//2026-10-15.md", "/digest/2026-10-15.md", "digest\\2026-10-15.md"):
+            self.assertEqual(self.fred(self.text(), rel), [5, 140], rel)
 
     def test_crlf_blocked(self):
         self.assertEqual(self.fred(self.text().replace("\n", "\r\n"), self.REL), [5, 140])
@@ -442,6 +469,26 @@ class R7UrlStrict(unittest.TestCase):
 
     def test_pass_plain_url(self):
         self.assertNotIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://example.org/path [1]。")))
+
+    def test_at_in_query(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://example.org/x?email=a@b [1]。")))
+
+    def test_at_in_fragment(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://example.org/x#email=a@b [1]。")))
+
+    def test_at_in_path(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://example.org/@user [1]。")))
+
+    def test_at_bare_token(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("联系 a@bea.gov [1]。")))
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 user@example.org/x [1]。")))
+
+    def test_at_fullwidth_and_entity(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("联系 a＠b [1]。")))
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("联系 a&#64;b [1]。")))
+
+    def test_at_outside_block_not_this_code(self):
+        self.assertNotIn("E-INDUSTRY-MARKUP", _mcodes(TITLE + "联系 a@b [1]。\n"))
 
     def test_url_in_param(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" inference="见 https://a@example.org" >}}正文 [1]。{{< /industry-link >}}\n'
