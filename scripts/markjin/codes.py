@@ -21,6 +21,8 @@ ERROR_CODES = {
     # —— 自检：产业与经济数据小节（站点 industry-* 短代码块）与 FRED
     "E-INDUSTRY-NUMBER": "产业与经济数据小节或产业链接段（industry-* 短代码块，含参数）里出现数值：阿拉伯数字或百分号（出处编号 [n] 及参数 cite、item 除外）；开放数字前一律硬拦",
     "E-INDUSTRY-AGENCY-LINK": "产业与经济数据小节或产业链接段（industry-* 短代码块）里出现数据机构链接或域名（含子域名）",
+    "E-SHORTCODE-MALFORMED": "短代码标签（{{< … >}} / {{% … %}}）不能解析或没有结束符（如引号未闭合）；从严判失败，其后内容照常检查",
+    "E-SELFCHECK-INPUT": "selfcheck 命令行输入错误（--baseline-ref 不是 origin/main 的祖先提交、基准内容不是 UTF-8、稿件不在 --repo 内等）",
     "E-FRED-CITED": "稿件新增或改动的行引用 FRED：出现 fred.stlouisfed.org 链接（含子域名）或 FRED 字样（FRED 已停用，2026-10-18；已发布旧版里未改动的行不重新拦）",
     # —— 自检：计数由脚本生成（#9）
     "E-COUNT-001": "稿件中手写的计数与脚本生成的计数不一致",

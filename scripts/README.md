@@ -91,9 +91,10 @@
 ### 产业与经济数据小节（industry-* 短代码）与 E-FRED-CITED
 
 - 站点用 `{{< industry-data >}}…{{< /industry-data >}}`（内含 `industry-datum`）和 `{{< industry-link … >}}…{{< /industry-link >}}` 渲染“产业与经济数据”小节与产业链接段，稿件里没有字面标题。selfcheck 把这些块（含短代码参数；缺结束短代码时算到文末）当作该小节检查。
-- 块内任何十进制数字（Unicode Nd，含全角、阿拉伯-印度数字；实体解码、NFKC 后检查）或百分号类报 E-INDUSTRY-NUMBER（只豁免 industry-* 短代码自身格式合规的 `cite`、`item` 参数值，以及标签以外正文里的 `[n]`）；短代码按引号状态解析。块内数据机构主机（`INDUSTRY_AGENCY_DOMAINS`，主机等于该域名或是其子域名；先统一全角、句号类点）报 E-INDUSTRY-AGENCY-LINK。这比路线图 L393 的 ③④ 更严，开放数字前代替它们；开放数字时须先完整落实 ③④。
+- 块内任何十进制数字（Unicode Nd，含全角、阿拉伯-印度数字；实体解码、NFKC 后检查）或百分号类报 E-INDUSTRY-NUMBER（只豁免 industry-* 短代码自身格式合规的 `cite`、`item` 参数值，以及标签以外正文里独立的 `[n]`：前面不是 `[ = " '`、后面不是 `] ( :`，不在 HTML 标签或代码里）；短代码按引号状态解析。块内数据机构主机（`INDUSTRY_AGENCY_DOMAINS`，主机等于该域名或是其子域名；先统一全角、句号类点）报 E-INDUSTRY-AGENCY-LINK。这比路线图 L393 的 ③④ 更严，开放数字前代替它们；开放数字时须先完整落实 ③④。
 - 内部用语沿用 E-BLOCK-INTERNAL（整行与整篇扫描已覆盖块内文字）。
-- E-FRED-CITED：新增或改动的行里出现 fred.stlouisfed.org 链接（主机等于它或是其子域名）或 FRED 字样（去掉组合符和格式控制符后匹配）。已发布旧稿用 `--baseline FILE` 或 `--baseline-ref REF` 传入旧版，`check_text(..., baseline=旧版全文)` 用 SequenceMatcher(autojunk=False) 逐行比对，只查非 equal 段；不给基准时按新稿查全部行（Grok Bot 15:43）。
+- E-FRED-CITED：新增或改动的行里出现 fred.stlouisfed.org（URL 主机或裸域名等于它或是其子域名；先百分号解码、统一句号类点）或 FRED 字样（去掉组合符和格式控制符后匹配）。已发布旧稿用 `--baseline-ref REF` 传入旧版所在提交，REF 须是 origin/main 的祖先，否则以 E-SELFCHECK-INPUT 退出（退出码 3，`--json` 输出结构化错误）。从严比对：某行只有在旧版同一行号逐字相同、且前后行也相同时才算未改动，搬移、交换、替换、插入造成的错位行都查。不给基准时按新稿查全部行（Grok Bot 15:43）。
+- E-SHORTCODE-MALFORMED：短代码标签不能解析或没有结束符（引号值跨行、标签里又出现 `{{` 等）时报错，其后的内容照常检查。
 
 ## route（#10 审查路由）
 

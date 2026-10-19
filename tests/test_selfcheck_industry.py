@@ -234,7 +234,7 @@ class R4HostBoundaries(unittest.TestCase):
 
 
 class R4FredBaseline(unittest.TestCase):              # Grok Bot 15:43：只管新增或改动的行
-    OLD = TITLE + "某说明 [1]。\n采集范围含 FRED 序列 [2]。\n"
+    OLD = TITLE + "某说明 [1]。\n采集范围含 FRED 序列 [2]。\n结尾 [9]。\n"
 
     def run_b(self, text, baseline):
         r = _sc.check_text(text, REPO, DATE, "daily", link_checker=lambda u: True, baseline=baseline)
@@ -248,36 +248,14 @@ class R4FredBaseline(unittest.TestCase):              # Grok Bot 15:43：只管�
         self.assertEqual(self.run_b(new, self.OLD), [4])
 
     def test_new_line_blocked(self):
-        self.assertEqual(self.run_b(self.OLD + "另见 https://fred.stlouisfed.org/x [3]。\n", self.OLD), [5])
+        self.assertEqual(self.run_b(self.OLD + "另见 https://fred.stlouisfed.org/x [3]。\n", self.OLD), [6])
 
     def test_moved_old_line_same_text_passes(self):
-        new = TITLE + "采集范围含 FRED 序列 [2]。\n某说明 [1]。\n"
+        new = TITLE + "采集范围含 FRED 序列 [2]。\n某说明 [1]。\n结尾 [9]。\n"
         self.assertEqual(self.run_b(new, self.OLD), [3])          # 位置变动的行按改动处理（拿不准就拦）
 
     def test_no_baseline_checks_all(self):
         self.assertEqual(self.run_b(self.OLD, None), [4])
-
-    def test_cli_baseline_ref(self):
-        import subprocess, sys, tempfile
-        from pathlib import Path
-        root = Path(__file__).resolve().parent.parent
-        with tempfile.TemporaryDirectory() as d:
-            subprocess.run(["git", "init", "-q", d], check=True)
-            f = Path(d) / "digest.md"
-            f.write_text(self.OLD, encoding="utf-8")
-            env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-            import os
-            env = {**os.environ, **env}
-            subprocess.run(["git", "-C", d, "add", "."], check=True, env=env)
-            subprocess.run(["git", "-C", d, "commit", "-qm", "x"], check=True, env=env)
-            f.write_text(self.OLD + "新增 FRED [3]。\n", encoding="utf-8")
-            out = subprocess.run([sys.executable, str(root / "scripts" / "selfcheck.py"), str(f), "--repo", d, "--date", DATE,
-                                  "--card-type", "daily", "--json", "--no-link-check", "--baseline-ref", "HEAD"],
-                                 capture_output=True, text=True).stdout
-            import json
-            lines = [e["line"] for e in json.loads(out)["errors"] if e["code"] == "E-FRED-CITED"]
-            self.assertEqual(lines, [5])
-
 
 class R4FredMarks(unittest.TestCase):
     def test_vs16_inserted(self):
@@ -300,6 +278,195 @@ class R4FredMarks(unittest.TestCase):
 
     def test_pass_lowercase_and_name(self):
         self.assertEqual(codes(TITLE + "Fred 与 fred 讨论了某模型 [1]。\n"), {})
+
+
+# ---------------------------------------------------------------- r5 修正（最后一轮，从严）
+import json as _json, os as _os, subprocess as _subp, sys as _sys, tempfile as _tmp
+from pathlib import Path as _P
+_ROOT = _P(__file__).resolve().parent.parent
+_ENV = {**_os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+
+def _cli(args, cwd=None):
+    p = _subp.run([_sys.executable, str(_ROOT / "scripts" / "selfcheck.py"), *args], capture_output=True, text=True, cwd=cwd)
+    return p.returncode, p.stdout, p.stderr
+
+
+class R5Cli(unittest.TestCase):
+    OLD = TITLE + "某说明 [1]。\n采集范围含 FRED 序列 [2]。\n结尾 [9]。\n"
+
+    def repo(self, d, publish=True):
+        g = ["git", "-C", d]
+        _subp.run(["git", "init", "-q", d], check=True)
+        f = _P(d) / "digest.md"
+        f.write_text(self.OLD, encoding="utf-8")
+        _subp.run(g + ["add", "."], check=True, env=_ENV)
+        _subp.run(g + ["commit", "-qm", "old"], check=True, env=_ENV)
+        if publish:
+            _subp.run(g + ["update-ref", "refs/remotes/origin/main", "HEAD"], check=True)
+        return f
+
+    def args(self, f, d, *extra):
+        return [str(f), "--repo", d, "--date", DATE, "--card-type", "daily", "--json", "--no-link-check", *extra]
+
+    def test_ancestor_ref_old_line_passes_new_line_blocked(self):
+        with _tmp.TemporaryDirectory() as d:
+            f = self.repo(d)
+            f.write_text(self.OLD + "新增 FRED [3]。\n", encoding="utf-8")
+            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
+            self.assertEqual([e["line"] for e in _json.loads(out)["errors"] if e["code"] == "E-FRED-CITED"], [6])
+
+    def test_non_ancestor_ref_rejected(self):           # 含新稿的提交不在 origin/main 上：拒绝
+        with _tmp.TemporaryDirectory() as d:
+            f = self.repo(d)
+            f.write_text(self.OLD + "新增 FRED [3]。\n", encoding="utf-8")
+            _subp.run(["git", "-C", d, "commit", "-qam", "new"], check=True, env=_ENV)
+            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
+            self.assertEqual(rc, 3)
+            self.assertEqual(_json.loads(out)["errors"][0]["code"], "E-SELFCHECK-INPUT")
+
+    def test_no_origin_main_rejected(self):
+        with _tmp.TemporaryDirectory() as d:
+            f = self.repo(d, publish=False)
+            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
+            self.assertEqual(rc, 3)
+
+    def test_bad_ref_rejected(self):
+        with _tmp.TemporaryDirectory() as d:
+            f = self.repo(d)
+            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "nosuchref"))
+            self.assertEqual((rc, _json.loads(out)["status"]), (3, "INPUT-ERROR"))
+
+    def test_file_baseline_flag_gone(self):
+        with _tmp.TemporaryDirectory() as d:
+            f = self.repo(d)
+            rc, out, err = _cli(self.args(f, d, "--baseline", str(f)))
+            self.assertNotEqual(rc, 0)
+            self.assertIn("unrecognized arguments", err)
+
+    def test_baseline_not_utf8(self):
+        with _tmp.TemporaryDirectory() as d:
+            f = self.repo(d)
+            f.write_bytes(b"\xff\xfe bad")
+            _subp.run(["git", "-C", d, "commit", "-qam", "bin"], check=True, env=_ENV)
+            _subp.run(["git", "-C", d, "update-ref", "refs/remotes/origin/main", "HEAD"], check=True)
+            f.write_text(self.OLD, encoding="utf-8")
+            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
+            self.assertEqual(rc, 3)
+            self.assertEqual(_json.loads(out)["errors"][0]["code"], "E-SELFCHECK-INPUT")
+
+    def test_draft_outside_repo(self):
+        with _tmp.TemporaryDirectory() as d, _tmp.TemporaryDirectory() as d2:
+            self.repo(d)
+            f2 = _P(d2) / "x.md"
+            f2.write_text(self.OLD, encoding="utf-8")
+            rc, out, _ = _cli(self.args(f2, d, "--baseline-ref", "HEAD"))
+            self.assertEqual((rc, _json.loads(out)["errors"][0]["code"]), (3, "E-SELFCHECK-INPUT"))
+
+    def test_relative_draft_outside_repo(self):
+        with _tmp.TemporaryDirectory() as d, _tmp.TemporaryDirectory() as d2:
+            self.repo(d)
+            (_P(d2) / "x.md").write_text(self.OLD, encoding="utf-8")
+            rc, out, _ = _cli(["x.md", "--repo", d, "--date", DATE, "--card-type", "daily", "--json", "--no-link-check",
+                               "--baseline-ref", "HEAD"], cwd=d2)
+            self.assertEqual(rc, 3)
+
+
+class R5FredPosition(unittest.TestCase):              # 只有同一行号、逐字相同且前后行都相同才放行
+    OLD = "# 日报\n\nA [1]。\n采集含 FRED [2]。\nB [3]。\n"
+
+    def lines(self, new):
+        r = _sc.check_text(new, REPO, DATE, "daily", link_checker=lambda u: True, baseline=self.OLD)
+        return [e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"]
+
+    def test_unchanged_passes(self):
+        self.assertEqual(self.lines(self.OLD), [])
+
+    def test_swap_blocked(self):
+        self.assertEqual(self.lines("# 日报\n\nA [1]。\nB [3]。\n采集含 FRED [2]。\n"), [5])
+
+    def test_move_up_blocked(self):
+        self.assertEqual(self.lines("# 日报\n\n采集含 FRED [2]。\nA [1]。\nB [3]。\n"), [3])
+
+    def test_replace_neighbor_blocked(self):
+        self.assertEqual(self.lines("# 日报\n\nA 改 [1]。\n采集含 FRED [2]。\nB [3]。\n"), [4])
+
+    def test_insert_above_blocked(self):
+        self.assertEqual(self.lines("# 日报\n\n新行 [9]。\nA [1]。\n采集含 FRED [2]。\nB [3]。\n"), [5])
+
+    def test_duplicate_line_blocked(self):
+        self.assertEqual(self.lines(self.OLD + "采集含 FRED [2]。\n"), [6])
+
+    def test_append_far_below_keeps_old(self):
+        self.assertEqual(self.lines(self.OLD + "\n更正说明 [4]。\n"), [])
+
+
+class R5MalformedShortcode(unittest.TestCase):
+    def test_unclosed_quote_does_not_swallow(self):
+        doc = TITLE + '前文 {{< ref note="未闭合 >}}\n' + link("正文 42 项 [1]。")
+        c = codes(doc)
+        self.assertEqual(c.get("E-INDUSTRY-NUMBER"), 1)
+        self.assertIn("E-SHORTCODE-MALFORMED", _sc.check_text(doc, REPO, DATE, "daily", link_checker=lambda u: True)["error_codes"])
+
+    def test_unterminated_tag(self):
+        doc = TITLE + "前文 {{< ref x\n" + link("正文 [1]。")
+        r = _sc.check_text(doc, REPO, DATE, "daily", link_checker=lambda u: True)
+        self.assertIn("E-SHORTCODE-MALFORMED", r["error_codes"])
+
+    def test_bad_name(self):
+        r = _sc.check_text(TITLE + "前文 {{< >}} [1]。\n", REPO, DATE, "daily", link_checker=lambda u: True)
+        self.assertIn("E-SHORTCODE-MALFORMED", r["error_codes"])
+
+    def test_pass_wellformed(self):
+        r = _sc.check_text(TITLE + link("正文 [1]。"), REPO, DATE, "daily", link_checker=lambda u: True)
+        self.assertNotIn("E-SHORTCODE-MALFORMED", r["error_codes"])
+
+
+class R5BodyCite(unittest.TestCase):
+    def test_html_attr_blocked(self):
+        self.assertEqual(codes(link('正文 <span data-value="[123]">词</span> [1]。')), {"E-INDUSTRY-NUMBER": 1})
+
+    def test_double_bracket_blocked(self):
+        self.assertEqual(codes(link("正文 [[123]] [1]。")), {"E-INDUSTRY-NUMBER": 1})
+
+    def test_code_span_blocked(self):
+        self.assertEqual(codes(link("正文 `[12]` [1]。")), {"E-INDUSTRY-NUMBER": 1})
+
+    def test_link_text_blocked(self):
+        self.assertEqual(codes(link("正文 [12](https://example.org) [1]。")), {"E-INDUSTRY-NUMBER": 1})
+
+    def test_attr_without_tag_blocked(self):
+        self.assertEqual(codes(link('正文 x="[12]" [1]。')), {"E-INDUSTRY-NUMBER": 1})
+
+    def test_pass_standalone(self):
+        self.assertEqual(codes(link("正文 [1][2]，另见 [3]。")), {})
+
+
+class R5Hosts(unittest.TestCase):
+    def test_path_not_host(self):
+        self.assertEqual(codes(link("见 https://example.org/path/bea.gov [1]。")), {})
+
+    def test_query_not_host(self):
+        self.assertEqual(codes(link("见 https://example.org/?u=bea.gov [1]。")), {})
+
+    def test_bare_path_not_host(self):
+        self.assertEqual(codes(link("见 example.org/p/bea.gov [1]。")), {})
+
+    def test_percent_encoded_dot_blocked(self):
+        self.assertEqual(codes(link("见 bea%2Egov [1]。")), {"E-INDUSTRY-AGENCY-LINK": 1, "E-INDUSTRY-NUMBER": 1})   # %2E 里的 2 也算数值
+        self.assertEqual(codes(link("见 https://bea%2egov/x [1]。")), {"E-INDUSTRY-AGENCY-LINK": 1, "E-INDUSTRY-NUMBER": 1})
+
+    def test_percent_encoded_suffix_passes(self):
+        self.assertNotIn("E-INDUSTRY-AGENCY-LINK", codes(link("见 bea.gov%2Eexample [1]。")))
+
+    def test_scheme_relative(self):
+        self.assertEqual(codes(link("见 //www.bls.gov/x [1]。")), {"E-INDUSTRY-AGENCY-LINK": 1})
+
+    def test_fred_percent(self):
+        self.assertEqual(codes(TITLE + "见 fred%2Estlouisfed%2Eorg [1]。\n"), {"E-FRED-CITED": 1})
+
+    def test_fred_in_path_passes(self):
+        self.assertEqual(codes(TITLE + "见 https://example.org/fred.stlouisfed.org [1]。\n"), {})
 
 
 if __name__ == "__main__":

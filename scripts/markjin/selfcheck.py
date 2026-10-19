@@ -723,11 +723,15 @@ def _sc_parse_tag(s, k):
         if j < len(s) and s[j] in "\"`":
             q = s[j]; v0 = j + 1; j += 1
             while j < len(s) and s[j] != q:
+                if s[j] == "\n" or s.startswith("{{", j):      # 从严：引号值跨行或里面又出现 {{，按未闭合处理
+                    return dict(start=k, end=j, name=name, closing=closing, params=params, unterminated=True)
                 j += 2 if (q == '"' and s[j] == "\\") else 1
             params.append((pname, v0, min(j, len(s))))
             j += 1
         else:
             v0 = j
+            if s.startswith("{{", j):                           # 从严：标签没结束又遇到新的 {{
+                return dict(start=k, end=j, name=name, closing=closing, params=params, unterminated=True)
             while j < len(s) and not s[j].isspace() and not s.startswith(end_tok, j):
                 j += 1
             if j == v0:
@@ -735,18 +739,30 @@ def _sc_parse_tag(s, k):
             params.append((pname, v0, j))
 
 
-def _sc_tags(s):
+def _sc_tags(s, malformed=None):
+    """全部短代码标签。不能解析或没有结束符的 {{< / {{% 记入 malformed（起点），并从它后面继续找，不吞掉后面的内容。"""
     out, k = [], 0
     while True:
         k = s.find("{{", k)
         if k < 0:
             return out
+        if not (s.startswith("{{<", k) or s.startswith("{{%", k)):
+            k += 2
+            continue
         t = _sc_parse_tag(s, k)
-        if t:
+        if t and not t["unterminated"]:
             out.append(t)
             k = t["end"]
         else:
-            k += 2
+            if malformed is not None:
+                malformed.append(k)
+            k += 3
+
+
+def shortcode_malformed_lines(doc):
+    bad = []
+    _sc_tags(doc, bad)
+    return sorted({doc.count("\n", 0, k) + 1 for k in bad})
 
 
 def industry_blocks(doc):
@@ -775,8 +791,13 @@ def industry_blocks(doc):
     return [(a, b, [t for t in tags if a <= t["start"] < b]) for a, b in spans]
 
 
+_IND_HTML_TAG_RE = re.compile(r"<[^<>]*>", re.S)
+_IND_CODE_RE = re.compile(r"```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`]*`?", re.S)
+
+
 def _ind_exempt_spans(doc, a, b, tags):
-    """数值豁免跨度：industry-* 短代码自身的 cite / item 参数值（格式合规时），以及标签以外正文里的 [n]。"""
+    """数值豁免跨度：industry-* 短代码自身格式合规的 cite / item 参数值；以及块内标签以外正文里独立的引注 [n]：
+    前面不是 [ = " '，后面不是 ] ( :，且不在 HTML 标签（含属性）、代码段或代码块里。"""
     ex = []
     for t in tags:
         if t["name"] in INDUSTRY_SHORTCODES and not t["closing"]:
@@ -786,8 +807,18 @@ def _ind_exempt_spans(doc, a, b, tags):
                     ex.append((v0, v1))
     pos = a
     for t in sorted(tags, key=lambda t: t["start"]) + [dict(start=b, end=b)]:
-        for m in _IND_BODY_CITE_RE.finditer(doc, pos, max(pos, t["start"])):
-            ex.append(m.span())
+        seg0, seg1 = pos, max(pos, t["start"])
+        seg = doc[seg0:seg1]
+        bad = [(m.start() + seg0, m.end() + seg0) for rx in (_IND_HTML_TAG_RE, _IND_CODE_RE) for m in rx.finditer(seg)]
+        for m in _IND_BODY_CITE_RE.finditer(doc, seg0, seg1):
+            x0, x1 = m.span()
+            before = doc[x0 - 1] if x0 > 0 else ""
+            after = doc[x1] if x1 < len(doc) else ""
+            if before in "[=\"'" and before or after in "]（(:：" and after:
+                continue
+            if any(p0 < x1 and x0 < p1 for p0, p1 in bad):
+                continue
+            ex.append((x0, x1))
         pos = max(pos, t["end"])
     return ex
 
@@ -799,13 +830,37 @@ def _has_number(text):
 
 _HOST_DOTS = str.maketrans({"。": ".", "．": ".", "｡": ".", "︒": ".", "\u2024": "."})
 _HOST_RE = re.compile(r"(?<![a-z0-9\-.])((?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)(?![a-z0-9\-]|\.[a-z0-9])")
+_URL_RE = re.compile(r"(?:[a-z][a-z0-9+.\-]*:)?//([^\s/?#\\<>\"'）)\]]*)([^\s<>\"'）)\]]*)")
+
+
+def _host_norm(t):
+    """解码实体、反复百分号解码（%2E → .）、NFKD 去 Mn/Cf、NFKC、统一句号类点、转小写。"""
+    from urllib.parse import unquote
+    t = _unescape(t)
+    for _ in range(3):
+        u = unquote(t)
+        if u == t:
+            break
+        t = u
+    t = _gl_strip_marks(_ud.normalize("NFKD", t)).translate(_HOST_DOTS)
+    return _ud.normalize("NFKC", t).translate(_HOST_DOTS).lower()
 
 
 def _hosts(text):
-    """文本里所有主机名（链接里的或裸域名）：先解码实体、NFKD、去 Mn/Cf、统一各种句点为“.”、转小写，再按完整主机边界提取。"""
-    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(text))).translate(_HOST_DOTS)
-    t = _ud.normalize("NFKC", t).translate(_HOST_DOTS).lower()
-    return [h.rstrip(".") for h in _HOST_RE.findall(t)]
+    """URL 主机与裸域名分开取：先规范化；URL（scheme:// 或 //）只取 authority 里的主机（去掉用户信息、端口），路径、查询不算；
+    URL 以外的文字按空白切词，词里含“/”时只看第一个“/”之前的部分，再按完整主机边界取裸域名。"""
+    t = _host_norm(text)
+    hosts = []
+    def url_host(m):
+        auth = m.group(1).rsplit("@", 1)[-1]
+        auth = re.sub(r":[0-9]*$", "", auth)
+        hosts.extend(h.rstrip(".") for h in _HOST_RE.findall(auth))
+        return " " * len(m.group(0))
+    rest = _URL_RE.sub(url_host, t)
+    for tok in rest.split():
+        head = tok.split("/", 1)[0]
+        hosts.extend(h.rstrip(".") for h in _HOST_RE.findall(head))
+    return hosts
 
 
 def _host_in(host, domains):
@@ -844,14 +899,18 @@ def fred_line_hit(raw_line):
 
 
 def changed_lines(text, baseline):
-    """新稿中新增或改动的行号（1 起）。baseline 为 None（新稿）时返回全部行。
-    用 difflib.SequenceMatcher(autojunk=False) 逐行比对，取非 equal 段的新稿行。"""
+    """需要检查的新稿行号（1 起）。baseline 为 None（新稿）时返回全部行。
+    从严：第 i 行只有在旧稿同一行号上逐字相同、且前一行与后一行也都相同（都在文首或文末也算相同）时才算未改动；
+    搬移、交换、替换、插入导致的错位行一律检查。"""
     new = text.splitlines()
     if baseline is None:
         return set(range(1, len(new) + 1))
-    import difflib
-    sm = difflib.SequenceMatcher(None, baseline.splitlines(), new, autojunk=False)
-    return {j + 1 for tag, _i1, _i2, j1, j2 in sm.get_opcodes() if tag != "equal" for j in range(j1, j2)}
+    old = baseline.splitlines()
+    def at(xs, k):
+        return xs[k] if 0 <= k < len(xs) else None
+    keep = {i + 1 for i in range(len(new))
+            if i < len(old) and old[i] == new[i] and at(old, i - 1) == at(new, i - 1) and at(old, i + 1) == at(new, i + 1)}
+    return set(range(1, len(new) + 1)) - keep
 
 
 def fred_cited_lines(raw_lines, baseline=None):
@@ -1187,6 +1246,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
     # —— 整篇（跨行）层面
     for code, ln in industry_violations(doc):          # 产业与经济数据小节（industry-* 短代码块）
         err(code, ln)
+    for ln in shortcode_malformed_lines(doc):          # 不能解析或没有结束符的短代码标签：从严报错
+        err("E-SHORTCODE-MALFORMED", ln)
     # E-FRED-CITED 只管新增或改动的行（Grok Bot 15:43）：baseline 为已发布旧版文本时与之逐行比对；新稿（baseline=None）查全部行
     for ln in fred_cited_lines(raw_lines, baseline):
         err("E-FRED-CITED", ln)
