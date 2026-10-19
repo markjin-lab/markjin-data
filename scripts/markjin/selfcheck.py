@@ -665,6 +665,67 @@ def gloss_has_label(text):
     return any(l in c for l in _GL_LABELS_C)
 
 
+# ================================================================ 产业与经济数据小节（站点 PR #125 的 industry-* 短代码；Grok Bot 2026-10-19 15:28 裁定）
+# 站点用 {{< industry-data >}}…{{< /industry-data >}}（内含 industry-datum）和 {{< industry-link … >}}…{{< /industry-link >}}
+# 渲染“产业与经济数据 / Industry and economic data”小节与产业链接段，稿件里没有字面的 Markdown 标题。selfcheck 把这些块
+# （含短代码参数）当作该小节，检查块内文字：任何数值（阿拉伯数字、百分号）和任何数据机构链接一律硬拦。
+# 这比路线图 L393 的 ③④ 更严，在开放数字之前代替它们；开放数字时须先完整落实 ③④。
+# 例外只有出处编号：正文里的 [n]，短代码参数 cite（出处编号）与 item（条目编号，只作锚点）。
+INDUSTRY_SHORTCODES = ("industry-data", "industry-datum", "industry-link")
+_IND_OPEN_RE = re.compile(r"\{\{[<%]\s*(industry-(?:data|link))\b[^}]*?[>%]\}\}")
+_IND_CLOSE_RE = {n: re.compile(r"\{\{[<%]\s*/\s*" + re.escape(n) + r"\s*[>%]\}\}") for n in ("industry-data", "industry-link")}
+_IND_DATUM_RE = re.compile(r"\{\{[<%]\s*industry-datum\b[^}]*?[>%]\}\}")
+_IND_EXEMPT_RE = re.compile(r"\[[0-9]{1,3}\]|\b(?:cite|item)\s*=\s*\"[0-9,\s]*\"")
+_IND_NUMBER_RE = re.compile(r"[0-9%‰‱]")
+# 数据机构域名（含子域名）。新增机构只改这里。
+INDUSTRY_AGENCY_DOMAINS = (
+    "bea.gov", "bls.gov", "census.gov", "eia.gov", "federalreserve.gov", "stlouisfed.org", "treasury.gov", "dol.gov",
+    "sec.gov", "ferc.gov", "usda.gov", "commerce.gov", "energy.gov", "fhfa.gov", "fdic.gov", "cbo.gov", "whitehouse.gov",
+    "stats.gov.cn", "pbc.gov.cn", "customs.gov.cn", "ndrc.gov.cn", "mof.gov.cn", "miit.gov.cn", "safe.gov.cn",
+    "mofcom.gov.cn", "csrc.gov.cn", "nea.gov.cn", "imf.org", "worldbank.org", "oecd.org", "bis.org", "iea.org",
+    "ecb.europa.eu", "ec.europa.eu", "eurostat.ec.europa.eu", "ons.gov.uk", "bankofengland.co.uk", "boj.or.jp",
+    "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
+_IND_AGENCY_RE = re.compile(r"(?<![a-z0-9.\-])(?:[a-z0-9\-]+\.)*(?:" + "|".join(re.escape(d) for d in INDUSTRY_AGENCY_DOMAINS)
+                            + r")(?![a-z0-9\-])", re.I)
+# 整篇：E-FRED-CITED（fred.stlouisfed.org 链接，含子域名；大写词 FRED）
+_FRED_WORD_CS_RE = re.compile(r"(?<![A-Za-z])FRED(?![A-Za-z])")
+_FRED_URL_RE = re.compile(r"(?<![a-z0-9.\-])(?:[a-z0-9\-]+\.)*fred\.stlouisfed\.org", re.I)
+
+
+def industry_blocks(doc):
+    """[(start, end)]：doc 中 industry-data / industry-link 块（含起止短代码）与块外的 industry-datum 短代码的跨度。
+    缺少结束短代码时一直算到文末（fail-closed）。"""
+    out, pos = [], 0
+    while True:
+        m = _IND_OPEN_RE.search(doc, pos)
+        if not m:
+            break
+        c = _IND_CLOSE_RE[m.group(1)].search(doc, m.end())
+        end = c.end() if c else len(doc)
+        out.append((m.start(), end))
+        pos = end
+    for m in _IND_DATUM_RE.finditer(doc):
+        if not any(a <= m.start() < b for a, b in out):
+            out.append((m.start(), m.end()))
+    return sorted(out)
+
+
+def industry_violations(doc):
+    """[(code, line)]：块内数值 → E-INDUSTRY-NUMBER；块内数据机构链接或域名 → E-INDUSTRY-AGENCY-LINK。"""
+    res = []
+    for a, b in industry_blocks(doc):
+        seg = doc[a:b]
+        for code, rx, text in (("E-INDUSTRY-NUMBER", _IND_NUMBER_RE, _IND_EXEMPT_RE.sub(lambda m: " " * len(m.group(0)), seg)),
+                               ("E-INDUSTRY-AGENCY-LINK", _IND_AGENCY_RE, seg)):
+            lines_hit = sorted({doc.count("\n", 0, a + m.start()) + 1 for m in rx.finditer(text)})
+            res += [(code, ln) for ln in lines_hit]
+    return res
+
+
+def fred_cited_lines(lines):
+    return [i for i, s in enumerate(lines, 1) if _FRED_URL_RE.search(s) or _FRED_WORD_CS_RE.search(s)]
+
+
 def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
@@ -990,6 +1051,10 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                 body_err("E-REPLAY-001", i)
 
     # —— 整篇（跨行）层面
+    for code, ln in industry_violations(doc):          # 产业与经济数据小节（industry-* 短代码块）
+        err(code, ln)
+    for ln in fred_cited_lines(lines):                  # 整篇：不得引用 FRED
+        err("E-FRED-CITED", ln)
     if gloss_has_label("\n".join(sb_all)) and not any(e["code"] == "E-GLOSS-FORMAT" for e in errors):
         err("E-GLOSS-FORMAT", 0)            # 标签被拆在两行
     if terms and not flags["internal"] and has_any(doc_compact, terms):

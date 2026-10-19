@@ -4,6 +4,14 @@ from pathlib import Path
 from helpers import (quote_line, source_line, make_repo, arxiv_line, fred_line, x_line, write_manifest, DUMMY_INTERNAL,
                      DATE, ARXIV_ID, FILES)
 from markjin.selfcheck import check_text, check_file, compute_low_risk
+
+
+# Grok Bot 2026-10-19 15:28：E-FRED-CITED 整篇拦截 FRED。下列旧测试的夹具用 FRED 序列验证宏观、算式、路由等其他逻辑
+# （FRED 回放代码与测试留待 FRED 代码清理 PR）；只在这些测试里关掉 E-FRED-CITED，规则本身由 test_selfcheck_industry.py 覆盖。
+def legacy_fred(fn):
+    from unittest import mock as _mock
+    import markjin.selfcheck as _scm
+    return _mock.patch.object(_scm, "fred_cited_lines", lambda lines: [])(fn)
 from markjin.internal import parse_internal_list, load_internal_terms as _real_load
 import markjin.selfcheck as _sc
 
@@ -270,6 +278,7 @@ class Counts(T):
 
 
 class Macro(T):
+    @legacy_fred
     def test_macro_never_low_risk(self):
         self.expect(run(fred_line()), "PASS", False, "R-MACRO")
 
@@ -305,6 +314,8 @@ class Macro(T):
 
 class MacroArithmetic(T):
     SRC = f" — `raw/{DATE}/fred/UNRATE.json` · https://fred.stlouisfed.org/series/UNRATE"
+
+    @legacy_fred
 
     def test_pure_arithmetic_allowed(self):
         for t in ("UNRATE 4.2%，较上月 4.0% 差值 +0.2 个百分点（推断：由原始数据计算；算式：4.2-4.0=0.2）",
@@ -502,6 +513,8 @@ class FormulaVerify(unittest.TestCase):
         for t in ok: self.assertTrue(verify_formula(t), t)
         for t in bad: self.assertFalse(verify_formula(t), t)
 
+    @legacy_fred
+
     def test_wrong_formula_blocked(self):
         self.expect(run(TITLE + fred_line("UNRATE 同比 4.2%（由原始数据计算；算式：4.2+4.2=4.2）。")),
                     "FAIL", False, "E-FORMULA-MISMATCH")
@@ -624,6 +637,8 @@ class R6Fixes(T):
             self.assertEqual(r["status"], "FAIL", d); self.assertFalse(r["low_risk"])
             self.assertTrue({"E-BLOCK-INVEST", "E-BLOCK-MACRO-OPINION"} & set(r["error_codes"]), (d, r["error_codes"]))
 
+    @legacy_fred
+
     def test_compare_arith_rule(self):
         self.expect(run(TITLE + fred_line("UNRATE 比上期高 4.2%。")), "FAIL", False, "E-BLOCK-MACRO-OPINION")
         self.expect(run(TITLE + fred_line("UNRATE 较上月下降 0.1。")), "FAIL", False, "E-BLOCK-MACRO-OPINION")
@@ -738,6 +753,8 @@ class R8Fixes(T):
         r = run("---\ntitle: 方法 A 优于现有方法\n---\n" + TITLE + quote_line())
         self.assertFalse(r["low_risk"]); self.assertIn("R-STRUCTURE", r["error_codes"])
         self.expect(run(TITLE + quote_line()), "PASS", True)    # 固定栏目名照常
+
+    @legacy_fred
 
     def test_disclaimer_and_connective(self):
         ok = run(TITLE + fred_line() + "\n本文不含投资建议。")
@@ -907,6 +924,8 @@ class R8Review(T):
         r = check_text(TITLE + quote_line(), None, DATE, "daily", link_checker=lambda u: True)
         self.expect(r, "FAIL", False, "E-SELFCHECK-REPO")
 
+    @legacy_fred
+
     def test_fred_content_checked(self):
         from helpers import make_repo, FILES
         for body in ('not json', '{"series_id": "CPIAUCSL", "value": "4.2"}', '{"value": "4.2"}'):
@@ -929,12 +948,17 @@ class R8Review(T):
             sc.load_lexicon.__defaults__ = (orig,)
         self.expect(run(TITLE + quote_line()), "PASS", True)
 
+    @legacy_fred
+
     def test_disclaimer_exact(self):
         ok = run(TITLE + fred_line() + "\n本文不含投资建议。")
         self.assertNotIn("E-BLOCK-MACRO-OPINION", ok["error_codes"]); self.assertEqual(ok["status"], "PASS")
         for d in ("本文不含投资建议。。", "本文不含投资建议..", "。本文不含投资建议"):
             r = run(TITLE + fred_line() + "\n" + d)
             self.assertNotEqual(r["status"], "PASS", d); self.assertIs(r["low_risk"], False)
+
+
+    @legacy_fred
 
 
     def test_disclaimer_en_exact(self):

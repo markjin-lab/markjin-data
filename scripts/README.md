@@ -88,6 +88,13 @@
 - 标签可识别但格式、位置或内容不合规，报硬错误 E-GLOSS-FORMAT（status FAIL）；完整标签出现在其他任何行（更正区、引用块、标题、表格、注释、front matter）同样报。
 - 机器保证的边界：selfcheck 只保证标签可识别的违规句被报出。没有标签或标签被改写的括号句不报 E-GLOSS-FORMAT，交审稿人判断。普通日报和 digest 的正文段落、列表项（同行无 raw 路径或 URL）本来就会报两个旧码；tongyi 长文路径和带来源的行没有这层兜底。
 
+### 产业与经济数据小节（industry-* 短代码）与 E-FRED-CITED
+
+- 站点用 `{{< industry-data >}}…{{< /industry-data >}}`（内含 `industry-datum`）和 `{{< industry-link … >}}…{{< /industry-link >}}` 渲染“产业与经济数据”小节与产业链接段，稿件里没有字面标题。selfcheck 把这些块（含短代码参数；缺结束短代码时算到文末）当作该小节检查。
+- 块内任何阿拉伯数字或百分号报 E-INDUSTRY-NUMBER（出处编号 `[n]` 与参数 `cite`、`item` 除外）；块内数据机构链接或域名（`INDUSTRY_AGENCY_DOMAINS`，含子域名）报 E-INDUSTRY-AGENCY-LINK。这比路线图 L393 的 ③④ 更严，开放数字前代替它们；开放数字时须先完整落实 ③④。
+- 内部用语沿用 E-BLOCK-INTERNAL（整行与整篇扫描已覆盖块内文字）。
+- 整篇：出现 fred.stlouisfed.org 链接（含子域名）或大写 FRED 字样，逐行报 E-FRED-CITED。
+
 ## route（#10 审查路由）
 
 `python3 scripts/route.py --pr N --repo REPO --date YYYY-MM-DD --card-type daily|signal [--site-repo DIR] [--dry-run [--now ISO]]`（整体验收 r2：时间只用真实时钟；`--now` 只在 `--dry-run` 下可用，演练结果永远不可发布；`--no-link-check` 已取消）（r13：只接受 PR 编号，base/head/文件列表由 `gh pr view` 取得；稿件、raw/、MANIFEST 从 head 提交读取）
