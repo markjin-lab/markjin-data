@@ -750,7 +750,7 @@ def _sc_tags(s, malformed=None):
             k += 2
             continue
         t = _sc_parse_tag(s, k)
-        if t and not t["unterminated"]:
+        if t and not t["unterminated"] and "{{" not in s[k + 2:t["end"]]:   # 从严：标签里（含参数）出现 {{ 即报错
             out.append(t)
             k = t["end"]
         else:
@@ -867,6 +867,33 @@ def _host_in(host, domains):
     return any(host == d or host.endswith("." + d) for d in domains)
 
 
+_IND_URL_RAW_RE = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//[^\s<>\"'）)\]]*")
+
+
+def _ind_markup_bad(seg):
+    """从严，不尝试解析：HTML 属性里出现 >；URL 里有百分号编码，或主机前有 @。"""
+    for m in re.finditer(r"<[A-Za-z]", seg):         # 从 < 开始按引号找标签结束；引号里出现 > 或标签不结束都算坏
+        q = None
+        for ch in seg[m.end():]:
+            if q:
+                if ch == ">":
+                    return True
+                if ch == q:
+                    q = None
+            elif ch in "\"'":
+                q = ch
+            elif ch == ">":
+                break
+        else:
+            return True
+    for m in _IND_URL_RAW_RE.finditer(seg):
+        u = m.group(0)
+        auth = u.split("//", 1)[1].split("/", 1)[0]
+        if "%" in u or "@" in auth or "@" in u.split("//", 1)[1].split("?", 1)[0].split("#", 1)[0]:
+            return True
+    return False
+
+
 def industry_violations(doc):
     """[(code, line)]：块内数值 → E-INDUSTRY-NUMBER；块内数据机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。"""
     res = set()
@@ -884,6 +911,8 @@ def industry_violations(doc):
                 res.add(("E-INDUSTRY-NUMBER", line_no))
             if any(_host_in(h, INDUSTRY_AGENCY_DOMAINS) for h in _hosts(raw_ln)):
                 res.add(("E-INDUSTRY-AGENCY-LINK", line_no))
+            if _ind_markup_bad(raw_ln):
+                res.add(("E-INDUSTRY-MARKUP", line_no))
             off += len(raw_ln) + 1
     return sorted(res, key=lambda x: (x[1], x[0]))
 
@@ -898,31 +927,47 @@ def fred_line_hit(raw_line):
     return bool(_FRED_WORD_RE.search(t)) or any(_host_in(h, (FRED_DOMAIN,)) for h in _hosts(raw_line))
 
 
-def changed_lines(text, baseline):
-    """需要检查的新稿行号（1 起）。baseline 为 None（新稿）时返回全部行。
-    从严：第 i 行只有在旧稿同一行号上逐字相同、且前一行与后一行也都相同（都在文首或文末也算相同）时才算未改动；
-    搬移、交换、替换、插入导致的错位行一律检查。"""
-    new = text.splitlines()
-    if baseline is None:
-        return set(range(1, len(new) + 1))
-    old = baseline.splitlines()
-    def at(xs, k):
-        return xs[k] if 0 <= k < len(xs) else None
-    keep = {i + 1 for i in range(len(new))
-            if i < len(old) and old[i] == new[i] and at(old, i - 1) == at(new, i - 1) and at(old, i + 1) == at(new, i + 1)}
-    return set(range(1, len(new) + 1)) - keep
+# 已发布旧 digest 里的 7 行（采集范围说明 / FRED 撤回说明），固定放行（Grok Bot 2026-10-19 16:48）：
+# 仓库内相对路径 + 行号 + 该行内容（不含换行符 \n，保留可能的 \r）的 sha256 三者都相同才放行；仓库外稿件一律不放行。
+FRED_LEGACY_ALLOWLIST = frozenset({
+    ("digest/2026-10-15.md", 5, "05741e489ad2396c82bee0ac5abe33d2d60e3da42a028bdd15a847e5c88b0248"),
+    ("digest/2026-10-15.md", 140, "dfb9fbdd9ba4874197b57d3a9bfbc5294db5b03ea47d3ac65768167103060e71"),
+    ("digest/2026-10-16.md", 5, "635c943692686d9629daad67a285967d4a6a98a5c738e3498f88db42501f79f3"),
+    ("digest/2026-10-16.md", 139, "dce6f6b6436627ef85cdb274fbb037b7c8986b552d2de55e85d4d8e0151ab4ba"),
+    ("digest/2026-10-17.md", 5, "ce8f52c7081d364e5bcc8445fb2b8fa668dbbfff529871791f746267c069afb8"),
+    ("digest/2026-10-17.md", 141, "ccb8df28fc46c155576568568ad2713412fe6f5fbc96fc5941f2c3d4a1ac765e"),
+    ("digest/2026-10-18.md", 147, "8f198d345ed7487fcda4d3b21aa1b93674167da805ad2a8716ad3f46726c0f7d"),
+})
 
 
-def fred_cited_lines(raw_lines, baseline=None):
-    todo = changed_lines("\n".join(raw_lines), baseline)
-    return [i for i, s in enumerate(raw_lines, 1) if i in todo and fred_line_hit(s)]
+def _rel_in_repo(repo, rel):
+    if not rel:
+        return False
+    try:
+        root = Path(repo).resolve()
+        f = (root / rel).resolve()
+        return f.relative_to(root).as_posix() == rel and f.is_file()
+    except (ValueError, OSError, TypeError):
+        return False
 
 
-def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None, baseline=None):
+def fred_cited_lines(text, repo=None, rel=None):
+    """全文逐行检查 E-FRED-CITED；只有 FRED_LEGACY_ALLOWLIST 里逐项相同的行放行。"""
+    in_repo = _rel_in_repo(repo, rel)
+    out = []
+    for i, line in enumerate(text.split("\n"), 1):
+        if not fred_line_hit(line):
+            continue
+        if in_repo and (rel, i, hashlib.sha256(line.encode("utf-8")).hexdigest()) in FRED_LEGACY_ALLOWLIST:
+            continue
+        out.append(i)
+    return out
+
+
+def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
-    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。
-    baseline：已发布旧版的全文（可信来源，如 git 上的旧提交）。只用于 E-FRED-CITED：给出时只查新增或改动的行；None 表示新稿，查全部行。"""
+    link_checker：url -> bool（能否打开）。为 None 时不检查链接，结果带 R-LINK-UNCHECKED（非低风险）。"""
     errors = []
     flags = {k: False for k in FLAG_KEYS}
     counts = {k: 0 for k in COUNT_KEYS}
@@ -1248,8 +1293,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
         err(code, ln)
     for ln in shortcode_malformed_lines(doc):          # 不能解析或没有结束符的短代码标签：从严报错
         err("E-SHORTCODE-MALFORMED", ln)
-    # E-FRED-CITED 只管新增或改动的行（Grok Bot 15:43）：baseline 为已发布旧版文本时与之逐行比对；新稿（baseline=None）查全部行
-    for ln in fred_cited_lines(raw_lines, baseline):
+    # E-FRED-CITED 查全文；只有固定清单里的 7 行旧稿放行（Grok Bot 16:48）
+    for ln in fred_cited_lines(text, repo, rel):
         err("E-FRED-CITED", ln)
     if gloss_has_label("\n".join(sb_all)) and not any(e["code"] == "E-GLOSS-FORMAT" for e in errors):
         err("E-GLOSS-FORMAT", 0)            # 标签被拆在两行

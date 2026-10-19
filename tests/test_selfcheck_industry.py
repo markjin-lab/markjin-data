@@ -233,30 +233,6 @@ class R4HostBoundaries(unittest.TestCase):
         self.assertEqual(codes(doc), {"E-INDUSTRY-AGENCY-LINK": 1})
 
 
-class R4FredBaseline(unittest.TestCase):              # Grok Bot 15:43：只管新增或改动的行
-    OLD = TITLE + "某说明 [1]。\n采集范围含 FRED 序列 [2]。\n结尾 [9]。\n"
-
-    def run_b(self, text, baseline):
-        r = _sc.check_text(text, REPO, DATE, "daily", link_checker=lambda u: True, baseline=baseline)
-        return [e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"]
-
-    def test_old_line_passes(self):
-        self.assertEqual(self.run_b(self.OLD + "新增一行 [3]。\n", self.OLD), [])
-
-    def test_changed_line_blocked(self):
-        new = self.OLD.replace("采集范围含 FRED 序列", "采集范围含 FRED 两个序列")
-        self.assertEqual(self.run_b(new, self.OLD), [4])
-
-    def test_new_line_blocked(self):
-        self.assertEqual(self.run_b(self.OLD + "另见 https://fred.stlouisfed.org/x [3]。\n", self.OLD), [6])
-
-    def test_moved_old_line_same_text_passes(self):
-        new = TITLE + "采集范围含 FRED 序列 [2]。\n某说明 [1]。\n结尾 [9]。\n"
-        self.assertEqual(self.run_b(new, self.OLD), [3])          # 位置变动的行按改动处理（拿不准就拦）
-
-    def test_no_baseline_checks_all(self):
-        self.assertEqual(self.run_b(self.OLD, None), [4])
-
 class R4FredMarks(unittest.TestCase):
     def test_vs16_inserted(self):
         self.assertEqual(codes(TITLE + "某序列取自 FRE\ufe0fD [1]。\n"), {"E-FRED-CITED": 1})
@@ -290,115 +266,6 @@ _ENV = {**_os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_C
 def _cli(args, cwd=None):
     p = _subp.run([_sys.executable, str(_ROOT / "scripts" / "selfcheck.py"), *args], capture_output=True, text=True, cwd=cwd)
     return p.returncode, p.stdout, p.stderr
-
-
-class R5Cli(unittest.TestCase):
-    OLD = TITLE + "某说明 [1]。\n采集范围含 FRED 序列 [2]。\n结尾 [9]。\n"
-
-    def repo(self, d, publish=True):
-        g = ["git", "-C", d]
-        _subp.run(["git", "init", "-q", d], check=True)
-        f = _P(d) / "digest.md"
-        f.write_text(self.OLD, encoding="utf-8")
-        _subp.run(g + ["add", "."], check=True, env=_ENV)
-        _subp.run(g + ["commit", "-qm", "old"], check=True, env=_ENV)
-        if publish:
-            _subp.run(g + ["update-ref", "refs/remotes/origin/main", "HEAD"], check=True)
-        return f
-
-    def args(self, f, d, *extra):
-        return [str(f), "--repo", d, "--date", DATE, "--card-type", "daily", "--json", "--no-link-check", *extra]
-
-    def test_ancestor_ref_old_line_passes_new_line_blocked(self):
-        with _tmp.TemporaryDirectory() as d:
-            f = self.repo(d)
-            f.write_text(self.OLD + "新增 FRED [3]。\n", encoding="utf-8")
-            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
-            self.assertEqual([e["line"] for e in _json.loads(out)["errors"] if e["code"] == "E-FRED-CITED"], [6])
-
-    def test_non_ancestor_ref_rejected(self):           # 含新稿的提交不在 origin/main 上：拒绝
-        with _tmp.TemporaryDirectory() as d:
-            f = self.repo(d)
-            f.write_text(self.OLD + "新增 FRED [3]。\n", encoding="utf-8")
-            _subp.run(["git", "-C", d, "commit", "-qam", "new"], check=True, env=_ENV)
-            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
-            self.assertEqual(rc, 3)
-            self.assertEqual(_json.loads(out)["errors"][0]["code"], "E-SELFCHECK-INPUT")
-
-    def test_no_origin_main_rejected(self):
-        with _tmp.TemporaryDirectory() as d:
-            f = self.repo(d, publish=False)
-            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
-            self.assertEqual(rc, 3)
-
-    def test_bad_ref_rejected(self):
-        with _tmp.TemporaryDirectory() as d:
-            f = self.repo(d)
-            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "nosuchref"))
-            self.assertEqual((rc, _json.loads(out)["status"]), (3, "INPUT-ERROR"))
-
-    def test_file_baseline_flag_gone(self):
-        with _tmp.TemporaryDirectory() as d:
-            f = self.repo(d)
-            rc, out, err = _cli(self.args(f, d, "--baseline", str(f)))
-            self.assertNotEqual(rc, 0)
-            self.assertIn("unrecognized arguments", err)
-
-    def test_baseline_not_utf8(self):
-        with _tmp.TemporaryDirectory() as d:
-            f = self.repo(d)
-            f.write_bytes(b"\xff\xfe bad")
-            _subp.run(["git", "-C", d, "commit", "-qam", "bin"], check=True, env=_ENV)
-            _subp.run(["git", "-C", d, "update-ref", "refs/remotes/origin/main", "HEAD"], check=True)
-            f.write_text(self.OLD, encoding="utf-8")
-            rc, out, _ = _cli(self.args(f, d, "--baseline-ref", "HEAD"))
-            self.assertEqual(rc, 3)
-            self.assertEqual(_json.loads(out)["errors"][0]["code"], "E-SELFCHECK-INPUT")
-
-    def test_draft_outside_repo(self):
-        with _tmp.TemporaryDirectory() as d, _tmp.TemporaryDirectory() as d2:
-            self.repo(d)
-            f2 = _P(d2) / "x.md"
-            f2.write_text(self.OLD, encoding="utf-8")
-            rc, out, _ = _cli(self.args(f2, d, "--baseline-ref", "HEAD"))
-            self.assertEqual((rc, _json.loads(out)["errors"][0]["code"]), (3, "E-SELFCHECK-INPUT"))
-
-    def test_relative_draft_outside_repo(self):
-        with _tmp.TemporaryDirectory() as d, _tmp.TemporaryDirectory() as d2:
-            self.repo(d)
-            (_P(d2) / "x.md").write_text(self.OLD, encoding="utf-8")
-            rc, out, _ = _cli(["x.md", "--repo", d, "--date", DATE, "--card-type", "daily", "--json", "--no-link-check",
-                               "--baseline-ref", "HEAD"], cwd=d2)
-            self.assertEqual(rc, 3)
-
-
-class R5FredPosition(unittest.TestCase):              # 只有同一行号、逐字相同且前后行都相同才放行
-    OLD = "# 日报\n\nA [1]。\n采集含 FRED [2]。\nB [3]。\n"
-
-    def lines(self, new):
-        r = _sc.check_text(new, REPO, DATE, "daily", link_checker=lambda u: True, baseline=self.OLD)
-        return [e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"]
-
-    def test_unchanged_passes(self):
-        self.assertEqual(self.lines(self.OLD), [])
-
-    def test_swap_blocked(self):
-        self.assertEqual(self.lines("# 日报\n\nA [1]。\nB [3]。\n采集含 FRED [2]。\n"), [5])
-
-    def test_move_up_blocked(self):
-        self.assertEqual(self.lines("# 日报\n\n采集含 FRED [2]。\nA [1]。\nB [3]。\n"), [3])
-
-    def test_replace_neighbor_blocked(self):
-        self.assertEqual(self.lines("# 日报\n\nA 改 [1]。\n采集含 FRED [2]。\nB [3]。\n"), [4])
-
-    def test_insert_above_blocked(self):
-        self.assertEqual(self.lines("# 日报\n\n新行 [9]。\nA [1]。\n采集含 FRED [2]。\nB [3]。\n"), [5])
-
-    def test_duplicate_line_blocked(self):
-        self.assertEqual(self.lines(self.OLD + "采集含 FRED [2]。\n"), [6])
-
-    def test_append_far_below_keeps_old(self):
-        self.assertEqual(self.lines(self.OLD + "\n更正说明 [4]。\n"), [])
 
 
 class R5MalformedShortcode(unittest.TestCase):
@@ -467,6 +334,118 @@ class R5Hosts(unittest.TestCase):
 
     def test_fred_in_path_passes(self):
         self.assertEqual(codes(TITLE + "见 https://example.org/fred.stlouisfed.org [1]。\n"), {})
+
+
+# ---------------------------------------------------------------- r6 后的收窄版（Grok Bot 16:48）
+class R7FredAllowlist(unittest.TestCase):
+    REL = "digest/2026-10-15.md"
+
+    def text(self):
+        return (_ROOT / self.REL).read_text(encoding="utf-8")
+
+    def fred(self, text, rel):
+        r = _sc.check_text(text, _ROOT, "2026-10-15", "daily", link_checker=lambda u: True, rel=rel)
+        return [e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"]
+
+    def test_listed_lines_pass(self):
+        for rel in ("digest/2026-10-15.md", "digest/2026-10-16.md", "digest/2026-10-17.md", "digest/2026-10-18.md"):
+            self.assertEqual(self.fred((_ROOT / rel).read_text(encoding="utf-8"), rel), [], rel)
+
+    def test_one_char_changed_blocked(self):
+        L = self.text().split("\n")
+        L[4] = L[4].replace("FRED", "FRED ", 1)
+        self.assertEqual(self.fred("\n".join(L), self.REL), [5])
+
+    def test_different_line_number_blocked(self):
+        self.assertEqual(self.fred("\n" + self.text(), self.REL), [6, 141])
+
+    def test_copied_into_new_digest_blocked(self):
+        L = self.text().split("\n")
+        self.assertEqual(self.fred(self.text(), "digest/2026-10-20.md"), [5, 140])
+        self.assertEqual(self.fred(TITLE + L[4] + "\n", "digest/2026-10-20.md"), [3])
+
+    def test_crlf_blocked(self):
+        self.assertEqual(self.fred(self.text().replace("\n", "\r\n"), self.REL), [5, 140])
+
+    def test_outside_repo_blocked(self):
+        self.assertEqual(self.fred(self.text(), None), [5, 140])
+        self.assertEqual(self.fred(self.text(), "../digest/2026-10-15.md"), [5, 140])
+
+    def test_outside_repo_file_cli(self):
+        with _tmp.TemporaryDirectory() as d:
+            f = _P(d) / "2026-10-15.md"
+            f.write_text(self.text(), encoding="utf-8")
+            r = _sc.check_file(str(f), _ROOT, "2026-10-15", "daily", link_checker=lambda u: True)
+            self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [5, 140])
+
+    def test_no_baseline_mechanism(self):
+        import inspect
+        self.assertNotIn("baseline", inspect.signature(_sc.check_text).parameters)
+        self.assertFalse(hasattr(_sc, "changed_lines"))
+        rc, out, err = _cli(["x.md", "--repo", ".", "--date", DATE, "--card-type", "daily", "--baseline-ref", "HEAD"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("unrecognized arguments", err)
+
+
+def _mcodes(text):
+    r = _sc.check_text(text, REPO, DATE, "daily", link_checker=lambda u: True)
+    return set(r["error_codes"])
+
+
+class R7NestedOpener(unittest.TestCase):
+    def test_unquoted_param_nested_opener(self):
+        doc = TITLE + "{{< ref x=bad{{< industry-link item=\"1\" industry=\"ai\" side=\"demand\" >}}42{{< /industry-link >}}\n"
+        c = _mcodes(doc)
+        self.assertIn("E-SHORTCODE-MALFORMED", c)
+        self.assertIn("E-INDUSTRY-NUMBER", c)
+
+    def test_quoted_param_nested_opener(self):
+        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" inference="甲{{乙" >}}正文 [1]。{{< /industry-link >}}\n'
+        self.assertIn("E-SHORTCODE-MALFORMED", _mcodes(doc))
+
+    def test_datum_param_braces(self):
+        doc = TITLE + '{{< industry-datum series="甲{{" cite="1" >}}\n'
+        self.assertIn("E-SHORTCODE-MALFORMED", _mcodes(doc))
+
+    def test_pass_closing_braces_only(self):
+        doc = TITLE + '{{< industry-datum series="甲}}" value="x" cite="1" >}}\n'
+        self.assertNotIn("E-SHORTCODE-MALFORMED", _mcodes(doc))
+
+
+class R7HtmlAttr(unittest.TestCase):
+    def test_gt_in_double_quoted_attr(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link('正文 <span data-value=">[123]">词</span> [1]。')))
+
+    def test_gt_in_single_quoted_attr(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("正文 <span title='a>b'>词</span> [1]。")))
+
+    def test_unterminated_html_tag(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link('正文 <span title="a [1]。')))
+
+    def test_pass_plain_html(self):
+        self.assertNotIn("E-INDUSTRY-MARKUP", _mcodes(link('正文 <span class="x">词</span> [1]。')))
+
+    def test_outside_block_not_this_code(self):
+        self.assertNotIn("E-INDUSTRY-MARKUP", _mcodes(TITLE + '正文 <span data-value=">x">词</span> [1]。\n'))
+
+
+class R7UrlStrict(unittest.TestCase):
+    def test_percent_in_url(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://example.org%2F@bea.gov/path [1]。")))
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://example.org/a%20b [1]。")))
+
+    def test_userinfo_at(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://user@example.org/x [1]。")))
+
+    def test_scheme_relative_at(self):
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("见 //user@example.org/x [1]。")))
+
+    def test_pass_plain_url(self):
+        self.assertNotIn("E-INDUSTRY-MARKUP", _mcodes(link("见 https://example.org/path [1]。")))
+
+    def test_url_in_param(self):
+        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" inference="见 https://a@example.org" >}}正文 [1]。{{< /industry-link >}}\n'
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(doc))
 
 
 if __name__ == "__main__":

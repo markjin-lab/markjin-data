@@ -19,8 +19,8 @@
 | `E-INDUSTRY-NUMBER` | 产业与经济数据小节或产业链接段（industry-* 短代码块，含参数）里出现数值：阿拉伯数字或百分号（出处编号 [n] 及参数 cite、item 除外）；开放数字前一律硬拦 |
 | `E-INDUSTRY-AGENCY-LINK` | 产业与经济数据小节或产业链接段（industry-* 短代码块）里出现数据机构链接或域名（含子域名） |
 | `E-SHORTCODE-MALFORMED` | 短代码标签（{{< … >}} / {{% … %}}）不能解析或没有结束符（如引号未闭合）；从严判失败，其后内容照常检查 |
-| `E-SELFCHECK-INPUT` | 稿件为空 |
-| `E-FRED-CITED` | 稿件新增或改动的行引用 FRED：出现 fred.stlouisfed.org 链接（含子域名）或 FRED 字样（FRED 已停用，2026-10-18；已发布旧版里未改动的行不重新拦） |
+| `E-INDUSTRY-MARKUP` | 产业与经济数据小节或产业链接段（industry-* 短代码块）里有从严拒收的写法：HTML 属性里有 >，或链接带百分号编码、链接的主机或路径里有 @ |
+| `E-FRED-CITED` | 稿件引用 FRED：出现 fred.stlouisfed.org 链接（含子域名）或 FRED 字样（FRED 已停用，2026-10-18）；只有已发布旧 digest 固定清单里的 7 行（路径、行号、内容 sha256 都相同）放行 |
 | `E-COUNT-001` | 稿件中手写的计数与脚本生成的计数不一致 |
 | `E-COUNT-002` | counts 注释格式非法（多个注释、未知键、重复键、非法值或非整行） |
 | `E-BLOCK-INVEST` | 含投资措辞（股票代码、买入/卖出、仓位、目标价等） |
@@ -29,6 +29,7 @@
 | `E-X-ONLY` | 日报中的断言（原文直引、结构化断言、带来源的行）只有 X 来源支撑；X 只作线索，硬拦 |
 | `E-BLOCK-INTERNAL` | 命中仅供内部研究的主题（细节只记本机内部目录） |
 | `E-INTERNAL-LIST-MISSING` | 本机内部主题清单缺失、不可读或结构不完整，无法完成内部主题检查 |
+| `E-SELFCHECK-INPUT` | 稿件为空 |
 | `E-DEP-PYYAML` | 缺少运行依赖 PyYAML（requirements.txt）：无法解析 front matter，结构化判失败 / HOLD，不直接崩溃（整体验收 r10） |
 | `E-TONGYI-MISMATCH` | front matter type 为 tongyi 与稿件路径（tongyi/<name>.md 或 content/posts/tongyi/<name>.md）不一致：fail-closed，不给长文豁免（整体验收 r15，审查 bot 定） |
 | `E-SELFCHECK-FM-ALIAS` | front matter 含 YAML 锚点（&）、别名（*）或合并键（<<），或无法按 yaml.safe_load 解析为映射：fail-closed 判失败，并按医疗类处理（r8） |
