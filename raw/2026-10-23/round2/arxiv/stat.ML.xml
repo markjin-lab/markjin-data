@@ -1,0 +1,1139 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/ex7j+G8rA8xEdLxZX1ezkqFoAiw</id>
+  <title>arXiv Query: search_query=cat:stat.ML&amp;id_list=&amp;start=0&amp;max_results=50</title>
+  <updated>2026-10-22T21:59:09Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=cat:stat.ML&amp;start=0&amp;max_results=50&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>50</opensearch:itemsPerPage>
+  <opensearch:totalResults>81277</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2610.30121v1</id>
+    <title>Geometric Algebra for Neural Networks: A Survey</title>
+    <updated>2026-10-21T17:57:13Z</updated>
+    <link href="https://arxiv.org/abs/2610.30121v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.30121v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Geometric algebra (GA) unifies geometric primitives and transformations in a single algebraic framework. Neural networks designed around this framework often represent features as multivectors and constrain layer operations to respect the algebraic structure, enabling principled treatment of geometric transformations and, in many cases, built-in equivariance. This survey reviews geometric algebra neural networks, including their building blocks, equivariant properties, application domains, empirical performance, and software support. We provide an algebra-selection guide, an empirical comparison of GA-based and other equivariant architectures, and a failure-mode analysis covering training pathologies, deployment constraints, and performance limitations. Across the surveyed literature, the strongest evidence for GA-based architectures appears in settings with explicit geometric symmetries and heterogeneous geometric entities; evidence for broader advantages in parameter efficiency, interpretability, and dense prediction is comparatively limited and uneven. We therefore conclude that geometric algebra neural networks are not universally superior to well-tuned non-GA equivariant baselines, and outline open problems in algebra selection, numerical stability, scalable implementation, and reproducible evaluation.</summary>
+    <category term="eess.IV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T17:57:13Z</published>
+    <arxiv:comment>38 pages, 5 figures</arxiv:comment>
+    <arxiv:primary_category term="eess.IV"/>
+    <author>
+      <name>Tao Zhong</name>
+    </author>
+    <author>
+      <name>Kaison Fong</name>
+    </author>
+    <author>
+      <name>Keqin Wang</name>
+    </author>
+    <author>
+      <name>Christine Allen-Blanchette</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.30118v1</id>
+    <title>The role of locality and weight sharing in convolutional neural networks</title>
+    <updated>2026-10-21T17:56:22Z</updated>
+    <link href="https://arxiv.org/abs/2610.30118v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.30118v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The success of convolutional neural networks is often attributed to locality and weight sharing. However, how these two properties separately shape learning, and how their effects depend on the spatial correlations of natural images, remain poorly understood. We address these questions in a teacher-student model with a convolutional teacher acting on $P$ input positions with correlation $c$ between positions. We compare convolutional and locally connected students trained by online stochastic gradient descent, and derive ordinary differential equations that describe their dynamics exactly in the limit of large feature dimension $D$. For uncorrelated positions ($c = 0$), the two students follow the same learning trajectory, with the convolutional student learning exactly $P$ times faster. We also find that locality affects the sample complexity: a student that matches the kernel size of the teacher recovers it from $\mathcal{O}_{D}(D)$ samples, whereas $\mathcal{O}_{D}(D\log(D))$ samples are needed with a larger kernel. For $c &gt; 0$, spatial correlations can reduce the advantage of weight sharing. The asymptotic error of the convolutional student grows with $c$, whereas that of the locally connected student is independent of $c$ and overall lower when evaluated at the same learning rate. When the learning rate is instead tuned to the training horizon, however, the locally connected student wins at early times and the convolutional student at late times, with a transition that we predict analytically.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cond-mat.dis-nn" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cond-mat.stat-mech" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T17:56:22Z</published>
+    <arxiv:comment>39 pages, 11 figures, including appendices</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Francesco Mori</name>
+    </author>
+    <author>
+      <name>Melanie Weber</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.30009v1</id>
+    <title>Mitigating Model Collapse through Dreaming Learning</title>
+    <updated>2026-10-21T16:41:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.30009v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.30009v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Training generative models on synthetic data causes loss of diversity and a decrease in performance, a phenomenon known as model collapse. We study this degeneration spectrally in a controlled Markov setting. The eigenvalue spectrum of the learned transition operator offers a direct view of the process, since the subdominant eigenvalues set how fast the chain mixes and therefore how much of the state space it continues to explore. We find that sampling at temperature $T_s &lt; 1$ acts on the operator like repeated sharpening, pushing it toward a deterministic system: the subdominant eigenvalues approach the unit circle and the spectral gap narrows. When $T_s &lt; 1$, even data accumulation does not appear to arrest this drift. We then analyze Dreaming Learning, a regulariser that, in parallel with regular training, adds a loss term on the model's own samples drawn at a raised temperature $T_d &gt; 1$. Because high-temperature samples flatten the predicted distribution, training on them keeps the entries of the learned operator from becoming vanishingly small, which in turn keeps the eigenvalues bounded away from the unit circle. Measurements of the spectra over 5000 generations are consistent with this picture, and the mitigation effect persists in more complex settings such as LSTM language models and a 124M-parameter GPT-2.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cond-mat.dis-nn" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T16:41:53Z</published>
+    <arxiv:comment>8 pages, 6 figures. Accepted at the 2nd Workshop on Principles of Generative Modeling (PriGM), NeurIPS 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Matteo Benati</name>
+    </author>
+    <author>
+      <name>Alessandro Londei</name>
+    </author>
+    <author>
+      <name>Denise Lanzieri</name>
+    </author>
+    <author>
+      <name>Raffaello Mastromarino</name>
+    </author>
+    <author>
+      <name>Vittorio Loreto</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29982v1</id>
+    <title>The Price of Current-Effect Inference in Nonstationary Multi-Armed Bandits</title>
+    <updated>2026-10-21T16:26:48Z</updated>
+    <link href="https://arxiv.org/abs/2610.29982v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29982v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Adaptive experiments use bandit algorithms to favor interventions with higher expected rewards. However, decision-makers also require reliable inference on current treatment effects: differences between intervention and reference-arm mean rewards at the present time, rather than historical averages. These objectives conflict: reward maximization favors better interventions, whereas current-effect inference requires continued exploration of potentially suboptimal interventions as outcomes change over time. We characterize this tradeoff for $K$-arm bandits with Hölder-smooth mean rewards of exponent $β\in(0,1]$ and constant $L$. Requiring high-probability simultaneous coverage of all current effects by confidence intervals of width at most $w$, we establish matching minimax bounds, up to logarithmic factors, on expected dynamic regret. Over horizon $T$, our algorithm TRACE (Tracking Rewards and Current Effects) achieves regret of order $\widetilde{O}_β\left(\sqrt{KT}+K^{β/(2β+1)}L^{1/(2β+1)}T^{(β+1)/(2β+1)}+Kw^{-2}(1+L^{1/β}w^{-1/β})\right)$, where the notation hides logarithms and constants depending only on $β$. This regret--precision tradeoff separates reward-learning regret from the cost of refreshing current-effect estimates, which remains unavoidable even when one arm is uniformly optimal. An empirical-Bernstein e-process extension adapts exploration to realized prediction errors while preserving worst-case guarantees. When within-block drift is negligible relative to sampling error, all observations, including reward-learning observations, can be reused for asymptotically normal pointwise inference and stronger local stationarity yields local asymptotic efficiency. Finally, we show that regret constraints can prevent honest adaptation to unknown smoothness and support our theory with extensive numerical experiments.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T16:26:48Z</published>
+    <arxiv:comment>49 pages, 8 figures, 5 tables</arxiv:comment>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Sharan Sahu</name>
+    </author>
+    <author>
+      <name>Martin T. Wells</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29960v1</id>
+    <title>Mastering Model Fit: Applications of the InterModel Vigorish for Interpretable Machine Learning</title>
+    <updated>2026-10-21T16:17:17Z</updated>
+    <link href="https://arxiv.org/abs/2610.29960v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29960v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Accuracy alone gives little information about which features or model components improve probabilistic fit, which outcomes benefit, or how fit changes during training. We introduce the InterModel Vigorish (IMV) into the Machine Intelligence space in order to express differences in fit as an expected betting advantage over a reference model. SHAP-IMV attributes gains to features through Shapley-weighted subset comparisons, Multi-IMV evaluates one-vs-rest and pairwise class discrimination, and Ablate-IMV assesses architectural components and feature groups by ablation. We evaluate these applications over ten random seeds using tabular data, images, sensor sequences, and graphs. Feature rankings vary across estimators. High one-vs-rest accuracy can accompany negligible improvement over a null, while ablation can preserve or improve fit under a fixed training budget. On six graph-classification benchmarks, we time-profile IMV over 200 training epochs, reporting seed means and ranges. The open-source imvpy library and accompanying notebooks provide code to replicate our work and to use the IMV more widely.</summary>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T16:17:17Z</published>
+    <arxiv:primary_category term="stat.ME"/>
+    <author>
+      <name>Jiani Yan</name>
+    </author>
+    <author>
+      <name>Pengyun Wang</name>
+    </author>
+    <author>
+      <name>Klint Kanopka</name>
+    </author>
+    <author>
+      <name>Ben Domingue</name>
+    </author>
+    <author>
+      <name>Charles Rahal</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29864v1</id>
+    <title>Silent Alignment in Two-Layer Linear Networks: A High-Dimensional Perspective</title>
+    <updated>2026-10-21T15:20:40Z</updated>
+    <link href="https://arxiv.org/abs/2610.29864v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29864v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We study gradient flow in a two-layer linear network in the high-dimensional regime where the input, inner and output dimensions diverge proportionally. Under whitened inputs and isotropic imbalance, we combine a closed-form solution of the dynamics with prior random matrix theory results to derive a high-dimensional limit for the dynamics. Our method yields exact asymptotic spectral distributions for the weight matrices at all times and characterizes the evolution of the learned subspace. In the small-initialization limit, we identify a silent alignment phenomenon: the singular directions of the network align on an order-one timescale, while the singular values and empirical loss remain at their initial values. Visible learning occurs later, on a logarithmic timescale, as singular values progressively escape zero and the loss decreases. This phase is characterized by a saddle-to-saddle dynamics, which becomes a continuous process of spectral learning in the high-dimensional limit.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T15:20:40Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Simon Martin</name>
+      <arxiv:affiliation>DI-ENS, LPENS, SIERRA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Francis Bach</name>
+      <arxiv:affiliation>DI-ENS, SIERRA</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Giulio Biroli</name>
+      <arxiv:affiliation>LPENS</arxiv:affiliation>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29854v1</id>
+    <title>How Do DiTs Denoise? An Aggregator-Predictor View of Attention and MLPs</title>
+    <updated>2026-10-21T15:14:22Z</updated>
+    <link href="https://arxiv.org/abs/2610.29854v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29854v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>How do diffusion transformers (DiTs) represent image content and learn rules for reusing it to generalize? We develop an aggregator--predictor view of DiTs as input-adaptive local denoisers, in which context aggregation and patch prediction provide functional roles for interpreting attention and MLPs. We first establish that, for Gaussian Markov random field (GMRF) priors, the global Bayes denoiser can be approximated using only a subset of context patches, with error decaying exponentially in context radius. We further show that patchwise linear denoisers, often invoked to explain diffusion generalization, recover the empirical local denoiser with sufficiently informative aggregation. Within this view, AdaLN-modulated attention naturally parameterizes an input- and noise-dependent aggregator, while the MLP admits a learned key--value representation for tokenwise patch prediction. Our experiments support this view. DiTs trained on real images exhibit noise-dependent denoising contexts resembling those in the analytic GMRF setting, while attention mass exhibits a qualitatively corresponding broadening pattern. In a controlled CelebA64 study, shared-memory patch predictors used in place of DiT MLPs achieve competitive denoising and generative performance. Finally, cross-dataset component transplantation reveals compatibility patterns consistent with the proposed roles of QK in spatial weighting, VO in feature transport, and MLPs in patch prediction. Together, these results provide a component-level account of DiT denoising and motivate architecture-specific fine-tuning and controlled intervention.</summary>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T15:14:22Z</published>
+    <arxiv:primary_category term="cs.CV"/>
+    <author>
+      <name>Gyeonghun Kang</name>
+    </author>
+    <author>
+      <name>William Xingxu Chen</name>
+    </author>
+    <author>
+      <name>Xiang Cheng</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29798v1</id>
+    <title>Asymmetric Likelihood-Free Hypothesis Testing</title>
+    <updated>2026-10-21T14:26:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.29798v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29798v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In likelihood-free hypothesis testing (LFHT), given samples from two unknown distributions $P,Q$ on $[n]$ with $\mathrm{d_{TV}}(P,Q)\geq\varepsilon$, and from a third distribution $D\in\{P,Q\}$, the goal is to identify whether $D=P$ or $D=Q$. We study asymmetric likelihood-free hypothesis testing, where the sample budgets $s_P$ and $s_Q$ for $P$ and $Q$ may differ, and characterize the feasible triples $(s_P,s_Q,s_D)$ up to logarithmic factors. We establish that unequal reference budgets can give a polynomial saving. For instance, for constant separation, $n$ samples from $P$ and $n^{3/4}$ from $Q$ allow testing with $\widetilde O(n^{1/4})$ samples from $D$, whereas both existing baselines---symmetric LFHT and unequal-sample closeness testing---require $Ω(\sqrt n)$ samples from $D$.
+  We further apply our results to non-adaptive distribution 2-clustering, where the sample allocation among $k$ distributions must be fixed before observing any data. We obtain matching upper and lower bounds for this problem up to logarithmic factors in terms of the domain size, number of distributions, smaller cluster size, and separation, both with one cluster distribution known and with both unknown. Comparing with known bounds for adaptive sample allocation gives a worst-case adaptivity gap of $\widetildeΘ(k^{1/4})$.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.DS" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IT" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.ST" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T14:26:53Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Gunjan Kumar</name>
+    </author>
+    <author>
+      <name>Yash Pote</name>
+    </author>
+    <author>
+      <name>Jonathan Scarlett</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29730v1</id>
+    <title>Post-hoc Epistemic Uncertainty for Vision-Language-Action Policies</title>
+    <updated>2026-10-21T13:34:03Z</updated>
+    <link href="https://arxiv.org/abs/2610.29730v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29730v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Vision-language-action (VLA) policies need to recognize gaps in their training knowledge to request useful demonstrations or assistance in new situations, especially when failures are costly. Disagreement within an ensemble of independently trained policies can guide these decisions, but requires training and running multiple policies. We propose post-hoc kernel-variance heads that estimate epistemic uncertainty from the embeddings of a single policy. Each head computes the conditional variance of a Gaussian process conditioned on embeddings from the training demonstrations. Fitting requires no regression targets or gradient updates and leaves the policy unchanged. In experiments with SmolVLA on LIBERO-10, the kernel variance heads perform competitively with two-policy ensemble scores in task-level correlation with task success, in demonstration acquisition during active learning, and in referral to a stronger supervisor policy as a proxy for human assistance. For SmolVLA, the head on the vision-language backbone reduces uncertainty-scoring time by up to approximately a factor of 50 compared with ensemble scores, while also substantially reducing setup costs. We also show that the established evaluation protocol on LIBERO-10 primarily rewards recognition of coverage differences between tasks, while execution variability weakens assessment of within-task rankings. Thus, controlled perturbations provide a complementary evaluation: modality-specific heads identify unfamiliar camera, instruction, or state inputs, while fused heads can detect unfamiliar combinations of individually familiar inputs. With a supervisor proxy trained on the evaluated perturbation families, the decoder head improves within-task referral over ensemble disagreement. These findings show that useful uncertainty estimates for adaptive robot learning can be obtained from a single policy.</summary>
+    <category term="cs.RO" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T13:34:03Z</published>
+    <arxiv:comment>30 pages, 5 figures, 11 tables. Code: https://github.com/post-hoc-vla-uncertainty/post-hoc-vla-uncertainty</arxiv:comment>
+    <arxiv:primary_category term="cs.RO"/>
+    <author>
+      <name>Johannes Keller</name>
+    </author>
+    <author>
+      <name>Albrecht M. Bloße</name>
+    </author>
+    <author>
+      <name>Adrian Lindenmeyer</name>
+    </author>
+    <author>
+      <name>Thomas Neumuth</name>
+    </author>
+    <author>
+      <name>Daniel Schneider</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29679v1</id>
+    <title>Lifting PCA in the Wasserstein Space</title>
+    <updated>2026-10-21T12:57:22Z</updated>
+    <link href="https://arxiv.org/abs/2610.29679v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29679v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Principal Component Analysis (PCA) is a fundamental tool for statistical dimension reduction, yet no canonical extension to distribution-valued data has emerged within the framework of optimal transport. While Wasserstein barycenters and Wasserstein least-squares regression provide canonical liftings of Euclidean averaging and linear regression in the Wasserstein space, an analogous principle for PCA has remained unexplored. In this paper, we introduce Lifted PCA, a canonical extension of Euclidean PCA to Wasserstein space, obtained through the framework of lifting functionals in the space of probability measures by convex extension. Starting from the classical variational formulations of PCA on the Stiefel and Grassmann manifolds, we derive two equivalent minimization problems over probability measures supported on these manifolds that correspond to Wasserstein barycenters with generalized costs. We establish an exact analogue of the equivalence between the Stiefel and Grassmann formulations of Euclidean PCA, preserving PCA's original variational structure under lifting. We further derive dual formulations and optimality conditions, and establish equivalences with multimarginal optimal transport and matching-for-teams problems. We also establish statistical consistency for empirical estimators and develop computational algorithms based on the Wasserstein barycenter formulation over the Stiefel manifold. Whereas Euclidean PCA summarizes vectors through projections onto an optimal low-dimensional linear subspace, Lifted PCA summarizes probability distributions through an optimal probability measure supported on multiple low-dimensional subspaces. Numerical experiments on distributional datasets illustrate the practical performance of the proposed methodology and its benefits for distributional data analysis.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T12:57:22Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Jérémie Bigot</name>
+    </author>
+    <author>
+      <name>Clément Bonet</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29595v1</id>
+    <title>Near Minimax Rate for Quantile Distributional Reinforcement Learning</title>
+    <updated>2026-10-21T11:35:36Z</updated>
+    <link href="https://arxiv.org/abs/2610.29595v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29595v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In this paper, we study quantile distributional policy evaluation, where the return distribution under a given policy is approximated by the quantile Bellman fixed point $\bmη_m$. We investigate the statistical accuracy of estimating $\bmη_m$ across quantile resolutions under Wasserstein distances. Assuming access to a generative model, we construct a quantile fixed point estimator $\bmη_m^{(n)}$ from an empirical Markov decision process and establish non-asymptotic error bounds under Wasserstein distances. When reward densities are uniformly bounded away from zero, we obtain a root-$n$ high-probability bound simultaneously over all resolutions $m$ and all Wasserstein orders $1\le p\le\infty$. When reward densities vanish at the support endpoints, we show that continuity and endpoint monotonicity suffice to preserve the same resolution-independent rate for $1\le p\le2$. For $p&gt;2$, we establish a root-$n$ bound with coefficient $m^{1/2-1/p}$, together with a slower, resolution-independent $n^{-1/p}$ bound for every finite $p&gt;2$. We further obtain resolution-independent $W_\infty$ consistency governed by the continuity modulus of reward quantile functions.
+  To investigate the sharpness of these bounds, we characterize the exact local asymptotic minimax risk at each fixed resolution as the expected Wasserstein-coordinate norm of the efficient Gaussian limit and prove that our estimator attains it. We then examine the resolution dependence of this optimal local risk. A regular one-state instance has resolution-independent local risk constants, whereas a single endpoint-vanishing two-state instance exhibits growth of order $m^{1/2-1/p}$, up to logarithmic factors along a resolution subsequence, for every $p&gt;2$.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T11:35:36Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Zijie Cheng</name>
+    </author>
+    <author>
+      <name>Zhihua Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29589v1</id>
+    <title>Fragment-Level Graph Encoding for Interpretable Molecular Property Prediction</title>
+    <updated>2026-10-21T11:29:50Z</updated>
+    <link href="https://arxiv.org/abs/2610.29589v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29589v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Graph neural networks (GNNs) are among the standard tools for molecular property prediction, but the atom-level explanations of their predictions are hard for medicinal chemists to act on. We propose a change of input representation rather than a new model: molecules are encoded as fragment-level graphs from BRICS decomposition, where each node is a synthetically meaningful fragment whose features are the element-wise sum of its atoms' features. Because only the representation changes, any message-passing GNN and any post-hoc attribution method produces explanations at the resolution of functional groups instead of single atoms. Across four architectures, four prediction tasks, and two explainers under scaffold splits, fragment-level encoding matches atom-level test accuracy on roughly five-fold smaller graphs. Integrated-Gradients attributions recover known pharmacophores above chance on two enzyme targets, namely BACE at 1.5 times the chance rate, and PTR1 at 3.2 times. A like-for-like comparison against an aggregated atom-level baseline shows that post-hoc aggregation is not a stable substitute: its BACE hit rate range both exceeds and falls below the fragment model's hit rate depending on two arbitrary aggregation choices, whereas fragment-level training yields a single convention-free attribution at no predictive cost. The code is available at: https://github.com/4D-Lab/frame</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T11:29:50Z</published>
+    <arxiv:comment>12 pages, 3 figures, 6-page appendices, to be published in Proceedings of the 8th Northern Lights Deep Learning Conference (NLDL), 2027. For associated code, see https://github.com/4D-Lab/frame</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Rafael Lopes Almeida</name>
+      <arxiv:affiliation>School of Pharmacy, University of Eastern Finland, Kuopio, Finland</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Ina Pöhner</name>
+      <arxiv:affiliation>School of Pharmacy, University of Eastern Finland, Kuopio, Finland</arxiv:affiliation>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29575v1</id>
+    <title>Private Online Prediction from Experts with Small Losses</title>
+    <updated>2026-10-21T11:18:45Z</updated>
+    <link href="https://arxiv.org/abs/2610.29575v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29575v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We consider online prediction from experts, a fundamental problem in machine learning, under differential privacy constraints. Existing private algorithms achieve near-optimal regret $\tilde{O}(\sqrt{T})$, where $T$ is the time horizon. However, this bound becomes suboptimal when $L^\star$, the cumulative loss of the best expert, is significantly less than $T$. In this work, we present the first differentially private algorithm with regret $\tilde{O}(\sqrt{L^\star})$, offering a substantial improvement in the low-loss regime. Our regret bound matches the non-private lower bound up to poly-logarithmic factors for constant privacy parameters, demonstrating that privacy incurs only a small cost in this setting. Our result assumes that the input sequence is oblivious, i.e., it is fixed in advance and independent of the algorithm's outputs. We also prove that an $\tildeΩ(\sqrt{T})$ regret is inevitable for adaptively generated inputs, even when $L^\star = 0$.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T11:18:45Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Bo Li</name>
+    </author>
+    <author>
+      <name>Peng Ye</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29530v1</id>
+    <title>Residual-Based Causal Discovery via Pretrained In-Context Quantile Regression</title>
+    <updated>2026-10-21T10:19:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.29530v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29530v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Residual-based causal discovery assumes that each variable is generated from its parents and an independent noise source. It estimates this noise and tests its independence from candidate causes. For identifiable functions such as additive-noise models (ANMs) and the broader class of location-scale noise models (LSNMs), this principle identifies the causal direction, as only the causal model admits this independence. Existing LSNM methods rely on parametric assumptions to obtain standardized residuals, risking model misspecification. In contrast, the RESIT-framework allows for nonparametric estimation of residuals to iteratively identify sink nodes, but was proposed for ANMs. To close this gap, we propose Loscar, an extension of RESIT to LSNMs that estimates the conditional mean and scale via quantile regression, enabling pretrained tabular foundation models as plug-in estimators. We compare it with a feasible generalized least squares (FGLS) variant, which is consistent given suitable basis functions. Across bivariate and multivariate causal-discovery benchmarks, in-context quantile regression substantially outperforms FGLS with flexible function classes, particularly for multivariate causes.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T10:19:56Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Daniel Klippert</name>
+    </author>
+    <author>
+      <name>Quang Nhat Huynh</name>
+    </author>
+    <author>
+      <name>Alexander Marx</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29515v1</id>
+    <title>BRIDGE: An Acceptance Gate to Block False Improvements in Model Updates, with a Retrospective Clinical Evaluation</title>
+    <updated>2026-10-21T10:04:40Z</updated>
+    <link href="https://arxiv.org/abs/2610.29515v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29515v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Models are updated repeatedly, and an update that looks better on validation data but not on new data is a false improvement that can misguide clinical decisions. The naive rule accepts every positive validation gain and is optimistic when the same data choose and judge the update. BRIDGE is a model-agnostic acceptance gate that decides each update from predictions and the available labels, with fixed settings. Each fold of the data judges the update chosen on the other folds (cross-fitting) to reduce selection bias; acceptance requires the gain's lower bootstrap bound to exceed a margin. The four settings are (A) 11 new datasets, (B) synthetic tasks, (C) 12 retrospective clinical tasks, and (D) 39 supporting datasets. The false-improvement rate falls from 19.1% (naive) to 1.1% (BRIDGE) in (A), 20.7% to 1.7% (B), 20.0% to 0% (C), and 12.5% to 0.5% (D); every 95% confidence interval of the reduction over datasets or tasks excludes zero (not over the clinical sources). An equal-size random draw from the naive acceptances contains more false improvements in (A)-(E) (post hoc, p&lt;0.001). On the OpenML collection (E) of 14 new datasets, the false-improvement rate falls from 25.6% to 1.0%. BRIDGE removes 97% to 100% of the false improvements that the naive rule accepts, and its mean gain per deployed update is 1.8 to 3.1 times the naive rule's. The 95% upper bound on the false-improvement rate is below 5.5%: formal in (B) for independent tasks (3.56%), and conditional on the real data tested (0.33% to 5.40%).</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T10:04:40Z</published>
+    <arxiv:comment>39 pages, 5 figures. Submitted to IEEE Access. Code and data: https://doi.org/10.5281/zenodo.23523985</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Dwi Sunaryono</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29510v1</id>
+    <title>A unified approach for estimation of unnormalized models via Stein operators</title>
+    <updated>2026-10-21T10:01:25Z</updated>
+    <link href="https://arxiv.org/abs/2610.29510v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29510v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In this paper, we develop a unified framework connecting proper scoring rules and Stein's method for the estimation of unnormalized models. We construct a class of proper scoring rules that encompasses score matching, ratio matching, pseudolikelihood, and noise contrastive estimation. We show that these proper scoring rules naturally induce Stein operators. This connection yields a new construction principle for Stein operators, and enables us to study estimators based on these scoring rules through the geometry associated with the induced Stein operators. Using this geometric perspective, we provide a unified characterization of the asymptotic efficiency of the resulting estimators.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.ST" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T10:01:25Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Mitsuki Nagai</name>
+    </author>
+    <author>
+      <name>Keisuke Yano</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29476v1</id>
+    <title>Generative Modeling via Nonlinear Schrödinger Bridges and Branching Diffusions</title>
+    <updated>2026-10-21T09:30:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.29476v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29476v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We propose a new generative modeling framework grounded in forward-backward partial differential equations (PDEs). These equations arise naturally in mean-field game (MFG) theory, and are closely related to nonlinear Schrödinger systems. Our main contribution is to reinterpret this connection within the setting of generative modeling and to develop an efficient numerical methodology for its practical implementation. Specifically, we derive and characterize a nonlinear extension of the classical Schrödinger bridge problem through a coupled system of PDEs, yielding a model we call SBNL (Schrödinger Bridge NonLinear). To compute its solution, we design a simulation algorithm based on branching diffusions and the probabilistic representation of semilinear PDEs. The resulting method is embarrassingly parallel, scalable to high dimensions, and applicable to a broad class of nonlinear interaction functionals. We validate the approach through numerical experiments, including recovery of the classical Schrödinger bridge, nonlinear extensions with convex penalties (Gross-Pitaevskii) as well as potential interaction terms, and high-dimensional generative tasks such as image synthesis on the MNIST and FFHQ human face dataset. Furthermore, the same framework embeds score-based generative modeling, diffusion models, and tractable gaussian Schrödinger bridges.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T09:30:53Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Mathias Grau</name>
+    </author>
+    <author>
+      <name>Pierre Henry-Labordère</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29475v1</id>
+    <title>Density-Level Backward Error for Low-NFE Generative Flows</title>
+    <updated>2026-10-21T09:30:21Z</updated>
+    <link href="https://arxiv.org/abs/2610.29475v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29475v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Low-NFE generative ODE sampling is constrained not only by solver order, but also by how a fixed budget of network evaluations is distributed along the flow. We develop a density-level backward-error framework that identifies the component of a solver's modified-equation defect that changes the evolving marginal, while excluding solenoidal trajectory distortion that is invisible in Wasserstein tangent geometry. The resulting residual induces a solver-order-aware compute-allocation rule and, through gauge freedom, an objective for selecting numerically favorable velocity representatives of the same density path. This separates our approach from schedule search driven by trajectory or endpoint surrogates and from higher-order solver design. Exact Gaussian and mixture models establish the mechanism, including cases where curvature-based allocation fails and continuum-optimal transport is not discretization-optimal. On a pretrained CIFAR-10 EDM probability-flow ODE, density-aware allocation consistently improves fixed-update Euler sampling in the low-NFE regime. Matched-seed convergence to a dense Euler reference confirms that the method accelerates approximation of the same high-NFE flow rather than changing the asymptotic sampler.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.NA" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T09:30:21Z</published>
+    <arxiv:comment>37 pages, including appendices. Accepted as a poster at ICOMP 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Ewsey Obzherin</name>
+    </author>
+    <author>
+      <name>Valentin Khrulkov</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29427v1</id>
+    <title>One Act, Many Masks: Effect-Marginal Policy Optimization for Long-Horizon Agents</title>
+    <updated>2026-10-21T08:51:14Z</updated>
+    <link href="https://arxiv.org/abs/2610.29427v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29427v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Recent advances in multi-turn reinforcement learning (RL) have substantially improved the performance of LLM agents on complex, long-horizon interactive tasks. However, despite progress in fine-grained credit assignment, policy optimization still applies these learning signals through response-specific probability ratios. Different textual responses can induce the same executable effect, yet credit differences arising from subsequent outcomes remain tied to their individual textual realizations. We identify this mismatch as credit-update misalignment. Our analysis reveals that credit-text pairing directly shapes policy-update directions, even when the policy context and executable effect are held fixed. Motivated by this finding, we propose Effect-Marginal Policy Optimization (EMPO), which aligns policy optimization with execution-level equivalence through an effect-level surrogate that couples updates across alternative textual realizations. EMPO preserves the original credit signals, integrates with both trajectory-level and step-level credit estimators, and requires no additional critics or rollouts. Experiments on ALFWorld, WebShop, and Sokoban show that EMPO outperforms strong baselines in both task performance and learning efficiency.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T08:51:14Z</published>
+    <arxiv:comment>20 pages, 11 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Shaojin Ma</name>
+    </author>
+    <author>
+      <name>Ruitao Wang</name>
+    </author>
+    <author>
+      <name>Pengyi Li</name>
+    </author>
+    <author>
+      <name>Jie Yang</name>
+    </author>
+    <author>
+      <name>Liangyu Chen</name>
+    </author>
+    <author>
+      <name>Gangyi Zhao</name>
+    </author>
+    <author>
+      <name>Hongyao Tang</name>
+    </author>
+    <author>
+      <name>Yan Zheng</name>
+    </author>
+    <author>
+      <name>Jianye Hao</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29419v1</id>
+    <title>When Thoughts Become Memory: Unifying In-Context Learning and Fine-Tuning</title>
+    <updated>2026-10-21T08:44:52Z</updated>
+    <link href="https://arxiv.org/abs/2610.29419v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29419v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We are the first to give a certified rule for whether unseen data belong in a pretrained model's context or its weights, built on an exact law for their information value. That value, the code length saved on held-out queries, equals in expectation the bits stored about the query, plus a prior repair, minus a decoding loss, for any model, architecture, dataset and task. The law's ceilings certify the choice from one measurement, and an anytime-valid test makes it from held-out queries, with error controlled whenever it stops. Every certificate the ceilings issue on a trained transformer, TabPFN, an occupancy network and a stereo network is correct. The test picks TabPFN over XGBoost and a trained surrogate over an in-context learner on airfoil pressure, calls the better of GPT-2's cache and fine-tune in 61,948 of 64,000 query streams over 32 comparisons, and errs in at most 3.3% of null streams. The law also diagnoses when learning in context helps and when it does not. Deleting part of a context is held-out validation of that part in any model, and adding parts one at a time traces the learning curve in context: one patch that sees a shape feature cuts an occupancy network's code length there a hundredfold, while eight that miss it nearly double it, and one camera that sees the surface beats four in a stereo network. Ranked by this label-free valuation, a kriging learner's three best support cars beat four drawn at random, and on a yes-or-no claim the valuation recovers a published evidence adjudicator, with AUROC 0.91.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T08:44:52Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Leon Chlon</name>
+    </author>
+    <author>
+      <name>Julie Huang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29411v1</id>
+    <title>The Predictive--Optimization Gap in GuanDan Self-Play</title>
+    <updated>2026-10-21T08:36:09Z</updated>
+    <link href="https://arxiv.org/abs/2610.29411v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29411v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Outcome-predictive signals are often treated as promising optimization targets in reinforcement learning, but predictive validity and optimization utility are different claims. We expose this distinction in GuanDan, a multi-round imperfect-information game in which the implication of a round outcome depends on the public match state. Held-out analysis shows that state--gain interactions provide incremental predictive value beyond a constant signed-gain effect, establishing that match progress is predictively meaningful. We then use changes in a frozen match-win predictor, $ΔΦ$, as a controlled round-level supervision intervention in a matched DanZero-style Monte Carlo self-play protocol. The intervention can succeed in an individual lineage: a selected progress-augmented checkpoint substantially outperforms its matched Baseline on a locked evaluation. Yet the method-level result reverses this impression: none of five preregistered replication seeds is positive, the pooled ten-seed interval includes zero, and across-iteration effects repeatedly change sign without a common late-stage advantage. These results identify a predictive--optimization gap: under the studied learner, a signal can describe outcome-relevant progress while failing to provide a reliably beneficial optimization direction.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T08:36:09Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Qicheng Zou</name>
+    </author>
+    <author>
+      <name>Biao Yuan</name>
+    </author>
+    <author>
+      <name>Siyu Song</name>
+    </author>
+    <author>
+      <name>Wentao Liu</name>
+    </author>
+    <author>
+      <name>Xiaokun Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29381v1</id>
+    <title>Cascading Bandits with Noisy Observations: Algorithms and Regret Bounds</title>
+    <updated>2026-10-21T08:10:49Z</updated>
+    <link href="https://arxiv.org/abs/2610.29381v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29381v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We propose a novel stochastic cascading bandit setup where probing an ordered shortlist of $K$ out of $L$ arms incurs position-dependent costs, and the learner observes only noisy feedback regarding each arm's true output. We identify a sub-class of noise models for which the optimal shortlist can be found by sorting arms according to a per-arm score: such a score exists for both selection and ordering when the channel has no false positives, and for ordering alone (but not selection) when measurements are costless; however in general neither selection nor ordering is separable once noise and cost are both present. For the case where both selection and ordering scores exist, we provide a UCB-based algorithm with $O((L-K)\log T)$ instance-dependent regret over a time horizon $T$, which matches an algorithm-agnostic lower bound (up to constant factors). For the more challenging scenario where scores don't exist, we develop a new algorithmic template, DP-UCB, that embeds optimism directly inside an exact dynamic program, yielding $O\big(LK\log T\big)$ regret. Finally, we validate our theoretical results through extensive numerical evaluations and simulations over both synthetic and real-world datasets.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T08:10:49Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Yashaswini Kaluguri</name>
+    </author>
+    <author>
+      <name>Nikhil Karamchandani</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29355v1</id>
+    <title>GaP-MoE : Explicit Expert Specialization in Mixture-of-Experts via Orthogonal Gradient Accumulation and Projection</title>
+    <updated>2026-10-21T07:48:07Z</updated>
+    <link href="https://arxiv.org/abs/2610.29355v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29355v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Sparse Mixture-of-Experts (SMoE) models improve scalability by routing input tokens to only a subset of expert networks, but they often suffer from representation collapse, in which multiple experts converge toward similar functions and lose their intended diversity. Prior work has addressed this limitation either by improving router architectures or by introducing auxiliary loss terms that implicitly penalize similarity among experts. However, router-based approaches remain vulnerable to routing collapses, and loss-based approaches can conflict with the task's original objective during optimization. In this work, we propose GaP-MoE (Gradient Accumulation and Projection in MoE), which induces expert specialization by directly manipulating expert output gradients rather than modifying the loss function. At each training step, GaP-MoE stochastically selects one of the $TopK$ routed experts as a leader based on normalized routing scores, and projects the gradients of the remaining follower experts onto the orthogonal complement of the subspace spanned by the leader's recent gradients. This removes directional overlap between expert gradients without altering the task loss, allowing specialization to emerge as a direct consequence of the optimization dynamics rather than an externally imposed constraint. We evaluate GaP-MoE in both fine-tuning settings (BERT-based, on GLUE) and from-scratch pretraining settings (GPT-2-based, on WikiText-103, enwik8, and text8), and further confirm its compatibility as a drop-in module for existing SMoE architectures. Experimental results show that GaP-MoE achieves performance comparable to or better than standard SMoE.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T07:48:07Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Donghyun Jeong</name>
+    </author>
+    <author>
+      <name>Yoon-Yeong Kim</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29303v1</id>
+    <title>ExpEvolve: Structuring and Reusing Experience for Open-Ended Discovery</title>
+    <updated>2026-10-21T07:00:23Z</updated>
+    <link href="https://arxiv.org/abs/2610.29303v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29303v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Evolutionary coding agents such as AlphaEvolve are one of the notable successes in using Large Language Models (LLMs) to build AI Scientists. These agents tackle open-ended scientific problems by iteratively improving and evolving programs, leveraging the prior knowledge and reasoning capabilities of LLMs. Despite their success, mutations over programs are mostly low-level upon surface heuristics, without a persistent unit of control. In contrast, science compounds through ideas. In this work, we propose ExpEvolve, which injects idea-level extraction and control into evolution: it discovers and leverages the high-level factors from programs that explain scoring differences among different programs. We characterize theoretical conditions on when discovery with idea factors improves sample efficiency. We also build a practical framework to show that the extracted high-level idea factors are helpful for guiding exploitation from experience and exploration when discovery comes to a plateau. Across 11 open-ended mathematical tasks, ExpEvolve significantly improves the final performance and sample efficiency up to 5.0x. The improvements also transfer to 4 other LLMs and to 6 machine learning tasks from MLS-Bench. Analysis shows that ExpEvolve can discover idea-level factors to provide better exploration and exploitation for evolutionary discovery.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T07:00:23Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Yongqiang Chen</name>
+    </author>
+    <author>
+      <name>Chenxi Liu</name>
+    </author>
+    <author>
+      <name>Deyu Zou</name>
+    </author>
+    <author>
+      <name>Zhenhao Chen</name>
+    </author>
+    <author>
+      <name>Tongliang Liu</name>
+    </author>
+    <author>
+      <name>Bo Han</name>
+    </author>
+    <author>
+      <name>Kun Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29289v1</id>
+    <title>Approximate Solomonoff Induction: On the Robustness of Learned Universal Predictors</title>
+    <updated>2026-10-21T06:44:09Z</updated>
+    <link href="https://arxiv.org/abs/2610.29289v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29289v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Why large language models trained via log-loss minimization over massive and diverse datasets exhibit broad capabilities and generalizable skills is not yet fully understood. Grau-Moya et al. (ICML 2024) offer a conceptual explanation through the lens of meta-learning: if sequence-generating environments $ν$ are drawn from a prior $w_ν$, minimizing population log-loss recovers the corresponding Bayesian mixture predictor $ξ=\sum_νw_νν$. In the idealized limit in which $w$ is a universal prior, the optimal predictor corresponds to Solomonoff universal induction. Practical machine learning algorithms, however, generally produce only \emph{approximately} optimal predictors. This raises a natural question: \emph{Does the prediction performance remain robust under approximation}? In this paper, we first provide a tight bound on the worst-case effect of approximation on prediction error. We show any predictor $ρ$ satisfying $D_{KL}(ξ\|ρ)\leq η$ retains bounded cumulative-expected-squared prediction error. However, while the Bayesian mixture predictor $ξ$ has error $O(\log(1/w_μ))$ in an environment $μ$, we establish a tight $Θ(η/w_μ)$ bound on the excess error of $ρ$ relative to $ξ$. Thus, approximation can substantially degrade performance in environments assigned small prior probability. In sharp contrast, when environments are averaged according to prior $w$, we prove that the excess prediction error is only $O(η)$. Furthermore, we establish a distribution-shift theorem for dominated shifts from a training prior $w$ to a test prior $w'$, interpolating our average-case and worst-case guarantees. Finally, we extend our robustness analysis to a finite-sampling setting relevant to learning universal predictors with neural networks and Transformers, where $D_{KL}(ξ\|ρ)$ could be unbounded. [For the full abstract, see the paper.]</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T06:44:09Z</published>
+    <arxiv:comment>24 pages</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Qian Li</name>
+    </author>
+    <author>
+      <name>Shang-Hua Teng</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29227v1</id>
+    <title>Schrödinger-Bass Bridge Barycenter Models for Measure-Valued Data</title>
+    <updated>2026-10-21T05:36:59Z</updated>
+    <link href="https://arxiv.org/abs/2610.29227v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29227v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Barycenter models, based on stochastic and deterministic optimal transport bridges between probability measures, have proven to be useful for supervised and unsupervised learning for (probability) measure-valued data. In this paper, we utilize the directional asymmetry and dual drift-diffusion control arising in the recently proposed Schrödinger-Bass Bridge (SBB) between two measures, and propose \textit{SBB-encoder}, \textit{SBB-decoder}, \textit{SBB-symmetric}, and \textit{SBB-Markovian} barycenter models. For each of these novel models, our first theoretical result establishes the existence of the SBB-barycenter under mild assumptions. Our second theoretical result characterizes the decoder SBB-barycenter of Gaussians where we show that for Gaussian input measures, the decoder formulation admits a Gaussian minimizer, reducing barycenter computation to a finite-dimensional optimization and yielding a compact algorithm. For general input measures, we derive a hybrid Wasserstein gradient particle descent scheme for all four formulations using the SBB dual representation. Finally, we utilize these algorithms for solving distributional-inverse/interpolation problems arising in the context of spatial images and single-cell RNA sequencing data, where we show that the SBB-decoder and Markovian barycenter allow us to interpolate between successive time points. Results show that our method outperforms existing barycenter models for measure interpolation and inference.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T05:36:59Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Ngoc-Hai Nguyen</name>
+    </author>
+    <author>
+      <name>Thuan Nguyen</name>
+    </author>
+    <author>
+      <name>Prakash Ishwar</name>
+    </author>
+    <author>
+      <name>Shuchin Aeron</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29192v1</id>
+    <title>Curvature-Scaled Sharpness-Aware Minimization: Convergence Beyond Smoothness</title>
+    <updated>2026-10-21T04:26:54Z</updated>
+    <link href="https://arxiv.org/abs/2610.29192v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29192v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Sharpness-Aware Minimization (SAM) has established itself as a widely used method for training deep neural networks. Despite its popularity, existing convergence guarantees for SAM-type methods require smoothness, a restrictive assumption. Generalized smoothness conditions have recently been proposed in the analysis of gradient methods but remain underexplored for SAM. To analyze the effect of SAM's perturbation under generalized smoothness, we use relative gradient distortion to quantify how the sharpness-aware direction departs from the original gradient. Under $(L_0,L_1)$-smoothness, we show that this distortion can become unbounded near stationarity for SAM and at large gradients for its unnormalized variant (USAM), with examples where SAM cycles and USAM diverges. We then establish a necessary condition for uniform distortion control among perturbations along the gradient whose nonnegative multipliers depend only on its norm. Motivated by this condition, we propose Curvature-Scaled SAM (CS-SAM), which scales both the perturbation and the descent step by suitable curvature upper bounds, and prove that it uniformly bounds the distortion. Under both $(L_0,L_1)$- and $(H_0,H_1)$-smoothness, we establish deterministic $\mathcal{O}(1/T)$ rates for the best squared gradient norm on nonconvex objectives, last-iterate $\mathcal{O}(1/T)$ rates for the function gap on convex objectives with a minimizer, and linear convergence under the Polyak-Lojasiewicz condition. With zero perturbation, our guarantees recover the rates for gradient descent with $(L_0,L_1)$- or $(H_0,H_1)$-based step-sizes. Minibatch experiments on computer vision tasks demonstrate competitive performance for both variants, with the $(H_0,H_1)$ variant achieving the highest mean best-test accuracy in all four settings against tuned SAM and USAM with constant and cosine annealing schedules.</summary>
+    <category term="math.OC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T04:26:54Z</published>
+    <arxiv:comment>31 pages</arxiv:comment>
+    <arxiv:primary_category term="math.OC"/>
+    <author>
+      <name>Dimitris Oikonomou</name>
+    </author>
+    <author>
+      <name>Nicolas Loizou</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29086v1</id>
+    <title>Internal Guidance as a Sampling Method for Tilted Diffusion Models</title>
+    <updated>2026-10-21T02:21:59Z</updated>
+    <link href="https://arxiv.org/abs/2610.29086v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29086v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Reward guidance methods sample an exponential tilt of a base density using a diffusion model trained with only samples from the base distribution. Existing methods use what we call external guidance: additive terms in the drift or multiplicative terms on the transition probabilities. We propose internal guidance which leaves the output of the base denoiser unmodified and instead changes the point at which it is evaluated. For discrete distributions embedded in the hypercube $\{-1,1\}^{d}$, the denoiser of any linearly tilted density is exactly the base denoiser evaluated at a shifted and rescaled input. In practice the base denoiser is a neural network trained on noised samples of the base distribution. The required evaluation points for sampling the tilted density would be out-of-distribution for basic noising of the base distribution. We modify the training algorithm with random diagonal rescalings of the data, so that the denoiser network learns both in- and out-of-distribution evaluations of the denoiser relative to the base distribution. A single denoiser network samples binary reward tilts, class labels, and infilling with no fine-tuning and no external guidance term.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T02:21:59Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Curtis McDonald</name>
+    </author>
+    <author>
+      <name>Peter Bartlett</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.29007v1</id>
+    <title>A Jump-Modified Wasserstein Gradient Flow for Maximum Mean Discrepancy with Energy Kernels</title>
+    <updated>2026-10-21T00:16:11Z</updated>
+    <link href="https://arxiv.org/abs/2610.29007v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.29007v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We study a jump-modified Wasserstein gradient flow of the squared maximum mean discrepancy generated by the energy kernels $K(z)=-|z|^q$, $0&lt;q&lt;2$, in every dimension $d\ge2$ as well as the one-dimensional range $1\le q&lt;2$. Under subcritical density and finite-moment assumptions, we prove global well-posedness. The added jumps transfer mass toward smaller values of the first variation and dissipate the same MMD energy as the transport term. Under our hypotheses on the target and jump rates, every Borel probability measure with finite MMD energy and zero jump dissipation is equal to the target. Combining this rigidity with compactness and a second-moment identity yields convergence to the target from finite-second-moment data, without additional uniform-in-time density or moment assumptions. We also construct a global collision-free particle process whose energy is nonincreasing along each path. A quantitative mean-field estimate applies to general initial empirical approximations, including deterministic configurations; propagation of chaos for exchangeable data and long-time target approximation follow as consequences.</summary>
+    <category term="math.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.PR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-21T00:16:11Z</published>
+    <arxiv:comment>63 pages</arxiv:comment>
+    <arxiv:primary_category term="math.AP"/>
+    <author>
+      <name>Ansh Desai</name>
+    </author>
+    <author>
+      <name>Jason Liu</name>
+    </author>
+    <author>
+      <name>Srujan Roplekar</name>
+    </author>
+    <author>
+      <name>Matthew Rosenzweig</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28978v1</id>
+    <title>From Common Information to Canonical Correlation Analysis and Beyond: Bridging Information Theory, Signal Processing, and Machine Learning</title>
+    <updated>2026-10-20T22:54:10Z</updated>
+    <link href="https://arxiv.org/abs/2610.28978v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28978v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Many problems in signal processing, machine learning, and neuroimaging provide several jointly observed measurements of one process, each mixing a component common to all of them with a component private to itself, and require the common component to be recovered without supervision. This problem has been studied in several communities, largely independently. Statisticians proposed canonical correlation analysis (CCA), introduced by Hotelling in 1936. Information theorists proposed two notions of common information, due to Gács and Körner and to Wyner. Engineers developed subspace methods for sensor arrays and multiuser communications to design multiview receivers. This tutorial presents the main results and tools each community developed for this problem in a single exposition, and explains the connections that emerge where they meet, distinguishing exact equivalences from special cases and analogies. We develop the information-theoretic foundation from first principles. We then introduce CCA and its extension to several views, followed by the engineering thread from blind multiuser detection to CCA as a blind receiver. Next, we turn to nonlinear CCA, covering kernel, deep, and probabilistic formulations, the conditions under which the common factor is identifiable, and connections to self-supervised learning. We conclude with a discussion of further extensions and open directions. The exposition is self-contained, so that readers from each of these communities can follow the parts developed by the others.</summary>
+    <category term="cs.IT" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="eess.SP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T22:54:10Z</published>
+    <arxiv:comment>Tutorial, 100 pages, 11 figures. Accepted for publication in Entropy, Special Issue "Foundations and Frontiers of Information Theory" in honor of H. Vincent Poor's 75th birthday</arxiv:comment>
+    <arxiv:primary_category term="cs.IT"/>
+    <author>
+      <name>Paris A. Karakasis</name>
+    </author>
+    <author>
+      <name>Walid Saad</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28977v1</id>
+    <title>Is In-Context Reinforcement Learning A Posterior Sampler? An Empirical Study</title>
+    <updated>2026-10-20T22:53:16Z</updated>
+    <link href="https://arxiv.org/abs/2610.28977v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28977v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In-context reinforcement learning (ICRL) exploits the impressive in-context learning ability of large language models to zero-shot generalize to new, unseen tasks at inference time without any parameter updates. Among many approaches, the Decision-Pretrained Transformer (DPT) is particularly appealing for its theoretical grounding: under idealized assumptions such as a sufficiently expressive model and infinite pretraining data, DPT can perform Bayesian posterior sampling. Whether this characterization survives in practice remains open. Therefore, we ask: \textit{is ICRL, specifically DPT and our proposed DPT variants, a Bayesian posterior sampler in practice?} To approach this question, we establish two necessary conditions that a Bayesian posterior sampler must satisfy: \textit{sufficient-statistic invariance} and the \textit{martingale property}. We then construct statistical hypothesis tests to statistically assess if practically-trained ICRL models satisfy these conditions. Applying these tests in Gaussian, Bernoulli, and linear bandit settings, we find that both conditions are consistently violated, suggesting that ICRL may not behave as Bayesian posterior samplers in practice. Beyond this negative result, our tests provide a principled toolkit for testing the Bayesian behavior of ICRL.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T22:53:16Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Weiqin Chen</name>
+    </author>
+    <author>
+      <name>Xinlong Du</name>
+    </author>
+    <author>
+      <name>Gesualdo Scutari</name>
+    </author>
+    <author>
+      <name>Harsha Honnappa</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28937v1</id>
+    <title>Auditing Conformal Prediction for Language Models Under Inference-Time Model Shift</title>
+    <updated>2026-10-20T21:30:43Z</updated>
+    <link href="https://arxiv.org/abs/2610.28937v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28937v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Conformal prediction (CP) for language models is typically evaluated under a matched protocol, in which calibration and deployment use the same post-training inference configuration, such as quantization mode and inference temperature. In deployment, these choices often differ from those used at calibration to meet memory or throughput constraints or serving policies. We argue that this exposes a limitation in current CP evaluation protocols for language models. We formalize the underlying phenomenon as inference-time model shift: a change in the conformal score distribution induced by inference configuration rather than by the input--label distribution, and theoretically characterize how it breaks split-conformal exchangeability even when the task distribution and trained model are unchanged. We then evaluate its consequences across 8 language models, 4 finite-label benchmarks, and 12 inference configurations. We find that matched evaluation can substantially overstate deployment-time coverage, and that the effect is heterogeneous across models and datasets. We argue that inference configuration should be reported as a first-class experimental axis in CP evaluations for language-model systems.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T21:30:43Z</published>
+    <arxiv:comment>Accepted at the 40th Conference on Neural Information Processing Systems (NeurIPS 2026). Track on Evaluations and Datasets</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Achref Doula</name>
+    </author>
+    <author>
+      <name>Max Mühlhäuser</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28910v1</id>
+    <title>Backtracking Direct, Indirect and Total Effects</title>
+    <updated>2026-10-20T20:46:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.28910v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28910v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Natural direct and indirect effects are defined through cross-world interventional counterfactuals. We propose an alternative construction based on backtracking counterfactuals. Rather than intervening on the treatment or mediator, we use a backtracking conditional distribution to construct an alternative exogenous state satisfying a desired treatment-mediator constraint. This yields the backtracking direct and indirect effects, and also the backtracking total effect. Likewise, we adapt the population intervention effects.</summary>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T20:46:56Z</published>
+    <arxiv:primary_category term="stat.ME"/>
+    <author>
+      <name>Jose M. Peña</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28878v1</id>
+    <title>Actually, All Learnable Distribution Classes Are Privately Learnable</title>
+    <updated>2026-10-20T19:57:13Z</updated>
+    <link href="https://arxiv.org/abs/2610.28878v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28878v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We show that every class of distributions that is learnable up to arbitrarily small target error in total variation distance with finitely many samples is also learnable under ($\varepsilon, δ$)-differential privacy up to arbitrarily small target error with finitely many samples. This proves a conjecture of Ashtiani. Previous work by Bun, Kamath, Mouzakis, and Singhal [arXiv:2402.00267] gave a weak refutation of this conjecture, showing that this implication is not true when learnability is defined with respect to a fixed target error. In contrast, we show that, under the standard definition of learnability, the conjecture is true.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T19:57:13Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Mohammad Afzali</name>
+    </author>
+    <author>
+      <name>Hassan Ashtiani</name>
+    </author>
+    <author>
+      <name>Alex Bie</name>
+    </author>
+    <author>
+      <name>Gautam Kamath</name>
+    </author>
+    <author>
+      <name>Peihan Liu</name>
+    </author>
+    <author>
+      <name>Argyris Mouzakis</name>
+    </author>
+    <author>
+      <name>Vikrant Singhal</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28800v1</id>
+    <title>Depth Separation for Neural Networks under Gaussian Measure</title>
+    <updated>2026-10-20T18:24:52Z</updated>
+    <link href="https://arxiv.org/abs/2610.28800v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28800v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We revisit the problem of depth separation for neural networks, as studied by Eldan and Shamir, Daniely, and others. Specifically, we consider the natural setting of $L^2$ approximation of radial functions under the standard Gaussian measure in $d$ dimensions. We show that there is a radial function in $L^2$ under the standard Gaussian measure that can be approximated to a fixed sufficiently small $L^2$ error by a depth-3 ReLU neural network of polynomial size in $d$ but can only be approximated by depth-2 networks with subexponentially bounded weights if their size is at least exponential in $d$. For that, we prove a general result showing that if a radial function has substantial mass in the high frequencies of its Hermite expansion, then it cannot be well approximated by a depth-2 neural network with small width and bounded weights. All theorems, lemmas, propositions, and corollaries are verified in Lean~4.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T18:24:52Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Cynthia Bortolotto</name>
+    </author>
+    <author>
+      <name>Francisco Ganacim</name>
+    </author>
+    <author>
+      <name>Roberto I. Oliveira</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28770v1</id>
+    <title>ReAPO: Retry-Aware Policy Optimization for Efficient Exploration in LLM Reasoning</title>
+    <updated>2026-10-20T18:08:29Z</updated>
+    <link href="https://arxiv.org/abs/2610.28770v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28770v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>RLVR improves language-model reasoning, but commonly relies on independent stochastic rollouts for exploration, which can repeatedly sample similar failed strategies. Prior work has seen success with approaches that guide exploration by introducing dependence into the sampling process by including incorrect solutions in the context for subsequent attempts. Still, these methods introduce the additional question of how to assign credit to each attempt. We propose to view the credit assignment through the lens of Stochastic Shortest Paths, a framework in classical reinforcement learning that seeks to minimize the expected cumulative cost to reach a terminal state (in our case, a verified successful response). We show that, under suitable simplifying assumptions, this perspective naturally leads to a simple modification to GRPO, which we call Retry-Aware Policy Optimization (ReAPO). ReAPO allocates additional generation to failed trajectories, allowing successful retries to be reinforced without rewarding preceding failures, and assigns credit in a theoretically principled way to each attempt. Across Qwen3 and OLMo-2 models from 0.6B to 4B and eight mathematical and scientific reasoning benchmarks, ReAPO improves first-attempt performance over GRPO as well as natural recent baseline algorithms, while additional ablations demonstrate the utility of both serial sampling and ReAPO's credit assignment. On Qwen3-0.6B, ReAPO also outperforms GRPO with twice the group size or twice the training steps, reaching their peak accuracy with 39% and 31% fewer generated tokens, respectively. Taken together, our results suggest that ReAPO is a simple yet effective approach for improving LM reasoning performance through improved exploration and retry-aware credit assignment.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T18:08:29Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Nghi Dao</name>
+    </author>
+    <author>
+      <name>Calder Morton-Ferguson</name>
+    </author>
+    <author>
+      <name>Noah Golowich</name>
+    </author>
+    <author>
+      <name>Adam Block</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28747v1</id>
+    <title>A Reverse-Gold Theorem: Positive-Data Identification by Substrate-Bounded Contrastive Learners</title>
+    <updated>2026-10-20T18:00:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.28747v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28747v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Gold's theorem shows that no learner can identify an arbitrary language in a superfinite class from positive presentations alone. We prove a positive result of a different shape. Fix an innate \emph{recursive contrast operator} $R$ mapping any string to a finite set of structurally bounded perturbations of it, and a discriminative scorer of bounded capacity trained by InfoNCE-style contrastive estimation \citep{vandenoord2018,macollins2018} on self-generated perturbations. Under a faithfulness condition relating operator, scorer, and target, the trained scorer achieves \emph{PAC conditional identification} from positive data alone: with high probability it ranks all but an $\varepsilon$-fraction of positives above every out-of-language perturbation in their own orbit, with sample complexity polynomial in the capacity, the orbit size, the score bound, and $1/\varepsilon$. The negatives are constructed by the learner, not supplied by an oracle, and no global normalizing constant over strings is ever computed. The misranking bound follows from the geometry of the contrastive loss---per-example loss floors plus a definite loss increment under misranking---yielding an $\varepsilon^{-2}$ rate, together with an explicit approximation gap that quantifies the cost of in-language (``colliding'') perturbations and vanishes for orbit-pure operators. The ranking guarantee lifts to a global membership classifier under a margin condition, and the same operator composed with the learned scorer is a normalization-free Metropolis--Hastings generator. We instantiate the hypotheses for substitutable context-free languages \citep{clarkeyraud2007} and the subregular classes \citep{heinz2010,hayashikamigaito2025}, and state an open conjecture locating the construction in the mildly context-sensitive hierarchy.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.NC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T18:00:47Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Rakesh Sengupta</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28543v1</id>
+    <title>Binary Discrete Diffusion: Candidate-Set Diffusion for Logic and Planning Tasks</title>
+    <updated>2026-10-20T17:11:48Z</updated>
+    <link href="https://arxiv.org/abs/2610.28543v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28543v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Discrete diffusion models iteratively denoise a noisy sequence of categorical data such as text, enabling any-order generation with self-correction and in-filling capabilities. This makes them promising candidates for reasoning, planning, and constrained-generation tasks like coding and math. Yet masked and uniform diffusion erase a token's identity in a single corruption event, so their noisy states cannot explicitly represent partially resolved uncertainty in which several alternatives remain plausible. We close this gap with Binary Discrete Diffusion, a family of continuous-time discrete-diffusion processes whose noisy state is a set of candidate tokens per position, represented as a binary membership vector. Binary diffusion changes candidate sets through additions and removals, allowing information to be lost and recovered gradually while the diffusion state itself represents partial uncertainty. On Sudoku-Extreme, Boxoban, and graph coloring, the symmetric formulation of binary diffusion consistently outperforms strong, well-tuned masked and uniform baselines under matched architectures and controlled training, sampling, and tuning budgets, with its largest gains on the hardest instances, while remaining competitive on language modeling (Text8, TinyStories, OpenWebText). These results support candidate sets as an effective intermediate representation for iterative reasoning and show that the corruption kernel can materially change the computation learned by the reverse model.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T17:11:48Z</published>
+    <arxiv:comment>42 pages, 7 figures, 12 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Rodrigo Casado Noguerales</name>
+    </author>
+    <author>
+      <name>Dimitri von Rütte</name>
+    </author>
+    <author>
+      <name>Bernhard Schölkopf</name>
+    </author>
+    <author>
+      <name>Thomas Hofmann</name>
+    </author>
+    <author>
+      <name>Aran Raoufi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28708v1</id>
+    <title>Borrowing Strength Across Stores: Transfer Learning for Choice-Based Revenue Management</title>
+    <updated>2026-10-20T16:08:39Z</updated>
+    <link href="https://arxiv.org/abs/2610.28708v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28708v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large retail chains must tailor assortment and pricing decisions to local customer preferences, yet even retailers with extensive sales records often have limited data for estimating demand at the store or local market level, particularly in product categories with short selling windows. Local estimation (fitting a demand model for each store on its own) can therefore be unreliable, while pooling data across stores improves estimation precision at the cost of ignoring local demand heterogeneity. We study how retailers can balance these competing effects through transfer learning under a multinomial logit (MNL) demand model. We propose a shrinkage estimator that combines store-specific demand estimates with information pooled from other stores. Unlike the linear or quadratic settings underlying much of the existing theoretical literature on information transfer in operations, the nonlinear MNL likelihood does not admit a straightforward bias-variance decomposition. By exploiting its self-concordant-like properties, we establish finite-sample performance guarantees that characterize when information transfer improves demand estimation and how the appropriate degree of shrinkage depends on local sample size, feature dimensionality, and cross-store heterogeneity. We further derive regret bounds for downstream assortment and pricing decisions. Numerical experiments demonstrate the operational benefits of shrinkage across different data environments. An empirical study using data from several hundred stores of a European apparel retailer shows that shrinkage improves out-of-sample product prioritization and revenue capture relative to both local estimation and full pooling. Our findings demonstrate how retailers can leverage information across their store networks to improve revenue management decisions while preserving local demand differences.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.OC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T16:08:39Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Recep Yusuf Bekci</name>
+    </author>
+    <author>
+      <name>Stefanus Jasin</name>
+    </author>
+    <author>
+      <name>Joline Uichanco</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28439v1</id>
+    <title>Do Neural Models Prefer Their Submodels?</title>
+    <updated>2026-10-20T16:01:13Z</updated>
+    <link href="https://arxiv.org/abs/2610.28439v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28439v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>A neural model is the set of functions that can be expressed by a given neural network architecture. Neural models contain natural submodels, such as those obtained by setting some neurons to be inactive. We study the geometry of neural models and ask whether they prefer their submodels. By this we mean whether local minimizers of the loss function lie in a given submodel. We introduce a geometric framework to determine if this occurs. For shallow multilayer perceptrons, we show that subnetworks with inactive hidden neurons are never preferred. For deep multilayer perceptrons, we give conditions under which subnetworks with inactive hidden neurons are not preferred. For lightning self-attention, lower-rank submodels are usually not preferred, but we identify examples where they are because they lie on a boundary of the model. Our results show that, aside from a few exceptions, preference for submodels cannot be explained by the geometry of the neural model, and must instead come from other sources such as training dynamics.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.AG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T16:01:13Z</published>
+    <arxiv:comment>29 pages, 7 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Alvaro Ribot</name>
+    </author>
+    <author>
+      <name>Yulia Alexandr</name>
+    </author>
+    <author>
+      <name>Anna Seigal</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28360v1</id>
+    <title>Confessions of a Masked MDP</title>
+    <updated>2026-10-20T15:22:31Z</updated>
+    <link href="https://arxiv.org/abs/2610.28360v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28360v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In reinforcement learning, one presumes the action set to be known ahead of time, and, thus, one must know if any state-action pairs are not permissible
+  ahead of computations. In some applications, determining this action mask is the main computational bottleneck. Isolating this problem to highlight its core
+  properties, we study how to combine the search for an optimal policy with the learning of the mask itself, under a linear MDP model in which each attempted
+  action reveals the exact value of a linear score determining its validity. In this framework, we first construct an algorithm based on deterministic
+  optimistic optimization and show that it is minimax optimal, which we show is also computationally efficient. However, it is sub-optimal on non-degenerate
+  instances, as we show. We propose an alternative, which is also computationally efficient, which plans its exploration strategy. This algorithm admits a
+  formal interpretation as an analogue of information-directed-sampling for deterministic feedback, which may be of independent interest. Finally, we study an
+  application of this framework to transfer learning, where the invalid action set changes over time.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.ST" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T15:22:31Z</published>
+    <arxiv:comment>18 pages, 7 figures Submitted to AISTATS 2027</arxiv:comment>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Sebastian Reboul</name>
+    </author>
+    <author>
+      <name>Lorenzo Croissant</name>
+    </author>
+    <author>
+      <name>Hélène Halconruy</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28318v1</id>
+    <title>Stabilizing Filters for Graph Signal Generation</title>
+    <updated>2026-10-20T14:54:30Z</updated>
+    <link href="https://arxiv.org/abs/2610.28318v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28318v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Generating graph signals is an important task in machine learning, and incorporating the underlying graph into a generative model enables structurally-informed distribution modeling. However, said graph is often noisy or imperfectly estimated, and structural errors can affect the generative process and the resulting signal distribution. While recent work has established stability guarantees for graph neural ordinary differential equations, the robustness of graph-aware reference dynamics, as used in topological Schrödinger bridge models, remains largely unexplored. Here, we investigate the structural stability of continuous-time generative models whose dynamics combine a graph filter with a learned graph neural network. We first derive a Wasserstein stability bound that quantifies the effect of graph perturbations on the generated signal distributions. Informed by this analysis, we then propose a principled framework for designing graph filters that balance structural stability with induced signal smoothing. We characterize the optimal filter design and provide an explicit family of polynomial filters with provable stability guarantees. Experiments on synthetic graphs and real-world fMRI signals support our theoretical findings, illustrating the enhanced structural stability of the proposed filters while preserving generative performance.</summary>
+    <category term="eess.SP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T14:54:30Z</published>
+    <arxiv:comment>Submitted to the IEEE Transactions on Signal Processing</arxiv:comment>
+    <arxiv:primary_category term="eess.SP"/>
+    <author>
+      <name>Martin Schmidt</name>
+    </author>
+    <author>
+      <name>Gonzalo Mateos</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28314v1</id>
+    <title>Debiased Prior-Data Fitted Networks for Amortized Bayesian Semi-Parametric Inference</title>
+    <updated>2026-10-20T14:52:35Z</updated>
+    <link href="https://arxiv.org/abs/2610.28314v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28314v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Prior-data fitted networks (PFNs) have recently gained popularity as an end-to-end approach to amortized Bayesian inference. Yet, their statistical behavior for semi-parametric targets, such as means under missingness or causal effects, remains poorly understood. In this work, we develop theoretical foundations for debiased PFNs to perform inference on finite-dimensional targets in general semi-parametric settings. First, we show that, despite being Bayes-optimal with respect to the target, an idealized PFN can exhibit a posterior concentration rate that implicitly depends on the concentration rates of (latent) nuisance functions and can become slower as the prior becomes more diverse. Then, to speed up the target posterior concentration rates, we introduce two generic debiasing strategies based on efficient influence functions: (i) a label correction and (ii) a prior correction. Finally, we show that the debiased PFNs (i) &amp; (ii) possess concentration rates that asymptotically match a convergence rate given by traditional frequentist bias-corrected estimators. In this way, we establish a novel connection between amortized Bayesian inference with PFNs and frequentist semi-parametric efficiency theory. Under additional assumptions, this allows us to guarantee local and global optimality of PFN-based estimators (namely, the Bernstein-von Mises property and minimax optimality, respectively). Therefore, our work provides guidelines for designing debiased PFNs for semi-parametric inference with principled and provable asymptotic guarantees.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T14:52:35Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Valentyn Melnychuk</name>
+    </author>
+    <author>
+      <name>Emil Javurek</name>
+    </author>
+    <author>
+      <name>Stefan Feuerriegel</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28256v1</id>
+    <title>Geometry-Aware Block Selection for Sparse Variational Gaussian Processes</title>
+    <updated>2026-10-20T14:12:48Z</updated>
+    <link href="https://arxiv.org/abs/2610.28256v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28256v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Sparse variational Gaussian processes (SVGPs) are a widely used, principled approach to scalable Gaussian process modelling. Their success stems from their theoretically interpretable structure: they provide a lower bound on the marginal likelihood of the full GP while allowing scal- able stochastic optimization. Recent work has explored modifications of the posterior conditional distribution and has shown that such extensions can improve upon this well-established framework. In particular, introducing a block-diagonal structured scal- ing matrix leads to a tighter lower bound on the GP marginal likelihood. We investigate whether selecting blocks that tighten the variational objective improves test RMSE and NLL at a fixed inducing-point budget. Since the scaling matrix contributes to the variational lower bound through an upper bound on the log-determinant of the full residual covariance matrix, our work makes the following contributions. First, we introduce a simple, scalable, geometry-aware algorithm, with explicit computational complexity and low computational overhead, that recovers a large fraction of this log- determinant contribution by selecting an appropriate partition of the data. Second, we show how to train these models using a doubly stochastic optimization framework. Finally, we investigate how sparse GP methods based on alternative conditional posterior structures can be used to learn better hyperparameters and inducing points for SVGP.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T14:12:48Z</published>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Matteo Hoxha</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28175v1</id>
+    <title>Where Has the Foreign Signal Gone?</title>
+    <updated>2026-10-20T13:15:28Z</updated>
+    <link href="https://arxiv.org/abs/2610.28175v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28175v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We compare the relation between sentiment noise in the Twitter feed and losses for stocks of domestic and foreign firms. The mean quarterly domestic-foreign difference in the slope of next-quarter losses on measured noise is -1.40 (Newey-West t = -2.99). This slope is negative for 78 and 48 percent of the quarters for domestic and foreign stocks, respectively (block-bootstrap p = 0.016). Thus, this relationship is temporally more stable for domestic stocks. We use a noisy rational expectations model to explain these patterns through the composition of the contributor pool. The feeds for stocks of foreign firms have higher repeat-author concentration and a larger model-implied nonfundamental component than those for domestic firms. We interpret these differences through the producer-knowledge mismatch hypothesis. For foreign firms, the English-language contributor pool underrepresents the home-market investors who tend to possess informational advantages about them. Thus, the foreign signal is not gone but diluted.</summary>
+    <category term="econ.EM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T13:15:28Z</published>
+    <arxiv:primary_category term="econ.EM"/>
+    <author>
+      <name>Piyush Akimitsu</name>
+      <arxiv:affiliation>SUNY at Albany</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Ulrich Hounyo</name>
+      <arxiv:affiliation>SUNY at Albany</arxiv:affiliation>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28155v1</id>
+    <title>Predicting silent failures of learned inference under restricted access: what measurement physics and prior information explain</title>
+    <updated>2026-10-20T12:58:25Z</updated>
+    <link href="https://arxiv.org/abs/2610.28155v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28155v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Learned priors are used to reconstruct regions that measurements barely reach, and to report uncertainty there. They can fail silently: the reported interval excludes the truth while every ground-truth-free diagnostic stays within its noise. We call such errors the blind set and ask whether they can be predicted before the target data are seen. For a correctly specified linear-Gaussian model averaged over the prior, the risk of a silent failure factorises exactly into non-detection and non-coverage, which does not hold for learned systems in general; we build a score that approximates this reference by linearising a VAE prior. In a prospective study on real X-ray CT objects (2DeteCT) under simulated restricted access, with predictions committed by hash before any trial, the score ranked the realised blindness of two learned inference systems (latent Laplace and ensemble Kalman inversion) with Spearman $ρ= 0.79$ and 0.84 over 240 pre-specified errors. Simple structural predictors would also have passed these tests. Sequential post-hoc analyses, each specified before its own computation, show that under bounded reach the learned score gave no detectable improvement over a physics-based baseline, in rankings or trial-level log scores. At the weakest attenuation studied, prior information improved rankings over the physics-based baseline, most clearly for ensemble Kalman inversion, but a Gaussian prior did as well and the gain was not detectable at the trial level. The score is not a calibrated probability. Silent failures can be anticipated here, but their structure follows mainly from measurement access and the decision quantity rather than from the learned prior.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T12:58:25Z</published>
+    <arxiv:comment>22 pages, 5 figures. Code and data: https://doi.org/10.5281/zenodo.23392686</arxiv:comment>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Mario Gianni</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28136v1</id>
+    <title>Near-Optimal Regret Bounds for UCB-Style Gaussian Process Bandits via Data Thinning</title>
+    <updated>2026-10-20T12:43:49Z</updated>
+    <link href="https://arxiv.org/abs/2610.28136v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28136v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Gaussian process upper confidence bound (GP-UCB) has been widely studied, though its known regret upper bound is suboptimal. To obtain near-optimal regret upper bounds, existing studies mainly focus on non-adaptive methods, such as uncertainty sampling, whose practical effectiveness is often limited. This paper shows that, under a Gaussian noise assumption, UCB-style algorithms can achieve near-optimal regret upper bounds via data thinning, a statistical technique for creating independent datasets from a single dataset. First, we show that data thinning can yield tighter confidence intervals in the bandit setting, and that a direct extension of GP-UCB achieves a near-optimal simple regret upper bound. Furthermore, by leveraging the tighter confidence intervals and combining GP-UCB with a phased elimination algorithm, we show a near-optimal cumulative regret upper bound. Finally, we demonstrate the effectiveness of UCB-style algorithms incorporating data thinning via numerical experiments.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T12:43:49Z</published>
+    <arxiv:comment>30 pages, 4 figures</arxiv:comment>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Shion Takeno</name>
+    </author>
+    <author>
+      <name>Shogo Iwazaki</name>
+    </author>
+    <author>
+      <name>Ichiro Takeuchi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28064v1</id>
+    <title>Quantifying the Threat: A Bayesian Probabilistic Framework for Heavy Metal Health Risks among Children in the Densu Basin, Ghana</title>
+    <updated>2026-10-20T11:48:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.28064v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28064v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Groundwater in Ghana's Densu River Basin remains a key domestic water source, but multi-metal contamination threatens children's health. Previous deterministic hazard index assessments provide limited treatment of uncertainty, co-exposure, and spatial variability. This study applies a Bayesian probabilistic framework for non-carcinogenic risk assessment using 94 groundwater samples and measurements of Fe, Mn, Ni, Pb, Cd, and As. A Bayesian regression model propagates parameter uncertainty and accounts for contaminant co-occurrence. Adaptive Hamiltonian Monte Carlo is used for posterior inference, while inverse distance weighting generates spatially continuous risk surfaces. Pb, As, and Cd dominate cumulative risk. Posterior predictive results indicate that approximately 31% of sampling sites have a probability greater than 0.5 of exceeding a hazard index (HI) of 1. The risk surface is highly heterogeneous, with a posterior mean of 0.372 and a standard deviation of 0.416. High-risk zones often reflect moderate co-exposure rather than extreme contamination by a single metal. The framework provides uncertainty-aware, spatially explicit information to support groundwater monitoring, risk mitigation, and public health planning in data-limited regions.</summary>
+    <category term="stat.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="physics.geo-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T11:48:56Z</published>
+    <arxiv:comment>59 pages, 7 figures, manuscript under peer review at Stochastic Environmental Research and Risk Assessment (SERRA)</arxiv:comment>
+    <arxiv:primary_category term="stat.AP"/>
+    <author>
+      <name>T. Ansah-Narh</name>
+    </author>
+    <author>
+      <name>G. Y. Afrifa</name>
+    </author>
+    <author>
+      <name>J. B. Tandoh</name>
+    </author>
+    <author>
+      <name>E. N. N. Nortey</name>
+    </author>
+    <author>
+      <name>D. Adjei</name>
+    </author>
+    <author>
+      <name>R. Opoku-Sarkordie</name>
+    </author>
+    <author>
+      <name>R. Davis</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28036v1</id>
+    <title>When Does Training on Synthetic Data Provably Work?</title>
+    <updated>2026-10-20T11:23:59Z</updated>
+    <link href="https://arxiv.org/abs/2610.28036v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28036v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>High-quality training data are a major bottleneck in machine learning, motivating increasing use of artificially generated data. We study when a binary classifier trained on synthetic data transfers successfully to a real distribution, under a shared conditional label distribution. First, we derive finite-sample excess-error bounds when the real covariate distribution is absolutely continuous with respect to the synthetic distribution under a controlled density ratio. Second, we study the partially and fully singular case, where the real distribution has mass outside the synthetic one. If the hypothesis class is sufficiently expressive, synthetic risk alone cannot uniformly control real-world error: a classifier can be nearly optimal on synthetic data while approaching worst-case error on the uncovered real region, even when the distributions are arbitrarily close in Wasserstein distance. For function classes where hypotheses and the log-odds of the conditional label probability are Lipschitz, we recover a bound in terms of the probability that a real sample lies outside the reach of the synthetic data, restoring a transfer guarantee even in the fully singular case. Experiments confirm this in controlled low-dimensional settings and on 32,200 images generated as counterparts to real ImageNet images by four state-of-the-art generators: an adversarial classifier reaches 0.5% error on the synthetic domain but 99.25% error on the real domain, while ordinarily trained architectures show positively correlated synthetic and real test errors. Synthetic data should be budgeted at high sample counts and models validated on real data.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T11:23:59Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Leroy Odunlami</name>
+    </author>
+    <author>
+      <name>Tobias Riedlinger</name>
+    </author>
+    <author>
+      <name>Hanno Gottschalk</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.28025v1</id>
+    <title>Optimal aggregation in multiclass classification</title>
+    <updated>2026-10-20T11:15:57Z</updated>
+    <link href="https://arxiv.org/abs/2610.28025v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.28025v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>This paper studies the problem of aggregation in multiclass classification, generalizing existing results for binary classification. Given a finite dictionary of score functions F={f_1,...,f_M} and a training sample, the goal is to construct a data-driven aggregate whose risk is as close as possible to that of the best aggregate (oracle) in a prescribed subset of span(F) with respect to a given loss. In particular, we investigate model selection and convex aggregation under the 0/1 and multinomial logistic losses.
+  For the 0/1 loss, we show that the optimal aggregation rates remarkably do not depend on the number of classes K, and the corresponding empirical risk minimization (ERM) aggregates are rate-optimal for model selection and nearly-optimal for convex aggregation (up to an additional sqrt(ln(K)) factor). The situation under the multinomial logistic loss is more subtle. Although the optimal aggregation rates remain independent of K, restricting aggregation to proper aggregates in conv(F) leads to a deterioration of the achievable rates with K in certain regimes. This reveals a fundamental limitation of proper aggregation in multiclass classification. To overcome it, we propose improper probability-mixture aggregates that average the induced class probabilities rather than the original score functions and map the result back to score-function space. These aggregates achieve optimal or nearly optimal convergence rates independent of K. Finally, we introduce a different aggregation framework in which both the aggregation class and the oracle are defined directly in probability space.</summary>
+    <category term="math.ST" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-20T11:15:57Z</published>
+    <arxiv:primary_category term="math.ST"/>
+    <author>
+      <name>Felix Abramovich</name>
+    </author>
+    <author>
+      <name>Or Davidovitch-Servadio</name>
+    </author>
+  </entry>
+</feed>
