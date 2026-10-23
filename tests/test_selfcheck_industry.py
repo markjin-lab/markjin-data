@@ -344,7 +344,9 @@ class R7FredAllowlist(unittest.TestCase):
         return (_ROOT / self.REL).read_text(encoding="utf-8")
 
     def fred(self, text, rel):
-        r = _sc.check_text(text, _ROOT, "2026-10-15", "daily", link_checker=lambda u: True, rel=rel)
+        # 模拟可信入口核定路径；测放行逻辑时用 trust_repo_rel，测伪造时直接传普通字符串
+        trusted = _sc.trust_repo_rel(rel) if rel is not None else None
+        r = _sc.check_text(text, _ROOT, "2026-10-15", "daily", link_checker=lambda u: True, rel=trusted)
         return [e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"]
 
     def test_listed_lines_pass(self):
@@ -404,6 +406,30 @@ class R7FredAllowlist(unittest.TestCase):
             f.write_text(self.text(), encoding="utf-8")
             r = _sc.check_file(str(f), _ROOT, "2026-10-15", "daily", link_checker=lambda u: True)
             self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [5, 140])
+
+    def test_forged_string_rel_check_text_blocked(self):
+        """外部直接传普通字符串 rel= 不能借旧行豁免（即使路径格式合法、文本相同）。"""
+        r = _sc.check_text(self.text(), _ROOT, "2026-10-15", "daily", link_checker=lambda u: True, rel=self.REL)
+        self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [5, 140])
+
+    def test_forged_rel_check_file_outside_blocked(self):
+        """仓库外文件交给 check_file 并显式传伪造 rel= 时，不能借旧行豁免。"""
+        with _tmp.TemporaryDirectory() as d:
+            f = _P(d) / "2026-10-15.md"
+            f.write_text(self.text(), encoding="utf-8")
+            r = _sc.check_file(str(f), _ROOT, "2026-10-15", "daily", link_checker=lambda u: True, rel=self.REL)
+            self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [5, 140])
+
+    def test_listed_rel_file_absent_still_passes(self):
+        """清单 rel 对应文件在受检仓库里不存在时，仅凭核定路径+行号+受检文本该行 sha256 仍可放行。
+        若恢复旧的「文件必须存在」条件，本测试应失败。"""
+        with _tmp.TemporaryDirectory() as d:
+            self.assertFalse((_P(d) / self.REL).exists())
+            r = _sc.check_text(self.text(), d, "2026-10-15", "daily", link_checker=lambda u: True,
+                               rel=_sc.trust_repo_rel(self.REL))
+            self.assertEqual([e["line"] for e in r["errors"] if e["code"] == "E-FRED-CITED"], [])
+            # 直接调用底层：同样不依赖磁盘文件
+            self.assertEqual(_sc.fred_cited_lines(self.text(), repo=d, rel=_sc.trust_repo_rel(self.REL)), [])
 
     def test_no_baseline_mechanism(self):
         import inspect
@@ -492,6 +518,24 @@ class R7UrlStrict(unittest.TestCase):
 
     def test_url_in_param(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" inference="见 https://a@example.org" >}}正文 [1]。{{< /industry-link >}}\n'
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(doc))
+
+    def test_at_commercial_at(self):
+        """小写商业符号 ﹫ 独立反例。"""
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("联系 a﹫b [1]。")))
+
+    def test_at_commat_entity(self):
+        """HTML 实体 &commat; 独立反例。"""
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(link("联系 a&commat;b [1]。")))
+
+    def test_at_in_plain_param(self):
+        """普通短代码参数值（非 URL）里的 @ 独立反例。"""
+        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" inference="联系 a@b" >}}正文 [1]。{{< /industry-link >}}\n'
+        self.assertIn("E-INDUSTRY-MARKUP", _mcodes(doc))
+
+    def test_at_in_datum_param(self):
+        """industry-datum 参数里的 @ 独立反例。"""
+        doc = TITLE + '{{< industry-datum series="a@b" cite="1" >}}\n'
         self.assertIn("E-INDUSTRY-MARKUP", _mcodes(doc))
 
 

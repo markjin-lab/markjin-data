@@ -947,15 +947,32 @@ def _rel_ok(rel):
     return all(part not in ("", ".", "..") for part in rel.split("/"))
 
 
+class _TrustedRel(str):
+    """可信入口核定的仓库内相对路径。仅由 trust_repo_rel / check_file 构造；FRED 旧行豁免只认此类。"""
+    __slots__ = ()
+
+
+def trust_repo_rel(rel):
+    """可信入口核定路径：格式合法则包装为 _TrustedRel，否则返回 None。
+    供 check_file（由磁盘路径相对 repo 推导）与 route（由同一 PR Git 对象取路径）调用。
+    外部直接把普通字符串传给 check_text / check_file 的 rel= 不能借此放行。"""
+    if isinstance(rel, _TrustedRel):
+        return rel
+    if not _rel_ok(rel):
+        return None
+    return _TrustedRel(rel)
+
+
 def fred_cited_lines(text, repo=None, rel=None):
     """全文逐行检查 E-FRED-CITED。放行只看受检文本本身：(rel, 行号, 受检文本里这一行的 sha256) 在 FRED_LEGACY_ALLOWLIST 里
-    才放行；rel 为空或不是规范相对路径（仓库外稿件经 check_file 得到 rel=None）一律不放行。"""
-    in_repo = _rel_ok(rel)
+    才放行；rel 须是可信入口核定的 _TrustedRel（普通字符串即使格式合法也不放行；仓库外稿件经 check_file 得到 None）。
+    不要求磁盘上存在清单路径对应的文件。"""
+    trusted = isinstance(rel, _TrustedRel)
     out = []
     for i, line in enumerate(text.split("\n"), 1):
         if not fred_line_hit(line):
             continue
-        if in_repo and (rel, i, hashlib.sha256(line.encode("utf-8")).hexdigest()) in FRED_LEGACY_ALLOWLIST:
+        if trusted and (str(rel), i, hashlib.sha256(line.encode("utf-8")).hexdigest()) in FRED_LEGACY_ALLOWLIST:
             continue
         out.append(i)
     return out
@@ -1837,7 +1854,8 @@ def http_link_checker(url, timeout=10):
 
 
 def check_file(path, repo, date, card_type, **kw):
-    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。"""
+    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。
+    相对路径一律由 path 相对 repo 推导并经 trust_repo_rel 核定；调用方传入的 rel= 字符串不能用于 FRED 旧行豁免。"""
     try:
         text = Path(path).read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError, TypeError):
@@ -1846,9 +1864,9 @@ def check_file(path, repo, date, card_type, **kw):
         meta = {"card_type": card_type if card_type in CARD_TYPES else None,
                 "date": date if valid_date(date) else None}
         return _result([{"code": "E-SELFCHECK-READ", "line": 0}], flags, counts, meta)
-    if "rel" not in kw:
-        try:
-            kw["rel"] = Path(path).resolve().relative_to(Path(repo).resolve()).as_posix()
-        except (ValueError, OSError, TypeError):
-            kw["rel"] = None                         # 不在仓库内 → 无法证明是 tongyi 路径
+    try:
+        derived = Path(path).resolve().relative_to(Path(repo).resolve()).as_posix()
+        kw["rel"] = trust_repo_rel(derived)          # 覆盖调用方传入的 rel；非仓库内 → None
+    except (ValueError, OSError, TypeError):
+        kw["rel"] = None                             # 不在仓库内 → 无法证明是 tongyi 路径，FRED 亦不放行
     return check_text(text, repo, date, card_type, **kw)
