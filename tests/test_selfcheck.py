@@ -1,7 +1,7 @@
 """#9 自检反例测试。每个用例同时断言 status、low_risk 与错误码。"""
 import hashlib, json, os, tempfile, unittest
 from pathlib import Path
-from helpers import (quote_line, source_line, make_repo, arxiv_line, fred_line, x_line, write_manifest, DUMMY_INTERNAL,
+from helpers import (ARXIV_LOC, FRED_LOC, quote_line, source_line, make_repo, arxiv_line, fred_line, x_line, write_manifest, DUMMY_INTERNAL,
                      DATE, ARXIV_ID, FILES)
 from markjin.selfcheck import check_text, check_file, compute_low_risk
 from markjin.internal import parse_internal_list, load_internal_terms as _real_load
@@ -62,7 +62,7 @@ class Whitelist(T):
             self.expect(run(doc + quote_line()), "FAIL", False, "E-REPLAY-001")
 
     def test_numbered_plus_star_lists_structured(self):
-        src = f"— `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
+        src = f"— `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕"   # #32
         for pre in ("1. ", "2) ", "+ ", "* "):
             self.expect(run(TITLE + f"{pre}模型在 MMLU 上达到 90% 准确率。 {src}"), "PASS", False, "R-STRUCTURE")
             self.expect(run(TITLE + f"{pre}模型可能达到 90% 准确率。 {src}"), "PASS", False, "R-INFERENCE")
@@ -70,7 +70,9 @@ class Whitelist(T):
     def test_quote_table_with_source_unstructured(self):
         src = f"— `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
         for pre in ("> ", "| "):
-            self.expect(run(TITLE + f"{pre}模型在 MMLU 上达到 90% 准确率。 {src}"), "PASS", False, "R-UNSTRUCTURED")
+            # #32：非结构化行无法写明原文支持位置 → 日报硬拦；信号卡照旧只标 R-UNSTRUCTURED
+            self.expect(run(TITLE + f"{pre}模型在 MMLU 上达到 90% 准确率。 {src}"), "FAIL", False, "E-SUPPORT-LOCATOR-MISSING")
+            self.expect(run(TITLE + f"{pre}模型在 MMLU 上达到 90% 准确率。 {src}", card_type="signal"), "PASS", False, "R-UNSTRUCTURED")
 
     def test_numbered_quote_table_without_source(self):
         # 无来源且无法判别 → UNCLEAR（可达，不发布）；含数字或推断/转述词却无来源 → FAIL
@@ -82,12 +84,16 @@ class Whitelist(T):
     def test_table_header_is_free_text(self):
         src = f"`raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
         r = run(TITLE + "| 项 | 来源 |\n|---|---|\n" + f"| 90% MMLU | {src} |")
+        self.expect(r, "FAIL", False, "E-SUPPORT-LOCATOR-MISSING")   # #32：表格行无法写明原文支持位置
+        r = run(TITLE + "| 项 | 来源 |\n|---|---|\n" + f"| 90% MMLU | {src} |", card_type="signal")
         self.expect(r, "PASS", False, "R-UNSTRUCTURED")
         r = run(TITLE + "| 预计 | 来源 |\n|---|---|\n" + f"| 90% MMLU | {src} |")
         self.expect(r, "FAIL", False, "E-REPLAY-001")   # 表头是无来源的判断文字
 
     def test_support_unverified(self):
-        self.expect(run(arxiv_line("模型在 GSM8K 上达到 95% 准确率。")), "PASS", False, "R-SUPPORT-UNVERIFIED")
+        # #32：日报中数字与原文支持位置不符 → 硬拦；信号卡照旧只标 R-SUPPORT-UNVERIFIED
+        self.expect(run(arxiv_line("模型在 GSM8K 上达到 95% 准确率。")), "FAIL", False, "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(arxiv_line("模型在 GSM8K 上达到 95% 准确率。"), card_type="signal"), "PASS", False, "R-SUPPORT-UNVERIFIED")
         # 无数字：没有可核对项 → 保守判定为“来源支持未证实”，不是低风险
         self.expect(run(arxiv_line("模型很强。")), "PASS", False, "R-SUPPORT-UNVERIFIED")
 
@@ -304,15 +310,18 @@ class Macro(T):
 
 
 class MacroArithmetic(T):
-    SRC = f" — `raw/{DATE}/fred/UNRATE.json` · https://fred.stlouisfed.org/series/UNRATE"
+    SRC = f" — `raw/{DATE}/fred/UNRATE.json` · https://fred.stlouisfed.org/series/UNRATE 〔原文：{FRED_LOC}〕"   # #32
 
     def test_pure_arithmetic_allowed(self):
         for t in ("UNRATE 4.2%，较上月 4.0% 差值 +0.2 个百分点（推断：由原始数据计算；算式：4.2-4.0=0.2）",
                   "UNRATE 同比 +0.2（由原始数据计算，算式：4.2 - 4.0 = 0.2）",
                   "UNRATE 环比 5%（按原始数据计算；算式：(4.2/4.0-1)×100=5%）"):
             r = run(TITLE + "- " + t + self.SRC)
-            self.expect(r, "PASS", False, "R-MACRO")
-            self.assertNotIn("E-BLOCK-MACRO-OPINION", r["error_codes"])
+            # 纯算术不算宏观观点、算式验算通过；#79 r8 去掉 FRED 整段兜底后，推导值（4.0、0.2、5）不在支持位置的最小窗口里，
+            # 与其他来源一样判 E-SUPPORT-LOCATOR-MISMATCH（原先只靠 FRED 兜底放行）
+            self.expect(r, "FAIL", False, "E-SUPPORT-LOCATOR-MISMATCH")
+            self.assertIn("R-MACRO", r["error_codes"])
+            self.assertNotIn("E-BLOCK-MACRO-OPINION", r["error_codes"]); self.assertNotIn("E-FORMULA-MISMATCH", r["error_codes"])
 
     def test_missing_formula_blocked(self):
         r = run(TITLE + "- UNRATE 同比 +0.2（推断：由原始数据计算）" + self.SRC)
@@ -359,6 +368,9 @@ class Blocks(T):
 
     def test_long_context_not_invest(self):
         r = run(arxiv_line("MMLU 90%, long context 1M tokens, position embeddings。"))
+        # #32：1M 不在原文支持位置里 → 只因 E-SUPPORT-LOCATOR-MISMATCH 失败，不是投资措辞
+        self.assertNotIn("E-BLOCK-INVEST", r["error_codes"]); self.assertEqual([e["code"] for e in r["errors"]], ["E-SUPPORT-LOCATOR-MISMATCH"])
+        r = run(arxiv_line("MMLU 90%, long context 1M tokens, position embeddings。"), card_type="signal")
         self.assertNotIn("E-BLOCK-INVEST", r["error_codes"]); self.assertEqual(r["status"], "PASS")
 
     def test_medical(self):
@@ -472,8 +484,9 @@ class R3Counter(unittest.TestCase):
         self.expect(r, "PASS", False, "R-LINK-UNREACHABLE")
 
     def test_number_boundary(self):
-        self.expect(run(TITLE + arxiv_line("该模型得分为 9。")), "PASS", False, "R-SUPPORT-UNVERIFIED")
-        self.expect(run(TITLE + arxiv_line("该模型得分为 0.9%。")), "PASS", False, "R-SUPPORT-UNVERIFIED")
+        # #32：9、0.9 不被原文支持位置中的 90 支持 → 日报硬拦
+        self.expect(run(TITLE + arxiv_line("该模型得分为 9。")), "FAIL", False, "E-SUPPORT-LOCATOR-MISMATCH")
+        self.expect(run(TITLE + arxiv_line("该模型得分为 0.9%。")), "FAIL", False, "E-SUPPORT-LOCATOR-MISMATCH")
         self.expect(run(TITLE + arxiv_line("该模型在 MMLU 达到 90%。")), "PASS", False, "R-STRUCTURE", absent="R-SUPPORT-UNVERIFIED")
 
     def test_internal_malformed_row(self):
@@ -506,7 +519,9 @@ class FormulaVerify(unittest.TestCase):
         self.expect(run(TITLE + fred_line("UNRATE 同比 4.2%（由原始数据计算；算式：4.2+4.2=4.2）。")),
                     "FAIL", False, "E-FORMULA-MISMATCH")
         ok = run(TITLE + fred_line("UNRATE 同比 4.2%（由原始数据计算；算式：(4.2-0)=4.2）。"))
-        self.assertNotIn("E-FORMULA-MISMATCH", ok["error_codes"]); self.assertEqual(ok["status"], "PASS"); self.assertFalse(ok["low_risk"])
+        # #79 r8：算式验算通过；推导值 0 不在支持位置的最小窗口里，去掉 FRED 整段兜底后与其他来源一样判 E-SUPPORT-LOCATOR-MISMATCH
+        self.assertNotIn("E-FORMULA-MISMATCH", ok["error_codes"]); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", ok["error_codes"])
+        self.assertEqual(ok["status"], "FAIL"); self.assertFalse(ok["low_risk"])
 
 
 from helpers import XPOST_ID  # noqa: E402
@@ -628,7 +643,9 @@ class R6Fixes(T):
         self.expect(run(TITLE + fred_line("UNRATE 比上期高 4.2%。")), "FAIL", False, "E-BLOCK-MACRO-OPINION")
         self.expect(run(TITLE + fred_line("UNRATE 较上月下降 0.1。")), "FAIL", False, "E-BLOCK-MACRO-OPINION")
         ok = run(TITLE + fred_line("UNRATE 比上期高 0.1（由原始数据计算；算式：4.2-4.1=0.1）。"))
-        self.assertEqual(ok["status"], "PASS", ok["error_codes"])
+        # #79 r8：比较句带验算通过的算式，不算宏观观点；推导值不在最小窗口里，去掉 FRED 整段兜底后判 E-SUPPORT-LOCATOR-MISMATCH
+        self.assertNotIn("E-BLOCK-MACRO-OPINION", ok["error_codes"]); self.assertNotIn("E-FORMULA-MISMATCH", ok["error_codes"])
+        self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", ok["error_codes"]); self.assertEqual(ok["status"], "FAIL", ok["error_codes"])
         self.expect(run(TITLE + fred_line("UNRATE 比上期高 0.2（由原始数据计算；算式：4.2-4.1=0.2）。")), "FAIL", False, "E-FORMULA-MISMATCH")
 
     def test_macro_opinion_more(self):
@@ -1292,10 +1309,16 @@ class FinalR5XOnly(T):
         self.expect(r, "FAIL", False, "E-X-ONLY")
 
     def test_x_plus_replayable_not_blocked(self):
+        # #32（迁移自旧库 #51）：非 X 来源（arXiv）不含 2.0，不能解除 X-only → 硬拦
         line = (f"- 发布 2.0 版。 — `raw/{DATE}/x/01.json` · https://x.com/i/status/{XPOST_ID}"
                 f" · `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1")
         r = run(TITLE + line)
-        self.assertNotIn("E-X-ONLY", r["error_codes"], r["errors"])
+        self.assertIn("E-X-ONLY", r["error_codes"], r["errors"])
+        # 非 X 来源经原文支持位置核对确实支撑 → 不拦
+        line = (f"- 模型在 MMLU 上达到 90% 准确率。 — `raw/{DATE}/x/01.json` · https://x.com/i/status/{XPOST_ID}"
+                f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕")
+        r = run(TITLE + line)
+        self.assertNotIn("E-X-ONLY", r["error_codes"], r["errors"]); self.assertEqual(r["status"], "PASS", r["errors"])
 
     def test_no_assertion_only_flagged(self):
         self.expect(run(TITLE), "PASS", False, "R-NO-ASSERTION")
@@ -1319,8 +1342,14 @@ class FinalR6XOnlyAllEntries(T):
             self.assertIn("E-X-ONLY", r["error_codes"], extra); self.assertEqual(r["status"], "FAIL", extra)
 
     def test_paragraph_mixed_sources_not_blocked(self):
+        # #32：段落里 X + 不支撑 2.0 的 arXiv → 仍判 E-X-ONLY；arXiv 实际含断言数字 → 不拦
         r = run(TITLE + quote_line() + f"\n发布 2.0 版。见 {self.XSRC} 与 `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1\n")
-        self.assertNotIn("E-X-ONLY", r["error_codes"], r["errors"])
+        self.assertIn("E-X-ONLY", r["error_codes"], r["errors"])
+        # #32 r2：段落里非 X 来源没写支持位置 → 不再算支撑（MISSING + E-X-ONLY）；写了并核对通过 → 不拦
+        r = run(TITLE + quote_line() + f"\n模型达到 90%。见 {self.XSRC} 与 `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1\n")
+        self.assertIn("E-X-ONLY", r["error_codes"], r["errors"]); self.assertIn("E-SUPPORT-LOCATOR-MISSING", r["error_codes"])
+        r = run(TITLE + quote_line() + f"\n模型达到 90%。见 {self.XSRC} 与 `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕\n")
+        self.assertNotIn("E-X-ONLY", r["error_codes"], r["errors"]); self.assertEqual(r["status"], "PASS", r["errors"])
 
     def test_pure_source_line_only_flagged(self):
         r = run(TITLE + quote_line() + f"\n来源：{self.XSRC}\n")
