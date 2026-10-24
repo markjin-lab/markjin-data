@@ -82,6 +82,22 @@ class IndustryNumber(unittest.TestCase):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}美国经济分析局读数 102.3 对应需求 [1]。{{< /industry-link >}}\n'
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
+    def test_block_bea_commerce_full_name_datum(self):
+        # r1：美国商务部经济分析局 + 数值须触发 E-INDUSTRY-NUMBER
+        doc = TITLE + ('{{< industry-data >}}\n'
+                       '{{< industry-datum series="甲" publisher="美国商务部经济分析局" value="2.1%" cite="4" >}}\n'
+                       '{{< /industry-data >}}\n')
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+
+    def test_block_unopened_agency_name_without_domain(self):
+        # r1：未开放机构纯名称（不在 BEA/BLS/Census/EIA 四家表、无域名）同块有数值不得放行
+        doc = TITLE + ('{{< industry-data >}}\n'
+                       '{{< industry-datum series="甲" publisher="美国财政部" value="2.1" cite="4" >}}\n'
+                       '{{< /industry-data >}}\n')
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}美国财政部读数 2.1 对应需求 [1]。{{< /industry-link >}}\n'
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+
     def test_block_bls_number_statement(self):
         doc = TITLE + '{{< industry-link item="1" industry="energy" side="cost" >}}BLS 电价 16.5 对应成本 [1]。{{< /industry-link >}}\n'
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
@@ -264,6 +280,11 @@ class R4HostBoundaries(unittest.TestCase):
     def test_pass_suffix_lookalike(self):
         self.assertEqual(codes(link("见 https://bea.gov.example/x [1]。")), {})
         self.assertEqual(codes(link("见 bea.gov.example [1]。")), {})
+
+    def test_pass_suffix_lookalike_with_number(self):
+        # r1 低：名称匹配排除 URL 主机，避免 bea.gov.example + 数值误报 E-INDUSTRY-NUMBER
+        self.assertEqual(codes(link("见 https://bea.gov.example/x 读数 2.1 [1]。")), {})
+        self.assertEqual(codes(link("见 bea.gov.example 读数 2.1 [1]。")), {})
 
     def test_pass_prefix_lookalike(self):
         self.assertEqual(codes(link("见 https://notbea.gov/x [1]。")), {})

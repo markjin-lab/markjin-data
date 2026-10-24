@@ -687,12 +687,22 @@ INDUSTRY_AGENCY_DOMAINS = (
     "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
 # 已对公开日报产业块开放数值与原始机构链接的域名（当前仅美联储理事会；BEA 书面授权未回，BLS/Census/EIA 条款待核）。
 INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov",)
-# BEA / 待核机构名称（与数值同时出现 → E-INDUSTRY-NUMBER）；域名另走 E-INDUSTRY-AGENCY-LINK。
+# 未对产业块开放数值的机构名称（与数值同块 → E-INDUSTRY-NUMBER）；域名另走 E-INDUSTRY-AGENCY-LINK。
+# 含 BEA/BLS/Census/EIA 及 INDUSTRY_AGENCY_DOMAINS 中其余未开放机构的常用中英文名；已开放的美联储理事会不在此列。
 _IND_CLOSED_AGENCY_NAME_RE = re.compile(
     r"(?i)(?<![A-Za-z])(?:BEA|BLS|EIA|Census)(?![A-Za-z])|"
-    r"美国经济分析局|美国劳工统计局|美国人口普查局|美国能源信息署|"
+    r"美国商务部经济分析局|美国经济分析局|美国劳工统计局|美国人口普查局|美国能源信息署|"
+    r"美国财政部|美国劳工部|美国证券交易委员会|美国联邦存款保险公司|美国联邦住房金融局|"
+    r"美国联邦能源监管委员会|美国农业部|美国商务部|美国能源部|美国国会预算办公室|"
+    r"国家统计局|中国人民银行|海关总署|国家发展和改革委员会|中国财政部|工业和信息化部|"
+    r"国家外汇管理局|中国商务部|中国证券监督管理委员会|国家能源局|"
     r"Bureau of Economic Analysis|Bureau of Labor Statistics|"
-    r"Energy Information Administration|U\.?S\.? Census Bureau|Census Bureau"
+    r"Energy Information Administration|U\.?S\.? Census Bureau|Census Bureau|"
+    r"Department of the Treasury|U\.?S\.? Treasury|Treasury Department|"
+    r"Department of Labor|Securities and Exchange Commission|"
+    r"Federal Deposit Insurance Corporation|Federal Housing Finance Agency|"
+    r"Federal Energy Regulatory Commission|Department of Agriculture|"
+    r"Department of Commerce|Department of Energy|Congressional Budget Office"
 )
 FRED_DOMAIN = "fred.stlouisfed.org"
 
@@ -905,9 +915,15 @@ def _ind_markup_bad(seg):
 
 
 def _ind_closed_agency_name(text):
-    """块内出现尚未对公开日报开放数值的机构名称（BEA / BLS / Census / EIA 及其中英文全称）。"""
-    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(text)))
-    t = _ud.normalize("NFKC", t)
+    """块内出现尚未对公开日报开放数值的机构名称（未开放机构中英文名）。
+    先去掉 URL 主机与路径以及裸域名，避免 bea.gov.example 一类主机片段被当成 BEA 名。"""
+    # 与 _hosts 同一规范化路径抹掉 URL/裸域名，再做名称匹配
+    t = _host_norm(text)
+    def _blank_url(m):
+        return " " * len(m.group(0))
+    t = _URL_RE.sub(_blank_url, t)
+    for h in _hosts(text):
+        t = t.replace(h, " " * len(h))
     return bool(_IND_CLOSED_AGENCY_NAME_RE.search(t))
 
 
