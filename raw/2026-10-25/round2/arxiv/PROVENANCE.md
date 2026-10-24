@@ -1,0 +1,6 @@
+# arXiv provenance (round 2, 2026-10-25)
+
+Tool: arXiv API `export.arxiv.org/api/query` (cat:<c>, start=0, max_results=50, sortBy=submittedDate desc), User-Agent "markjin-lab research markjin@mail.grokbot.com", 3 s between requests.
+Each `<cat>.xml` = response body saved byte-for-byte; per-request URL, HTTP status, UTC timestamp and entry count in `query-log.jsonl`.
+Metadata (Atom feed) only; no PDFs or full text archived.
+Dedup: 250 entries / 211 unique; 211 already in round 1 ∪ seen-ids, 0 new (Sunday blank day; no new announcement since round 1).
