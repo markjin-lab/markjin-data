@@ -665,12 +665,13 @@ def gloss_has_label(text):
     return any(l in c for l in _GL_LABELS_C)
 
 
-# ================================================================ 产业与经济数据小节（站点 PR #125 的 industry-* 短代码；Grok Bot 2026-10-19 15:28 裁定）
+# ================================================================ 产业与经济数据小节（站点 PR #125 的 industry-* 短代码；Grok Bot 2026-10-19 15:28 裁定；
+# 2026-10-25 开放非 BEA 已批数字：王总 chat t549u「加快」+ Grok Bot 开放非 BEA 数字裁定）
 # 站点用 {{< industry-data >}}…{{< /industry-data >}}（内含 industry-datum）和 {{< industry-link … >}}…{{< /industry-link >}}
 # 渲染“产业与经济数据 / Industry and economic data”小节与产业链接段，稿件里没有字面的 Markdown 标题。selfcheck 把这些块
-# （含短代码参数）当作该小节，检查块内文字：任何数值（Unicode 十进制数字、百分号类）和任何数据机构链接一律硬拦。
-# 这比路线图 L393 的 ③④ 更严，在开放数字之前代替它们；开放数字时须先完整落实 ③④。
-# 数值的例外只有：industry-* 短代码自身的 cite、item 参数（值须是出处编号 / 正整数格式），以及块内正文（短代码标签以外）的真实引注 [n]。
+# （含短代码参数）当作该小节检查。开放数字后落实路线图审查口径：允许数值与已开放机构链接；仍拦 BEA 域名与 BEA 数值表述、
+# 拦 FRED（E-FRED-CITED）、拦未开放/未转常规机构链接；投资措辞与宏观涨跌预测走既有门禁。
+# 数值豁免（不算“出现数值”）：industry-* 短代码自身的 cite、item 参数（值须是出处编号 / 正整数格式），以及块内正文（短代码标签以外）的真实引注 [n]。
 INDUSTRY_SHORTCODES = ("industry-data", "industry-datum", "industry-link")
 _IND_PAIRED = ("industry-data", "industry-link")
 _IND_EXEMPT_PARAMS = {"cite": re.compile(r"[1-9][0-9]*(?:\s*,\s*[1-9][0-9]*)*"), "item": re.compile(r"[1-9][0-9]*")}
@@ -684,6 +685,15 @@ INDUSTRY_AGENCY_DOMAINS = (
     "mofcom.gov.cn", "csrc.gov.cn", "nea.gov.cn", "imf.org", "worldbank.org", "oecd.org", "bis.org", "iea.org",
     "ecb.europa.eu", "ec.europa.eu", "eurostat.ec.europa.eu", "ons.gov.uk", "bankofengland.co.uk", "boj.or.jp",
     "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
+# 已对公开日报产业块开放数值与原始机构链接的域名（当前仅美联储理事会；BEA 书面授权未回，BLS/Census/EIA 条款待核）。
+INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov",)
+# BEA / 待核机构名称（与数值同时出现 → E-INDUSTRY-NUMBER）；域名另走 E-INDUSTRY-AGENCY-LINK。
+_IND_CLOSED_AGENCY_NAME_RE = re.compile(
+    r"(?i)(?<![A-Za-z])(?:BEA|BLS|EIA|Census)(?![A-Za-z])|"
+    r"美国经济分析局|美国劳工统计局|美国人口普查局|美国能源信息署|"
+    r"Bureau of Economic Analysis|Bureau of Labor Statistics|"
+    r"Energy Information Administration|U\.?S\.? Census Bureau|Census Bureau"
+)
 FRED_DOMAIN = "fred.stlouisfed.org"
 
 
@@ -894,22 +904,41 @@ def _ind_markup_bad(seg):
     return False
 
 
+def _ind_closed_agency_name(text):
+    """块内出现尚未对公开日报开放数值的机构名称（BEA / BLS / Census / EIA 及其中英文全称）。"""
+    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(text)))
+    t = _ud.normalize("NFKC", t)
+    return bool(_IND_CLOSED_AGENCY_NAME_RE.search(t))
+
+
+def _ind_unopened_agency_hosts(text):
+    """未开放机构主机：在 INDUSTRY_AGENCY_DOMAINS 内、且不是 INDUSTRY_OPEN_AGENCY_DOMAINS。"""
+    return [h for h in _hosts(text)
+            if _host_in(h, INDUSTRY_AGENCY_DOMAINS) and not _host_in(h, INDUSTRY_OPEN_AGENCY_DOMAINS)]
+
+
 def industry_violations(doc):
-    """[(code, line)]：块内数值 → E-INDUSTRY-NUMBER；块内数据机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。"""
+    """[(code, line)]：未开放机构的数值表述 → E-INDUSTRY-NUMBER；未开放机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。
+    已开放机构（当前 federalreserve.gov）的数值与链接放行；BEA 域名与 BEA/BLS/Census/EIA 数值表述仍拦。"""
     res = set()
     for a, b, tags in industry_blocks(doc):
+        block = doc[a:b]
+        block_closed_name = _ind_closed_agency_name(block)
+        block_unopened_hosts = bool(_ind_unopened_agency_hosts(block))
         ex = _ind_exempt_spans(doc, a, b, tags)
-        masked = list(doc[a:b])
+        masked = list(block)
         for x0, x1 in ex:
             for p in range(x0, x1):
                 masked[p - a] = " "
         masked = "".join(masked)
         off = a
-        for raw_ln, m_ln in zip(doc[a:b].split("\n"), masked.split("\n")):
+        for raw_ln, m_ln in zip(block.split("\n"), masked.split("\n")):
             line_no = doc.count("\n", 0, off) + 1
-            if _has_number(m_ln):
+            # 数值：开放后默认放行；与未开放机构名称/域名同块出现时仍硬拦（BEA 数值表述等）
+            if _has_number(m_ln) and (block_closed_name or block_unopened_hosts
+                                      or _ind_closed_agency_name(raw_ln) or _ind_unopened_agency_hosts(raw_ln)):
                 res.add(("E-INDUSTRY-NUMBER", line_no))
-            if any(_host_in(h, INDUSTRY_AGENCY_DOMAINS) for h in _hosts(raw_ln)):
+            if _ind_unopened_agency_hosts(raw_ln):
                 res.add(("E-INDUSTRY-AGENCY-LINK", line_no))
             if _ind_markup_bad(raw_ln):
                 res.add(("E-INDUSTRY-MARKUP", line_no))
