@@ -845,7 +845,7 @@ def _route_one(rel, data, tree, date, card_type, now, link_checker=None, pair=No
                force_wang=False):
     """单篇路由（私有）。只由 route_pr 调用：稿件路径 rel 与字节 data 来自 PR head 的 git 对象；
     tree 是 PR head 提交检出的只读目录（raw/ 与 MANIFEST 也从这里读）；记录从 records_repo 的 APPROVALS_REF 读。"""
-    from .selfcheck import check_text
+    from .selfcheck import check_text, trust_repo_rel
     did = draft_id_for(tree, Path(tree) / rel)
     if did is None or (card_type == "signal") != did.startswith(CARD_SECTION + "-"):
         return None, _hold("E-ROUTE-DRAFT-PATH")       # 卡片必须在 cards/，cards/ 下只能是卡片
@@ -862,7 +862,7 @@ def _route_one(rel, data, tree, date, card_type, now, link_checker=None, pair=No
     # 整体验收 r9 BLOCKER：解析出的类别全部参与审批类型判定；与路径（needs_wang 的栏目判定）、正文词表（selfcheck flags）取并集
     force_wang = force_wang or labels_need_wang(fm_parsed)
     sha = hashlib.sha256(data).hexdigest()
-    sc = check_text(text, tree, date, card_type, link_checker=link_checker, rel=rel)   # r15：tongyi 长文豁免需 type 与路径一致
+    sc = check_text(text, tree, date, card_type, link_checker=link_checker, rel=trust_repo_rel(rel))   # r15：tongyi；FRED 豁免需入口核定路径
     sc["content_sha256"] = sha                           # r12：自检结果绑定稿件内容，_decide() 核对
     draft = {"draft_id": did, "date": date, "content_sha256": sha}
     nm = PurePosixPath(rel).stem.split(".", 1)[0]

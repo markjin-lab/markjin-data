@@ -4,6 +4,14 @@ from pathlib import Path
 import helpers  # noqa: F401
 from helpers import make_repo, arxiv_line, quote_line, fred_line, DUMMY_INTERNAL, DATE
 from markjin import route as R
+
+
+# Grok Bot 2026-10-19 15:28：E-FRED-CITED 整篇拦截 FRED。下列旧测试的夹具用 FRED 序列验证宏观、算式、路由等其他逻辑
+# （FRED 回放代码与测试留待 FRED 代码清理 PR）；只在这些测试里关掉 E-FRED-CITED，规则本身由 test_selfcheck_industry.py 覆盖。
+def legacy_fred(fn):
+    from unittest import mock as _mock
+    import markjin.selfcheck as _scm
+    return _mock.patch.object(_scm, "fred_cited_lines", lambda *a, **k: [])(fn)
 from markjin import approvals as _A
 from markjin.selfcheck import check_text, compute_low_risk
 
@@ -112,6 +120,8 @@ class LowRisk(T):
     def test_forged_flags_still_blocked_by_codes(self):
         sc = sc_of(INFER); sc["low_risk"] = True; sc["flags"]["has_inference"] = False
         self.expect(self.run_(INFER, sc=sc), "NEEDS_REVIEW", False)
+
+    @legacy_fred
 
     def test_signal_macro_paragraph_need_review(self):
         for text, ct in ((CLEAN, "signal"), (TITLE + fred_line(), "daily")):
@@ -2037,6 +2047,8 @@ class FinalR5(FinalR1):
         finally:
             R._gh_pr, R.APPROVALS_REF, R._real_now, R._http_probe = o1, o2, o3, o4
 
+    @legacy_fred
+
     def test_macro_baseline_publishable_with_validity(self):
         self._macro(NOW - dt.timedelta(minutes=5))
         out = self._go([NOW, NOW + dt.timedelta(seconds=1), NOW + dt.timedelta(seconds=2)])
@@ -2049,6 +2061,8 @@ class FinalR5(FinalR1):
         self.assertFalse(R.still_valid(d, vu))
         self.assertFalse(R.still_valid(R.Decision("HOLD", ["x"]), da))
 
+    @legacy_fred
+
     def test_heartbeat_expires_during_second_pass_retries(self):
         # 需王总批准的宏观稿：心跳差 1 秒到 30 分钟，第二遍耗时 3 秒 → 不得返回可发布
         self._macro(NOW - R.MAC_STATUS_TTL + dt.timedelta(seconds=1))
@@ -2056,11 +2070,15 @@ class FinalR5(FinalR1):
             self._go([NOW, NOW + dt.timedelta(seconds=3)])
         self.assertIn("E-ROUTE-RETRY", str(cm.exception))
 
+    @legacy_fred
+
     def test_heartbeat_expiring_after_decided_at_is_68a_gap(self):
         # r7：心跳在 decided_at 之后才过期，属于判定到发布之间的空档（68A，FOLLOW-UP）；判定本身照常可发布
         self._macro(NOW - R.MAC_STATUS_TTL + dt.timedelta(seconds=30))
         d = self._go([NOW, NOW])["daily/" + self.draft.name][1]
         self.assertEqual((d.state, d.publishable), ("APPROVED", True), d.codes)
+
+    @legacy_fred
 
     def test_no_third_pass_and_no_early_cutoff(self):
         # r7：不再按 end+120 秒做第三遍；06:58:30 开始、06:58:31 结束的路由照常可发布（截止仍是 07:00）
@@ -2079,6 +2097,8 @@ class FinalR5(FinalR1):
         self.assertEqual(calls, [t, t + dt.timedelta(seconds=1)])            # 只有两遍
         self.assertEqual(dt.datetime.fromisoformat(d.decided_at), t + dt.timedelta(seconds=1))
         self.assertEqual(dt.datetime.fromisoformat(d.valid_until), t + dt.timedelta(seconds=61))
+
+    @legacy_fred
 
     def test_routing_started_before_0655_follows_old_rules(self):
         # 06:55 前开始、跨过 06:55 结束 → 原规则：E-ROUTE-RETRY；06:55 前开始且结束也在 06:55 前 → 照常
@@ -2268,6 +2288,8 @@ class FinalR6(FinalR5):
             return R.route_pr(self.repo, 21, DATE, "daily")["daily/" + self.draft.name][1]
         finally:
             R._gh_pr, R._real_now, R._http_probe = o1, o3, o4
+
+    @legacy_fred
 
     def test_real_origin_main_records(self):
         self._with_origin()

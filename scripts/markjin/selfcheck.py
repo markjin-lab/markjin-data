@@ -28,6 +28,7 @@ import hashlib
 import json
 import xml.etree.ElementTree as ET
 import re
+import unicodedata as _ud
 from pathlib import Path, PurePosixPath
 
 from .deps import DEP_CODE, have_yaml
@@ -35,6 +36,7 @@ from . import strictjson
 from .fmkeys import FM_CATEGORY_KEYS
 from .internal import load_internal_terms
 from .textnorm import compact, has_any, norm
+from .textnorm import unescape as _unescape
 
 CARD_TYPES = ("daily", "signal")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -496,6 +498,486 @@ def _claim_of(s):
     return URL_RE.sub(" ", RAW_RE.sub(" ", s))
 
 
+# ================================================================ 本站补充的通用解释括号句（王总 t461s2020 术语白话解释；scope-r4）
+GLOSS_ZH_LABEL = "本站补充的通用解释"
+GLOSS_EN_LABEL = "General explanation added by this site"
+_GL_LABELS_C = (compact(GLOSS_ZH_LABEL), compact(GLOSS_EN_LABEL))
+
+# r2 HIGH 1（保留）：不用后行断言；先匹配“引注编号 + 句号”前缀（pre），再单独捕获括号句（gloss）。只剔除 gloss 的跨度。
+GLOSS_ZH_RE = re.compile(r"(?P<pre>\[[0-9]{1,3}\]。)(?P<gloss>（本站补充的通用解释：(?P<body>[^（）()\[\]【】。！？!?\n]+)。）)")
+GLOSS_EN_RE = re.compile(r"(?P<pre>\[[0-9]{1,3}\]\. )(?P<gloss>\(General explanation added by this site: (?P<body>[^()\[\]\n.!?]+)\.\))")
+_GL_LIST_MARK_RE = re.compile(r"^\s*(?:[-*+]|\d{1,3}[.)、])\s*")
+
+# ---------------------------------------------------------------- r3 HIGH 1：数字规则（通用规则，不逐词枚举）
+_GL_D = "零〇一二两三四五六七八九十百千万亿"            # 中文数字字符
+_GL_D2 = "零〇二两三四五六七八九十百千万亿"             # 去掉“一”（“一”单独出现时另按 _GL_UNIT_YI 判）
+# 量词 / 单位（数字字符 + 这些 → 数值）
+_GL_UNIT = "个项位名次年月日天周岁秒种类级层轮篇条组台份点人家件步期代版倍成届批例只张部套本章节段行列米克吨亩度"
+_GL_UNIT_W = "小时|分钟|周年|公里|公斤|千克|毫秒"         # 多字单位（单字类里不放“分”“时”，免得误伤“十分”）
+# “一”后面只在这些时间、度量、计次、比例单位上算数值；“一种”“一个”“一般”“一些”“一致”“一步”等不拦（取舍见声明）
+_GL_UNIT_YI = "年月日天周岁秒倍成次轮届批米克吨亩度半亿万千百十"
+# 固定误伤排除（取舍见声明 §三-2）：先把这些与数值无关的常用词换成占位符再查。前面紧挨数字字符时不排除（“十一种”“三十一般”照拦）。
+_GL_ZH_NUM_SAFE_RE = re.compile(r"(?<![" + _GL_D + r"])(?:一(?:般|种|些|致|定|样|直|起|旦|切|再|向|边|同|律|并|贯|味|带|下)|(?:一一|万一)(?![" + _GL_D + r"]))"
+                             r"|(?:之|统|单|同|唯|均|划|专|逐)一(?![" + _GL_D + r"])")
+GLOSS_ZH_NUM_RE = re.compile(
+    r"[" + _GL_D + r"]{2,}"                                   # 一百、九十、一亿、两千、千亿、三十、百万、千万
+    r"|[" + _GL_D2 + r"](?:[" + _GL_UNIT + r"]|" + _GL_UNIT_W + r")"   # 两种、三倍、十次、千年、两成、三小时
+    r"|一(?:[" + _GL_UNIT_YI + r"]|" + _GL_UNIT_W + r")"          # 一年、一倍、一成、一次、一半、一小时
+    r"|[" + _GL_D + r"](?:余|多|来)"                          # 三十余、十余次、十多、百来
+    r"|[" + _GL_D + r"]点[" + _GL_D + r"]"                       # 零点五、一点五
+    r"|第[" + _GL_D + r"]"                                    # 第一、第三、第十
+    r"|数以[" + _GL_D + r"]+计|[上成][百千万亿]|[几数][十百千万亿]|好几|十几|几[倍成]|数倍"   # 上万、数以千计、成千、几十
+    r"|[百千万]分之|分之[" + _GL_D + r"]|个?百分点"
+    r"|半数|过半|大半|翻倍|翻番")
+GLOSS_PCT_RE = re.compile(r"[%‰‱]")                             # %、％（NFKC→%）、&percnt;（解码→%）、﹪（NFKC→%）
+
+_GL_EN_CARD = (r"zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen"
+            r"|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?"
+            r"|millions?|billions?|trillions?|dozens?")
+_GL_EN_ORD = (r"first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth"
+           r"|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth|fortieth|fiftieth|sixtieth"
+           r"|seventieth|eightieth|ninetieth|hundredths?|thousandths?|millionths?|billionths?|thirds|quarters?|halves|half")
+# 固定术语排除（同“零样本”）：zero-shot、one-shot、one-hot；其余 zero…billion 与序数一律拦（取舍见声明）
+_GL_EN_NUM_SAFE_RE = re.compile(r"\b(?:zero|one)-(?:shot|hot)\b", re.I)
+GLOSS_EN_NUM_RE = re.compile(
+    r"\b(?:" + _GL_EN_CARD + r")\b|\b(?:" + _GL_EN_ORD + r")\b"
+    r"|\bper\s*cent\b|\bpercent(?:age)?s?\b|\bbasis\s+points?\b"
+    r"|\b(?:" + _GL_EN_CARD + r"|many|several|multi)-?fold\b|\btwice\b|\bthrice\b|\b(?:double|triple|quadruple)[sd]?\b|\bdecimal\s+point\b", re.I)
+
+_GL_ROMAN_UNI_RE = re.compile("[\u2160-\u2188]")              # Ⅰ…ↈ（含小写ⅰ…ⅿ），NFKC 前查
+_GL_ROMAN_ASCII_RE = re.compile(
+    r"(?<![A-Za-z])(?:[IVX]{2,4}|[IVX](?=\s*(?:级|期|类|型|阶段|代|版|号|度)))(?![A-Za-z])"           # III、IV、X 级（区分大小写）
+    r"|(?<![A-Za-z])(?=[ivx]{2,4}(?![A-Za-z]))x{0,3}(?:ix|iv|v?i{0,3})(?![A-Za-z])"              # 小写 ii、iii、iv、vi、ix、xi、xx…（两字母起，须是合法罗马数）
+    r"|(?i:\b(?:level|grade|phase|stage|type|class|tier|category|step|part|chapter|version|round|section)\s+[ivx]{1,4}\b)"
+    r"|(?i:(?<![A-Za-z])[ivx]{1,4}\s*(?:级|期|类|型|阶段|代|版|号|度))")
+
+# ---------------------------------------------------------------- r2 HIGH 3（保留）：解码、NFKC 后再验
+_GL_SENT_END_RE = re.compile(r"[.。．!?！？;；…‥]")
+_GL_BRACKET_RE = re.compile(r"[()\[\]{}（）【】〔〕〈〉《》<>]")
+_GL_RESIDUE_RE = re.compile(r"&[#A-Za-z0-9]+;|https?://|`|@\w")
+
+# ---------------------------------------------------------------- 提到本篇论文 / 本篇方法（定论②；r3 HIGH 2；「作者」按 15:21 最小版本一律拦）
+_GL_NB = r"(?<![样文版基根资成剧脚课读范日账原副标书])"     # “本”前排除复合词（样本、文本、基本……）
+_GL_OBJ = r"(?:文|篇|论文|研究|工作|预印本|模型|方法|算法|框架|系统|方案|技术|架构|网络|实验|数据集|基准|任务|设计|策略|结果|发现|团队|研究者)"
+GLOSS_ZH_PAPER_RE = re.compile(
+    _GL_NB + r"本" + _GL_OBJ                                     # 本文、本研究、本工作、本模型、本方法
+    + r"|该(?:项|个|种)?" + _GL_OBJ                            # 该文、该方法、该模型、该项研究
+    + r"|此(?:项|个|种)?" + _GL_OBJ                            # 此方法、此研究
+    + r"|这(?:篇|份|项)|这(?:个|一)" + _GL_OBJ                # 这篇、这项研究、这一方法、这个模型（“这类/这种”泛指，“这个词”不拦）
+    + r"|这些研究(?:者|人员)"
+    + r"|所提|提出的(?:方法|模型|算法|框架|系统|方案)|我们|笔者"   # 所提方法、所提出的、提出的方法
+    + r"|(?<![中英日韩德法俄外])文中"
+    + r"|论文(?:中|里|称|指出|提出|认为|发现|显示|表明|写道|所)|研究团队|摘要")
+# 「作者」（Grok Bot 2026-10-19 15:21 裁定，最小版本）：任何「作者」都硬拦，不设白名单；在去掉 Mn/Cf 的副本上判
+_GL_ZH_AUTHOR_RE = re.compile(r"作者")
+_GL_EN_OBJ = r"(?:method|model|approach|framework|system|algorithm|technique|architecture|network|design|pipeline|benchmark|dataset|study|work|paper|article|abstract|preprint|manuscript|report|experiment|results?|findings?|team)s?"
+GLOSS_EN_PAPER_RE = re.compile(
+    r"\b(?:this|the|that|our|these|its)\s+(?:paper|study|article|work|abstract|preprint|manuscript|report)s?\b"
+    r"|\b(?:this|these|our)\s+" + _GL_EN_OBJ + r"\b"           # this method/model/approach/work、our method
+    r"|\b(?:the\s+)?(?:proposed|present|presented|introduced|new)\s+" + _GL_EN_OBJ + r"\b"   # the proposed method、the present study
+    r"|\bproposed\s+(?:here|in)\b|\b(?:we|our|ours|us)\b"
+    r"|\bauthors?\b|\bthe\s+researchers?\b|\bthe\s+research\s+team\b|\b(?:this|the)\s+team\b", re.I)
+
+
+def _gl_strip_marks(s):
+    """去掉组合符（Mn/Me，含变体选择符 VS1–VS16）与格式控制符（Cf）：「作︎者」「作́者」按「作者」查。"""
+    return "".join(ch for ch in s if _ud.category(ch) not in ("Mn", "Me", "Cf"))
+
+
+def gloss_body_reasons(body):
+    """返回不合规原因列表；空列表 = 合规。所有检查都在 unescape + NFKC（norm）之后的文本上做。"""
+    r = []
+    raw_u = _unescape(body)
+    bn = _gl_strip_marks(norm(body))        # r3 H4：去掉 Mn/Me/Cf（含 VS1–VS16、U+0301），所有检查都在去掉后的副本上做
+    bc = _gl_strip_marks(compact(body))
+    if len(bc) < 2:
+        r.append("empty")
+    if re.search(r"\d", bn):
+        r.append("digit")
+    zc = _GL_ZH_NUM_SAFE_RE.sub("\u0000", bc)
+    en = _GL_EN_NUM_SAFE_RE.sub(" ", bn)
+    if GLOSS_ZH_NUM_RE.search(zc) or GLOSS_EN_NUM_RE.search(en):
+        r.append("number-word")
+    if GLOSS_PCT_RE.search(raw_u) or GLOSS_PCT_RE.search(bn) or GLOSS_PCT_RE.search(_ud.normalize("NFKC", raw_u)):
+        r.append("percent")
+    if _GL_ROMAN_UNI_RE.search(raw_u) or _GL_ROMAN_ASCII_RE.search(bn):
+        r.append("roman")
+    if _GL_SENT_END_RE.search(bn):
+        r.append("multi-sentence")
+    if _GL_BRACKET_RE.search(bn):
+        r.append("bracket")
+    if _GL_RESIDUE_RE.search(bn):
+        r.append("residue")
+    if any(l in bc for l in _GL_LABELS_C):
+        r.append("nested-label")
+    if GLOSS_ZH_PAPER_RE.search(bc) or _GL_ZH_AUTHOR_RE.search(bc) or GLOSS_EN_PAPER_RE.search(bn):
+        r.append("paper")
+    return r
+
+
+# ---------------------------------------------------------------- r3 HIGH 3：逐个引注核对紧邻前文（定论③）
+_GL_BOUNDARY_RE = re.compile(r"\[[0-9]{1,3}\](?:。|\. ?)|[。！？!?]|\.(?=\s|$)")
+_GL_PAREN_GROUP_RE = re.compile(r"（[^（）]*）|\([^()]*\)")
+
+
+def _gl_fact_fragment_ok(raw, pre_start, prev_gloss_end=0):
+    """紧挨着 [n] 的前文（从上一个句界 / 上一个引注+句号 / 上一处括号句之后，到 [n] 之前）必须是事实句片段：
+    去掉括号组后仍含文字。纯标点、空、只有括号句（含前一个括号句）的，都不算。"""
+    seg = raw[prev_gloss_end:pre_start]
+    last = 0
+    for m in _GL_BOUNDARY_RE.finditer(seg):
+        last = m.end()
+    frag = seg[last:]
+    if prev_gloss_end == 0 and last == 0:
+        frag = _GL_LIST_MARK_RE.sub("", frag, count=1)
+    frag = norm(frag)
+    prev = None
+    while prev != frag:                                    # 去掉括号组（含前一个括号句、改写标签的括号句）
+        prev, frag = frag, _GL_PAREN_GROUP_RE.sub("", frag)
+    frag = re.sub(r"\[[0-9]{1,3}\]", "", frag)             # 连续引注 [1][2] 本身不算文字
+    return any(_ud.category(ch).startswith("L") for ch in frag)   # r3 H3：须含字母类字符（汉字、字母）；单独的 _ 不算
+
+
+def gloss_find(raw):
+    """[(start, end, lang, reasons)]：start/end 是 gloss（不含前缀）在原始行中的跨度。"""
+    ms = sorted([(m, "zh") for m in GLOSS_ZH_RE.finditer(raw)] + [(m, "en") for m in GLOSS_EN_RE.finditer(raw)],
+                key=lambda x: x[0].start())
+    out = []
+    prev_end = 0
+    for m, lang in ms:
+        reasons = [] if _gl_fact_fragment_ok(raw, m.start("pre"), prev_end) else ["position"]
+        reasons += gloss_body_reasons(m.group("body"))
+        out.append((m.start("gloss"), m.end("gloss"), lang, reasons))
+        prev_end = m.end("gloss")
+    return out
+
+
+def gloss_strip(raw):
+    s = raw
+    for a, b, _, reasons in reversed(gloss_find(raw)):
+        if not reasons:
+            s = s[:a] + s[b:]
+    return s
+
+
+def gloss_has_label(text):
+    c = compact(text)
+    return any(l in c for l in _GL_LABELS_C)
+
+
+# ================================================================ 产业与经济数据小节（站点 PR #125 的 industry-* 短代码；Grok Bot 2026-10-19 15:28 裁定）
+# 站点用 {{< industry-data >}}…{{< /industry-data >}}（内含 industry-datum）和 {{< industry-link … >}}…{{< /industry-link >}}
+# 渲染“产业与经济数据 / Industry and economic data”小节与产业链接段，稿件里没有字面的 Markdown 标题。selfcheck 把这些块
+# （含短代码参数）当作该小节，检查块内文字：任何数值（Unicode 十进制数字、百分号类）和任何数据机构链接一律硬拦。
+# 这比路线图 L393 的 ③④ 更严，在开放数字之前代替它们；开放数字时须先完整落实 ③④。
+# 数值的例外只有：industry-* 短代码自身的 cite、item 参数（值须是出处编号 / 正整数格式），以及块内正文（短代码标签以外）的真实引注 [n]。
+INDUSTRY_SHORTCODES = ("industry-data", "industry-datum", "industry-link")
+_IND_PAIRED = ("industry-data", "industry-link")
+_IND_EXEMPT_PARAMS = {"cite": re.compile(r"[1-9][0-9]*(?:\s*,\s*[1-9][0-9]*)*"), "item": re.compile(r"[1-9][0-9]*")}
+_IND_BODY_CITE_RE = re.compile(r"\[[1-9][0-9]{0,2}\]")
+_IND_PCT = set("%％﹪٪‰‱؉؊")
+# 数据机构域名（主机等于该域名或是其子域名才算）。新增机构只改这里。
+INDUSTRY_AGENCY_DOMAINS = (
+    "bea.gov", "bls.gov", "census.gov", "eia.gov", "federalreserve.gov", "stlouisfed.org", "treasury.gov", "dol.gov",
+    "sec.gov", "ferc.gov", "usda.gov", "commerce.gov", "energy.gov", "fhfa.gov", "fdic.gov", "cbo.gov", "whitehouse.gov",
+    "stats.gov.cn", "pbc.gov.cn", "customs.gov.cn", "ndrc.gov.cn", "mof.gov.cn", "miit.gov.cn", "safe.gov.cn",
+    "mofcom.gov.cn", "csrc.gov.cn", "nea.gov.cn", "imf.org", "worldbank.org", "oecd.org", "bis.org", "iea.org",
+    "ecb.europa.eu", "ec.europa.eu", "eurostat.ec.europa.eu", "ons.gov.uk", "bankofengland.co.uk", "boj.or.jp",
+    "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
+FRED_DOMAIN = "fred.stlouisfed.org"
+
+
+def _sc_skip_ws(s, k):
+    while k < len(s) and s[k].isspace():
+        k += 1
+    return k
+
+
+def _sc_parse_tag(s, k):
+    """在 s[k] == "{" 处按 Hugo 短代码语法解析一个标签：{{< name p="v" … >}} 或 {{% … %}}，以及 {{< /name >}}。
+    引号参数按引号状态解析（值里可以有 }}、>、换行），支持 "…"（含 \\ 转义）与 `…`。
+    返回 dict(start, end, name, closing, params=[(pname or None, value_start, value_end)])；不是短代码返回 None。"""
+    if not (s.startswith("{{<", k) or s.startswith("{{%", k)):
+        return None
+    delim = s[k + 2]
+    end_tok = (">" if delim == "<" else "%") + "}}"
+    j = _sc_skip_ws(s, k + 3)
+    closing = False
+    if j < len(s) and s[j] == "/":
+        closing, j = True, _sc_skip_ws(s, j + 1)
+    m = re.compile(r"[A-Za-z0-9_\-/.]+").match(s, j)
+    if not m:
+        return None
+    name, j = m.group(0), m.end()
+    params = []
+    while True:
+        j = _sc_skip_ws(s, j)
+        if j >= len(s):
+            return dict(start=k, end=len(s), name=name, closing=closing, params=params, unterminated=True)
+        if s.startswith(end_tok, j):
+            return dict(start=k, end=j + len(end_tok), name=name, closing=closing, params=params, unterminated=False)
+        pm = re.compile(r"([A-Za-z_][\w\-]*)\s*=\s*").match(s, j)
+        pname = None
+        if pm:
+            pname, j = pm.group(1), pm.end()
+        if j < len(s) and s[j] in "\"`":
+            q = s[j]; v0 = j + 1; j += 1
+            while j < len(s) and s[j] != q:
+                if s[j] == "\n" or s.startswith("{{", j):      # 从严：引号值跨行或里面又出现 {{，按未闭合处理
+                    return dict(start=k, end=j, name=name, closing=closing, params=params, unterminated=True)
+                j += 2 if (q == '"' and s[j] == "\\") else 1
+            params.append((pname, v0, min(j, len(s))))
+            j += 1
+        else:
+            v0 = j
+            if s.startswith("{{", j):                           # 从严：标签没结束又遇到新的 {{
+                return dict(start=k, end=j, name=name, closing=closing, params=params, unterminated=True)
+            while j < len(s) and not s[j].isspace() and not s.startswith(end_tok, j):
+                j += 1
+            if j == v0:
+                j += 1                                    # 无法识别的字符：跳过，继续找结束符
+            params.append((pname, v0, j))
+
+
+def _sc_tags(s, malformed=None):
+    """全部短代码标签。不能解析或没有结束符的 {{< / {{% 记入 malformed（起点），并从它后面继续找，不吞掉后面的内容。"""
+    out, k = [], 0
+    while True:
+        k = s.find("{{", k)
+        if k < 0:
+            return out
+        if not (s.startswith("{{<", k) or s.startswith("{{%", k)):
+            k += 2
+            continue
+        t = _sc_parse_tag(s, k)
+        if t and not t["unterminated"] and "{{" not in s[k + 2:t["end"]]:   # 从严：标签里（含参数）出现 {{ 即报错
+            out.append(t)
+            k = t["end"]
+        else:
+            if malformed is not None:
+                malformed.append(k)
+            k += 3
+
+
+def shortcode_malformed_lines(doc):
+    bad = []
+    _sc_tags(doc, bad)
+    return sorted({doc.count("\n", 0, k) + 1 for k in bad})
+
+
+def industry_blocks(doc):
+    """[(start, end, tags)]：industry-data / industry-link 块（同名嵌套按层数配对；缺结束短代码时算到文末），
+    以及不在块内的单独 industry-datum 标签。tags 是块内全部短代码标签。"""
+    tags = _sc_tags(doc)
+    spans, i = [], 0
+    while i < len(tags):
+        t = tags[i]
+        if not t["closing"] and t["name"] in _IND_PAIRED:
+            depth, end, j = 1, len(doc), i + 1
+            while j < len(tags):
+                u = tags[j]
+                if u["name"] == t["name"]:
+                    depth += -1 if u["closing"] else 1
+                    if depth == 0:
+                        end = u["end"]; break
+                j += 1
+            spans.append((t["start"], end))
+            while i < len(tags) and tags[i]["start"] < end:
+                i += 1
+            continue
+        if not t["closing"] and t["name"] == "industry-datum":
+            spans.append((t["start"], t["end"]))
+        i += 1
+    return [(a, b, [t for t in tags if a <= t["start"] < b]) for a, b in spans]
+
+
+_IND_HTML_TAG_RE = re.compile(r"<[^<>]*>", re.S)
+_IND_CODE_RE = re.compile(r"```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`]*`?", re.S)
+
+
+def _ind_exempt_spans(doc, a, b, tags):
+    """数值豁免跨度：industry-* 短代码自身格式合规的 cite / item 参数值；以及块内标签以外正文里独立的引注 [n]：
+    前面不是 [ = " '，后面不是 ] ( :，且不在 HTML 标签（含属性）、代码段或代码块里。"""
+    ex = []
+    for t in tags:
+        if t["name"] in INDUSTRY_SHORTCODES and not t["closing"]:
+            for pname, v0, v1 in t["params"]:
+                rx = _IND_EXEMPT_PARAMS.get(pname or "")
+                if rx and rx.fullmatch(doc[v0:v1]):
+                    ex.append((v0, v1))
+    pos = a
+    for t in sorted(tags, key=lambda t: t["start"]) + [dict(start=b, end=b)]:
+        seg0, seg1 = pos, max(pos, t["start"])
+        seg = doc[seg0:seg1]
+        bad = [(m.start() + seg0, m.end() + seg0) for rx in (_IND_HTML_TAG_RE, _IND_CODE_RE) for m in rx.finditer(seg)]
+        for m in _IND_BODY_CITE_RE.finditer(doc, seg0, seg1):
+            x0, x1 = m.span()
+            before = doc[x0 - 1] if x0 > 0 else ""
+            after = doc[x1] if x1 < len(doc) else ""
+            if before in "[=\"'" and before or after in "]（(:：" and after:
+                continue
+            if any(p0 < x1 and x0 < p1 for p0, p1 in bad):
+                continue
+            ex.append((x0, x1))
+        pos = max(pos, t["end"])
+    return ex
+
+
+def _has_number(text):
+    t = _ud.normalize("NFKC", _unescape(text))
+    return any(_ud.category(ch) == "Nd" or ch in _IND_PCT for ch in t) or any(ch in _IND_PCT for ch in text)
+
+
+_HOST_DOTS = str.maketrans({"。": ".", "．": ".", "｡": ".", "︒": ".", "\u2024": "."})
+_HOST_RE = re.compile(r"(?<![a-z0-9\-.])((?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)(?![a-z0-9\-]|\.[a-z0-9])")
+_URL_RE = re.compile(r"(?:[a-z][a-z0-9+.\-]*:)?//([^\s/?#\\<>\"'）)\]]*)([^\s<>\"'）)\]]*)")
+
+
+def _host_norm(t):
+    """解码实体、反复百分号解码（%2E → .）、NFKD 去 Mn/Cf、NFKC、统一句号类点、转小写。"""
+    from urllib.parse import unquote
+    t = _unescape(t)
+    for _ in range(3):
+        u = unquote(t)
+        if u == t:
+            break
+        t = u
+    t = _gl_strip_marks(_ud.normalize("NFKD", t)).translate(_HOST_DOTS)
+    return _ud.normalize("NFKC", t).translate(_HOST_DOTS).lower()
+
+
+def _hosts(text):
+    """URL 主机与裸域名分开取：先规范化；URL（scheme:// 或 //）只取 authority 里的主机（去掉用户信息、端口），路径、查询不算；
+    URL 以外的文字按空白切词，词里含“/”时只看第一个“/”之前的部分，再按完整主机边界取裸域名。"""
+    t = _host_norm(text)
+    hosts = []
+    def url_host(m):
+        auth = m.group(1).rsplit("@", 1)[-1]
+        auth = re.sub(r":[0-9]*$", "", auth)
+        hosts.extend(h.rstrip(".") for h in _HOST_RE.findall(auth))
+        return " " * len(m.group(0))
+    rest = _URL_RE.sub(url_host, t)
+    for tok in rest.split():
+        head = tok.split("/", 1)[0]
+        hosts.extend(h.rstrip(".") for h in _HOST_RE.findall(head))
+    return hosts
+
+
+def _host_in(host, domains):
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
+_IND_URL_RAW_RE = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//[^\s<>\"'）)\]]*")
+
+
+def _ind_markup_bad(seg):
+    """从严，不尝试解析：HTML 属性里出现 > 或 HTML 标签不结束；块内任何 @；链接里有百分号编码。"""
+    for m in re.finditer(r"<[A-Za-z]", seg):         # 从 < 开始按引号找标签结束；引号里出现 > 或标签不结束都算坏
+        q = None
+        for ch in seg[m.end():]:
+            if q:
+                if ch == ">":
+                    return True
+                if ch == q:
+                    q = None
+            elif ch in "\"'":
+                q = ch
+            elif ch == ">":
+                break
+        else:
+            return True
+    if "@" in seg or "＠" in seg or "﹫" in seg or "&#64;" in seg.lower() or "&commat;" in seg.lower():
+        return True                                  # 从严：块内任何 @（链接任意位置、裸域名、邮箱、参数里）都报
+    for m in _IND_URL_RAW_RE.finditer(seg):
+        if "%" in m.group(0):                        # 链接里有百分号编码
+            return True
+    return False
+
+
+def industry_violations(doc):
+    """[(code, line)]：块内数值 → E-INDUSTRY-NUMBER；块内数据机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。"""
+    res = set()
+    for a, b, tags in industry_blocks(doc):
+        ex = _ind_exempt_spans(doc, a, b, tags)
+        masked = list(doc[a:b])
+        for x0, x1 in ex:
+            for p in range(x0, x1):
+                masked[p - a] = " "
+        masked = "".join(masked)
+        off = a
+        for raw_ln, m_ln in zip(doc[a:b].split("\n"), masked.split("\n")):
+            line_no = doc.count("\n", 0, off) + 1
+            if _has_number(m_ln):
+                res.add(("E-INDUSTRY-NUMBER", line_no))
+            if any(_host_in(h, INDUSTRY_AGENCY_DOMAINS) for h in _hosts(raw_ln)):
+                res.add(("E-INDUSTRY-AGENCY-LINK", line_no))
+            if _ind_markup_bad(raw_ln):
+                res.add(("E-INDUSTRY-MARKUP", line_no))
+            off += len(raw_ln) + 1
+    return sorted(res, key=lambda x: (x[1], x[0]))
+
+
+# —— E-FRED-CITED（Grok Bot 15:28 + 15:43）：fred.stlouisfed.org（含子域名）或大写 FRED 字样；只管新增或改动的行
+_FRED_WORD_RE = re.compile(r"(?<![A-Za-z])FRED(?![A-Za-z])")
+
+
+def fred_line_hit(raw_line):
+    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(raw_line)))      # 去 Mn/Cf：FRE︎D、FRÉD（E+U+0301）照拦
+    t = _ud.normalize("NFKC", t)
+    return bool(_FRED_WORD_RE.search(t)) or any(_host_in(h, (FRED_DOMAIN,)) for h in _hosts(raw_line))
+
+
+# 已发布旧 digest 里的 7 行（采集范围说明 / FRED 撤回说明），固定放行（Grok Bot 2026-10-19 16:48）：
+# 仓库内相对路径 + 行号 + 该行内容（不含换行符 \n，保留可能的 \r）的 sha256 三者都相同才放行；仓库外稿件一律不放行。
+FRED_LEGACY_ALLOWLIST = frozenset({
+    ("digest/2026-10-15.md", 5, "05741e489ad2396c82bee0ac5abe33d2d60e3da42a028bdd15a847e5c88b0248"),
+    ("digest/2026-10-15.md", 140, "dfb9fbdd9ba4874197b57d3a9bfbc5294db5b03ea47d3ac65768167103060e71"),
+    ("digest/2026-10-16.md", 5, "635c943692686d9629daad67a285967d4a6a98a5c738e3498f88db42501f79f3"),
+    ("digest/2026-10-16.md", 139, "dce6f6b6436627ef85cdb274fbb037b7c8986b552d2de55e85d4d8e0151ab4ba"),
+    ("digest/2026-10-17.md", 5, "ce8f52c7081d364e5bcc8445fb2b8fa668dbbfff529871791f746267c069afb8"),
+    ("digest/2026-10-17.md", 141, "ccb8df28fc46c155576568568ad2713412fe6f5fbc96fc5941f2c3d4a1ac765e"),
+    ("digest/2026-10-18.md", 147, "8f198d345ed7487fcda4d3b21aa1b93674167da805ad2a8716ad3f46726c0f7d"),
+})
+
+
+def _rel_ok(rel):
+    """rel 须是规范的仓库内相对路径（不以 / 开头，没有 . 或 .. 段，不含反斜杠）；不看磁盘上的文件。"""
+    if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
+        return False
+    return all(part not in ("", ".", "..") for part in rel.split("/"))
+
+
+class _TrustedRel(str):
+    """可信入口核定的仓库内相对路径。仅由 trust_repo_rel / check_file 构造；FRED 旧行豁免只认此类。"""
+    __slots__ = ()
+
+
+def trust_repo_rel(rel):
+    """可信入口核定路径：格式合法则包装为 _TrustedRel，否则返回 None。
+    供 check_file（由磁盘路径相对 repo 推导）与 route（由同一 PR Git 对象取路径）调用。
+    外部直接把普通字符串传给 check_text / check_file 的 rel= 不能借此放行。"""
+    if isinstance(rel, _TrustedRel):
+        return rel
+    if not _rel_ok(rel):
+        return None
+    return _TrustedRel(rel)
+
+
+def fred_cited_lines(text, repo=None, rel=None):
+    """全文逐行检查 E-FRED-CITED。放行只看受检文本本身：(rel, 行号, 受检文本里这一行的 sha256) 在 FRED_LEGACY_ALLOWLIST 里
+    才放行；rel 须是可信入口核定的 _TrustedRel（普通字符串即使格式合法也不放行；仓库外稿件经 check_file 得到 None）。
+    不要求磁盘上存在清单路径对应的文件。"""
+    trusted = isinstance(rel, _TrustedRel)
+    out = []
+    for i, line in enumerate(text.split("\n"), 1):
+        if not fred_line_hit(line):
+            continue
+        if trusted and (str(rel), i, hashlib.sha256(line.encode("utf-8")).hexdigest()) in FRED_LEGACY_ALLOWLIST:
+            continue
+        out.append(i)
+    return out
+
+
 def check_text(text, repo, date, card_type, internal_terms="load", link_checker=None, rel=None):
     """自检。rel：稿件在仓库内的相对路径（整体验收 r15：tongyi 长文豁免需 type 与路径一致；不给路径按不一致处理）。
     repo、date、card_type 必须显式给出；internal_terms="load" 时从本机内部目录读取（fail-closed）。
@@ -592,6 +1074,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
 
     raw_lines = text.splitlines()
     lines = [norm(l) for l in raw_lines]
+    slines = [norm(gloss_strip(l)) for l in raw_lines]   # 同索引的剔除后副本：只给无出处判断用
+    sb_all = []
     doc = "\n".join(lines)
     doc_compact = compact(doc)
 
@@ -644,6 +1128,14 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
         if not s:
             continue
         in_fm = 1 < i < fm_end
+        eligible = (not in_fm and not COUNTS_ANY.search(s) and "<!--" not in s and "-->" not in s
+                    and not HEADING_RE.match(s) and not TABLE_RE.match(s) and not QUOTE_RE.match(s)
+                    and not re.fullmatch(r"[-*_ ]{3,}", s) and not QUOTE_LINE_RE.match(s)
+                    and not SOURCE_LINE_RE.match(s) and not STRICT_ASSERT_RE.match(s))
+        sb = slines[i - 1] if eligible else s
+        sb_all.append(sb)
+        if gloss_has_label(sb):
+            err("E-GLOSS-FORMAT", i)
         if in_fm and _correction_fm_ok(raw_lines[i - 1], fm_parsed):
             flags["structure_other"] = True; counts["other"] += 1   # 更正稿元数据（corrects / corrected_at），非断言、非低风险
             continue
@@ -779,7 +1271,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                 flags["inference_unclear"] = True
                 counts["unclear"] += 1
                 body_err("E-INFER-UNCLEAR", i)        # 无来源、又无法判别是否含推断 → UNCLEAR（不发布）
-                if infer(s) or CLAIM_TOKEN_RE.search(LIST_RE.sub("", s, count=1)):
+                if infer(sb) or CLAIM_TOKEN_RE.search(LIST_RE.sub("", sb, count=1)):
                     body_err("E-REPLAY-001", i)       # 含推断/转述词或数字却无来源 → FAIL
                 continue
             _check_loose_sources(ctx, s, i, err, counts, flags, count_replay=True, card_type=card_type)
@@ -792,7 +1284,7 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
         if self_only and not (in_fm or disclaimer or is_table_header):
             # 整体验收 r3 HIGH：本组织说明链接不是来源，不能解除无来源检查——含推断或数字 → 硬错
             # （只有“详见 <链接>”这类不含断言的指引行仍放行）
-            if infer(s) or CLAIM_TOKEN_RE.search(URL_RE.sub("", s)):
+            if infer(sb) or CLAIM_TOKEN_RE.search(URL_RE.sub("", sb)):
                 flags["inference_unclear"] = True; counts["unclear"] += 1
                 body_err("E-INFER-UNCLEAR", i); body_err("E-REPLAY-001", i)
         elif has_src:
@@ -807,10 +1299,19 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
             # 含推断/转述词或数字 → 硬错误
             flags["inference_unclear"] = True; counts["unclear"] += 1
             body_err("E-INFER-UNCLEAR", i)
-            if infer(s) or CLAIM_TOKEN_RE.search(s):
+            if infer(sb) or CLAIM_TOKEN_RE.search(sb):
                 body_err("E-REPLAY-001", i)
 
     # —— 整篇（跨行）层面
+    for code, ln in industry_violations(doc):          # 产业与经济数据小节（industry-* 短代码块）
+        err(code, ln)
+    for ln in shortcode_malformed_lines(doc):          # 不能解析或没有结束符的短代码标签：从严报错
+        err("E-SHORTCODE-MALFORMED", ln)
+    # E-FRED-CITED 查全文；只有固定清单里的 7 行旧稿放行（Grok Bot 16:48）
+    for ln in fred_cited_lines(text, repo, rel):
+        err("E-FRED-CITED", ln)
+    if gloss_has_label("\n".join(sb_all)) and not any(e["code"] == "E-GLOSS-FORMAT" for e in errors):
+        err("E-GLOSS-FORMAT", 0)            # 标签被拆在两行
     if terms and not flags["internal"] and has_any(doc_compact, terms):
         flags["internal"] = True; err("E-BLOCK-INTERNAL", 0)
     if any(r.search(doc_compact) for r in FUND_RES) or has_any(doc_compact, LEX["invest"]) or en_alloc_position(text):
@@ -1353,7 +1854,8 @@ def http_link_checker(url, timeout=10):
 
 
 def check_file(path, repo, date, card_type, **kw):
-    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。"""
+    """读取稿件并自检。repo 与 date 必须显式传入（不退回当前目录）。读取失败 → E-SELFCHECK-READ。
+    相对路径一律由 path 相对 repo 推导并经 trust_repo_rel 核定；调用方传入的 rel= 字符串不能用于 FRED 旧行豁免。"""
     try:
         text = Path(path).read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError, TypeError):
@@ -1362,9 +1864,9 @@ def check_file(path, repo, date, card_type, **kw):
         meta = {"card_type": card_type if card_type in CARD_TYPES else None,
                 "date": date if valid_date(date) else None}
         return _result([{"code": "E-SELFCHECK-READ", "line": 0}], flags, counts, meta)
-    if "rel" not in kw:
-        try:
-            kw["rel"] = Path(path).resolve().relative_to(Path(repo).resolve()).as_posix()
-        except (ValueError, OSError, TypeError):
-            kw["rel"] = None                         # 不在仓库内 → 无法证明是 tongyi 路径
+    try:
+        derived = Path(path).resolve().relative_to(Path(repo).resolve()).as_posix()
+        kw["rel"] = trust_repo_rel(derived)          # 覆盖调用方传入的 rel；非仓库内 → None
+    except (ValueError, OSError, TypeError):
+        kw["rel"] = None                             # 不在仓库内 → 无法证明是 tongyi 路径，FRED 亦不放行
     return check_text(text, repo, date, card_type, **kw)

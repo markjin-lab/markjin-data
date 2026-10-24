@@ -80,6 +80,23 @@
 词表只从本机内部目录的 `topics-private.md` 读取，仓库内不含任何内部主题词。内部目录由环境变量 `MARKJIN_INTERNAL_DIR` 指定（推荐显式设置）；未设置时用相对路径：仓库根目录的同级目录 `../markjin-internal`。**仓库克隆不在内部目录的同级位置时（例如克隆到别的父目录、用 git worktree 放在别处，或 CI），必须设置 `MARKJIN_INTERNAL_DIR` 指向内部目录**，否则找不到清单，`check-internal` 按 `E-INTERNAL-LIST-MISSING` 拒绝（fail-closed）。代码和文档里都不写本机绝对路径。
 清单严格解析：恰好一张三列表格，表头必须是 `名称 | 识别条件 | 来源`，各行三列非空、名称不重复；三列内容都受保护。缺失、不可读或结构不完整 → `E-INTERNAL-LIST-MISSING`（FAIL）。
 
+### 本站补充的通用解释括号句（E-GLOSS-FORMAT）
+
+- 依据：docs/approvals.md「术语白话解释（王总 t461s2020）」一节。只接受两种格式：中文「[n]。（本站补充的通用解释：XX 一般指……。）」，英文「[n]. (General explanation added by this site: XX usually refers to ….)」。
+- 豁免范围：括号句与带引注的事实句同行、紧接在引注之后，引注紧挨的前文是事实句片段（去掉括号组、引注后须含汉字或字母；单独的下划线、数字不算），且括号句内容合规时，selfcheck 在无出处判断（E-INFER-UNCLEAR、E-REPLAY-001）里把它剔除；行分类、硬拦、来源核对和整篇扫描仍用完整原行。
+- 内容合规：一句话；不含引注、括号、数字、中英文数值词、序数、百分号、罗马数字；不提到本篇论文或本篇方法、模型、工作。「作者」一律硬拦，不设白名单（Grok Bot 2026-10-19 15:21 裁定），在去掉组合符、变体选择符和格式控制符后的文本上判。
+- 标签可识别但格式、位置或内容不合规，报硬错误 E-GLOSS-FORMAT（status FAIL）；完整标签出现在其他任何行（更正区、引用块、标题、表格、注释、front matter）同样报。
+- 机器保证的边界：selfcheck 只保证标签可识别的违规句被报出。没有标签或标签被改写的括号句不报 E-GLOSS-FORMAT，交审稿人判断。普通日报和 digest 的正文段落、列表项（同行无 raw 路径或 URL）本来就会报两个旧码；tongyi 长文路径和带来源的行没有这层兜底。
+
+### 产业与经济数据小节（industry-* 短代码）与 E-FRED-CITED
+
+- 站点用 `{{< industry-data >}}…{{< /industry-data >}}`（内含 `industry-datum`）和 `{{< industry-link … >}}…{{< /industry-link >}}` 渲染“产业与经济数据”小节与产业链接段，稿件里没有字面标题。selfcheck 把这些块（含短代码参数；缺结束短代码时算到文末）当作该小节检查。
+- 块内任何十进制数字（Unicode Nd，含全角、阿拉伯-印度数字；实体解码、NFKC 后检查）或百分号类报 E-INDUSTRY-NUMBER（只豁免 industry-* 短代码自身格式合规的 `cite`、`item` 参数值，以及标签以外正文里独立的 `[n]`：前面不是 `[ = " '`、后面不是 `] ( :`，不在 HTML 标签或代码里）；短代码按引号状态解析。块内数据机构主机（`INDUSTRY_AGENCY_DOMAINS`，主机等于该域名或是其子域名；先统一全角、句号类点）报 E-INDUSTRY-AGENCY-LINK。这比路线图 L393 的 ③④ 更严，开放数字前代替它们；开放数字时须先完整落实 ③④。
+- 内部用语沿用 E-BLOCK-INTERNAL（整行与整篇扫描已覆盖块内文字）。
+- E-FRED-CITED：全文逐行检查 fred.stlouisfed.org（URL 主机或裸域名等于它或是其子域名；统一句号类点）和 FRED 字样（去掉组合符和格式控制符后匹配）。只有 `FRED_LEGACY_ALLOWLIST` 固定清单里的 7 行已发布旧 digest 放行：仓库内相对路径、行号、受检文本里这一行的 sha256 三者都相同才放行（不看磁盘上的文件），仓库外稿件不放行（Grok Bot 16:48）。
+- E-INDUSTRY-MARKUP：industry-* 块内从严拒收，不尝试解析：HTML 属性里有 `>`；块内出现任何 `@`（链接任意位置、裸域名、邮箱、参数）；链接带百分号编码。短代码标签（含参数）里出现 `{{` 报 E-SHORTCODE-MALFORMED。
+- E-SHORTCODE-MALFORMED：短代码标签不能解析或没有结束符（引号值跨行、标签里又出现 `{{` 等）时报错，其后的内容照常检查。
+
 ## route（#10 审查路由）
 
 `python3 scripts/route.py --pr N --repo REPO --date YYYY-MM-DD --card-type daily|signal [--site-repo DIR] [--dry-run [--now ISO]]`（整体验收 r2：时间只用真实时钟；`--now` 只在 `--dry-run` 下可用，演练结果永远不可发布；`--no-link-check` 已取消）（r13：只接受 PR 编号，base/head/文件列表由 `gh pr view` 取得；稿件、raw/、MANIFEST 从 head 提交读取）
