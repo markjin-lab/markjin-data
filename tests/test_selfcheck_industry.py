@@ -1,6 +1,6 @@
 """selfcheck：产业与经济数据小节（站点 industry-* 短代码块）与 E-FRED-CITED。
-2026-10-25 起开放非 BEA 已批数字（王总 t549u「加快」+ Grok Bot 开放非 BEA 数字裁定）：
-块内普通数值与已开放机构（federalreserve.gov）链接放行；BEA/BLS/Census/EIA 数值表述与未开放机构链接仍拦；FRED 仍拦。
+2026-10-25 起产业数值改白名单（Grok Bot）：同块须命中已开放机构（federalreserve.gov / 美联储理事会等）才放行数值；
+否则有数字/百分号即拦。BEA 名或 bea.gov + 数值硬拦（与句读、同段 FRB 无关）。未开放机构主机仍走 E-INDUSTRY-AGENCY-LINK；FRED 仍拦。
 每条规则至少一个拦截例和一个放行例；用例文字为中性占位内容。"""
 import collections, unittest
 from helpers import make_repo, DUMMY_INTERNAL, DATE
@@ -36,7 +36,7 @@ class IndustryBlocks(unittest.TestCase):
     def test_unclosed_block_runs_to_end(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}正文 [1]。\n后面一行 3 项\n'
         self.assertEqual(len(_sc.industry_blocks(doc)), 1)
-        self.assertEqual(codes(doc), {})  # 开放数字后，无未开放机构标记的数值放行
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})  # 白名单：无已开放机构则数值拦
 
     def test_shortcode_names(self):
         self.assertEqual(_sc.INDUSTRY_SHORTCODES, ("industry-data", "industry-datum", "industry-link"))
@@ -47,21 +47,23 @@ class IndustryNumber(unittest.TestCase):
         self.assertEqual(codes(TITLE + LINK_OK), {})
         self.assertEqual(codes(TITLE + LINK_OK_EN), {})
 
-    def test_pass_digit_in_body_after_open(self):
+    def test_block_digit_without_open_agency(self):
+        # 白名单：无已开放机构标记的数值拦
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}训练规模增加 3 倍对应算力需求 [1]。{{< /industry-link >}}\n'
-        self.assertEqual(codes(doc), {})
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
-    def test_pass_fullwidth_digit_after_open(self):
+    def test_block_fullwidth_digit_without_open_agency(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}约３成对应算力需求 [1]。{{< /industry-link >}}\n'
-        self.assertEqual(codes(doc), {})
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
-    def test_pass_percent_after_open(self):
+    def test_block_percent_without_open_agency(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}占比以％计的部分对应需求 [1]。{{< /industry-link >}}\n'
-        self.assertEqual(codes(doc), {})
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
-    def test_pass_datum_value_neutral_publisher(self):
+    def test_block_datum_value_neutral_publisher(self):
+        # 白名单：中性 publisher 无已开放机构 → 拦
         doc = TITLE + data("上月", "102.3", "2026-10-17")
-        self.assertEqual(codes(doc), {})
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
     def test_pass_frb_datum_and_link_with_numbers(self):
         doc = TITLE + ('{{< industry-data >}}\n'
@@ -156,6 +158,31 @@ class IndustryNumber(unittest.TestCase):
         )
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
+    def test_whitelist_open_agency_required_and_bea_hard(self):
+        # Grok Bot r4 策略：白名单放行 + BEA 硬拦；不靠补黑名单
+        self.assertEqual(codes(TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '可对照 https://www.federalreserve.gov/releases/g17/current/default.htm 读数 102.3 [1]。'
+            '{{< /industry-link >}}\n'
+        )), {})
+        self.assertEqual(codes(TITLE + (
+            '{{< industry-data >}}\n'
+            '{{< industry-datum series="甲" publisher="美联储理事会" value="2.1" cite="4" >}}\n'
+            '{{< /industry-data >}}\n'
+        )), {})
+        self.assertEqual(codes(TITLE + (
+            '{{< industry-data >}}\n'
+            '{{< industry-datum series="甲" publisher="Federal Reserve Board" value="2.1" cite="4" >}}\n'
+            '{{< /industry-data >}}\n'
+        )), {})
+        # 同段 FRB URL + ，BEA 仍硬拦
+        self.assertEqual(codes(TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '可对照 https://www.federalreserve.gov/releases/g17/current/default.htm，BEA 读数 2.1 [1]。'
+            '{{< /industry-link >}}\n'
+        )), {"E-INDUSTRY-NUMBER": 1})
+
+
     def test_block_bls_number_statement(self):
         doc = TITLE + '{{< industry-link item="1" industry="energy" side="cost" >}}BLS 电价 16.5 对应成本 [1]。{{< /industry-link >}}\n'
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
@@ -248,24 +275,24 @@ class R4ShortcodeParsing(unittest.TestCase):          # 引号里含 }}、多块
 
     def test_quoted_closer_with_number(self):
         doc = TITLE + '{{< industry-datum series="甲}}" value="123" cite="1" >}}\n'
-        self.assertEqual(codes(doc), {})  # 开放数字后中性 publisher 数值放行
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})  # 白名单：无开放机构
 
     def test_quoted_closer_in_link_param(self):
-        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" inference="甲 >}} 乙" >}}正文 7 处 [1]。{{< /industry-link >}}\n'
+        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" inference="甲 >}} 乙" >}}正文若干处 [1]。{{< /industry-link >}}\n'
         self.assertEqual(codes(doc), {})
 
     def test_multiple_blocks(self):
-        doc = link("正文 [1]。") + "块外 12 分 [2]。\n" + link("正文第 3 项 [3]。")
+        doc = link("正文 [1]。") + "块外若干分 [2]。\n" + link("正文末项 [3]。")
         self.assertEqual(len(_sc.industry_blocks(doc)), 2)
         self.assertEqual(codes(doc), {})
 
     def test_nested_same_name(self):
-        doc = TITLE + L + "外层 [1]。" + L + "内层 [2]。" + LE.strip() + "外层末尾 5 [3]。" + LE
+        doc = TITLE + L + "外层 [1]。" + L + "内层 [2]。" + LE.strip() + "外层末尾 [3]。" + LE
         self.assertEqual(len(_sc.industry_blocks(doc)), 1)
         self.assertEqual(codes(doc), {})
 
     def test_percent_delimiter_form(self):
-        doc = TITLE + '{{% industry-link item="1" industry="ai" side="demand" %}}正文 9 [1]。{{% /industry-link %}}\n'
+        doc = TITLE + '{{% industry-link item="1" industry="ai" side="demand" %}}正文 [1]。{{% /industry-link %}}\n'
         self.assertEqual(codes(doc), {})
 
 
@@ -273,32 +300,32 @@ class R4NumberExemption(unittest.TestCase):           # 只豁免 industry-* 自
     def test_value_bracketed_not_exempt(self):
         # 开放后中性 publisher 的数值放行；本例验证解析仍把 value 当块内文字（不因方括号豁免 cite）
         doc = TITLE + '{{< industry-data >}}\n{{< industry-datum series="甲" value="[123]" cite="4" >}}\n{{< /industry-data >}}\n'
-        self.assertEqual(codes(doc), {})
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
         doc_bea = TITLE + '{{< industry-data >}}\n{{< industry-datum series="甲" publisher="BEA" value="[123]" cite="4" >}}\n{{< /industry-data >}}\n'
         self.assertEqual(codes(doc_bea), {"E-INDUSTRY-NUMBER": 1})
 
     def test_data_cite_param_not_exempt(self):
         doc = TITLE + '{{< industry-datum series="甲" data-cite="123" cite="4" >}}\n'
-        self.assertEqual(codes(doc), {})
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
         doc_bea = TITLE + '{{< industry-datum series="甲" publisher="BEA" data-cite="123" cite="4" >}}\n'
         self.assertEqual(codes(doc_bea), {"E-INDUSTRY-NUMBER": 1})
 
     def test_body_cite_text_not_exempt(self):
-        self.assertEqual(codes(link('正文 cite="123" [1]。')), {})
+        self.assertEqual(codes(link('正文 cite="123" [1]。')), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link('正文 BEA cite="123" [1]。')), {"E-INDUSTRY-NUMBER": 1})
 
     def test_cite_param_bad_format_not_exempt(self):
         doc = TITLE + '{{< industry-datum series="甲" cite="12.5" >}}\n'
-        self.assertEqual(codes(doc), {})
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
         doc_bea = TITLE + '{{< industry-datum series="甲" publisher="BEA" cite="12.5" >}}\n'
         self.assertEqual(codes(doc_bea), {"E-INDUSTRY-NUMBER": 1})
 
     def test_cite_param_of_other_shortcode_not_exempt(self):
-        self.assertEqual(codes(link('正文 {{< ref cite="123" >}} [1]。')), {})
+        self.assertEqual(codes(link('正文 {{< ref cite="123" >}} [1]。')), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link('正文 BLS {{< ref cite="123" >}} [1]。')), {"E-INDUSTRY-NUMBER": 1})
 
     def test_bracket_too_long_not_exempt(self):
-        self.assertEqual(codes(link("正文 [1234]。")), {})
+        self.assertEqual(codes(link("正文 [1234]。")), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link("正文 Census [1234]。")), {"E-INDUSTRY-NUMBER": 1})
 
     def test_pass_real_cite_and_item(self):
@@ -309,22 +336,22 @@ class R4NumberExemption(unittest.TestCase):           # 只豁免 industry-* 自
 
 
 class R4UnicodeDigits(unittest.TestCase):
-    def test_arabic_indic_open(self):
-        self.assertEqual(codes(link("正文 ١٢ 项 [1]。")), {})
+    def test_arabic_indic_without_open_agency(self):
+        self.assertEqual(codes(link("正文 ١٢ 项 [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
-    def test_devanagari_open(self):
-        self.assertEqual(codes(link("正文 ३ 项 [1]。")), {})
+    def test_devanagari_without_open_agency(self):
+        self.assertEqual(codes(link("正文 ३ 项 [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
-    def test_superscript_and_circled_open(self):
-        self.assertEqual(codes(link("正文 ² 项 [1]。")), {})
-        self.assertEqual(codes(link("正文 ① 项 [1]。")), {})
+    def test_superscript_and_circled_without_open_agency(self):
+        self.assertEqual(codes(link("正文 ² 项 [1]。")), {"E-INDUSTRY-NUMBER": 1})
+        self.assertEqual(codes(link("正文 ① 项 [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
-    def test_entity_digit_open(self):
-        self.assertEqual(codes(link("正文 &#49; 项 [1]。")), {})
+    def test_entity_digit_without_open_agency(self):
+        self.assertEqual(codes(link("正文 &#49; 项 [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
-    def test_percent_variants_open(self):
+    def test_percent_variants_without_open_agency(self):
         for p in ("﹪", "٪", "‰", "؉"):
-            self.assertEqual(codes(link(f"正文以{p}计 [1]。")), {}, p)
+            self.assertEqual(codes(link(f"正文以{p}计 [1]。")), {"E-INDUSTRY-NUMBER": 1}, p)
 
     def test_closed_agency_still_blocks_unicode_digit(self):
         self.assertEqual(codes(link("正文 BEA ١٢ 项 [1]。")), {"E-INDUSTRY-NUMBER": 1})
@@ -339,12 +366,11 @@ class R4HostBoundaries(unittest.TestCase):
         self.assertEqual(codes(link("见 https://bea.gov.example/x [1]。")), {})
         self.assertEqual(codes(link("见 bea.gov.example [1]。")), {})
 
-    def test_pass_suffix_lookalike_with_number(self):
-        # r1 低：名称匹配排除 URL 主机，避免 bea.gov.example + 数值误报 E-INDUSTRY-NUMBER
-        self.assertEqual(codes(link("见 https://bea.gov.example/x 读数 2.1 [1]。")), {})
-        self.assertEqual(codes(link("见 bea.gov.example 读数 2.1 [1]。")), {})
-        # r2 低：裸域名路径中的 BEA 片段勿误报
-        self.assertEqual(codes(link("见 bea.gov.example/BEA/data 读数 2.1 [1]。")), {})
+    def test_suffix_lookalike_with_number_no_open_agency(self):
+        # 白名单：无已开放机构 → 数值拦；且不得因 bea.gov.example /BEA/ 路径误判为 BEA 硬拦以外的误放行
+        self.assertEqual(codes(link("见 https://bea.gov.example/x 读数 2.1 [1]。")), {"E-INDUSTRY-NUMBER": 1})
+        self.assertEqual(codes(link("见 bea.gov.example 读数 2.1 [1]。")), {"E-INDUSTRY-NUMBER": 1})
+        self.assertEqual(codes(link("见 bea.gov.example/BEA/data 读数 2.1 [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
     def test_pass_prefix_lookalike(self):
         self.assertEqual(codes(link("见 https://notbea.gov/x [1]。")), {})
@@ -406,7 +432,7 @@ class R5MalformedShortcode(unittest.TestCase):
     def test_unclosed_quote_does_not_swallow(self):
         doc = TITLE + '前文 {{< ref note="未闭合 >}}\n' + link("正文 42 项 [1]。")
         c = codes(doc)
-        self.assertNotIn("E-INDUSTRY-NUMBER", c)  # 开放后无未开放机构标记的数值放行
+        self.assertEqual(c.get("E-INDUSTRY-NUMBER"), 1)  # 白名单：42 无开放机构
         self.assertIn("E-SHORTCODE-MALFORMED", _sc.check_text(doc, REPO, DATE, "daily", link_checker=lambda u: True)["error_codes"])
 
     def test_unterminated_tag(self):
@@ -425,23 +451,23 @@ class R5MalformedShortcode(unittest.TestCase):
 
 class R5BodyCite(unittest.TestCase):
     def test_html_attr_blocked(self):
-        self.assertEqual(codes(link('正文 <span data-value="[123]">词</span> [1]。')), {})
+        self.assertEqual(codes(link('正文 <span data-value="[123]">词</span> [1]。')), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link('正文 BEA <span data-value="[123]">词</span> [1]。')), {"E-INDUSTRY-NUMBER": 1})
 
     def test_double_bracket_blocked(self):
-        self.assertEqual(codes(link("正文 [[123]] [1]。")), {})
+        self.assertEqual(codes(link("正文 [[123]] [1]。")), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link("正文 BLS [[123]] [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
     def test_code_span_blocked(self):
-        self.assertEqual(codes(link("正文 `[12]` [1]。")), {})
+        self.assertEqual(codes(link("正文 `[12]` [1]。")), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link("正文 Census `[12]` [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
     def test_link_text_blocked(self):
-        self.assertEqual(codes(link("正文 [12](https://example.org) [1]。")), {})
+        self.assertEqual(codes(link("正文 [12](https://example.org) [1]。")), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link("正文 EIA [12](https://example.org) [1]。")), {"E-INDUSTRY-NUMBER": 1})
 
     def test_attr_without_tag_blocked(self):
-        self.assertEqual(codes(link('正文 x="[12]" [1]。')), {})
+        self.assertEqual(codes(link('正文 x="[12]" [1]。')), {"E-INDUSTRY-NUMBER": 1})
         self.assertEqual(codes(link('正文 BEA x="[12]" [1]。')), {"E-INDUSTRY-NUMBER": 1})
 
     def test_pass_standalone(self):
@@ -589,7 +615,7 @@ class R7NestedOpener(unittest.TestCase):
         doc = TITLE + "{{< ref x=bad{{< industry-link item=\"1\" industry=\"ai\" side=\"demand\" >}}42{{< /industry-link >}}\n"
         c = _mcodes(doc)
         self.assertIn("E-SHORTCODE-MALFORMED", c)
-        self.assertNotIn("E-INDUSTRY-NUMBER", c)  # 开放后纯数值放行
+        self.assertIn("E-INDUSTRY-NUMBER", c)  # 白名单：42 无开放机构
         doc2 = TITLE + "{{< ref x=bad{{< industry-link item=\"1\" industry=\"ai\" side=\"demand\" >}}BEA 42{{< /industry-link >}}\n"
         self.assertIn("E-INDUSTRY-NUMBER", _mcodes(doc2))
 

@@ -687,37 +687,21 @@ INDUSTRY_AGENCY_DOMAINS = (
     "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
 # 已对公开日报产业块开放数值与原始机构链接的域名（当前仅美联储理事会；BEA 书面授权未回，BLS/Census/EIA 条款待核）。
 INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov",)
-# 未对产业块开放数值的机构名称（与数值同块 → E-INDUSTRY-NUMBER）；域名另走 E-INDUSTRY-AGENCY-LINK。
-# 与 INDUSTRY_AGENCY_DOMAINS 中未开放域名对应的常用中英文名；已开放的美联储理事会不在此列。
-_IND_CLOSED_AGENCY_NAME_RE = re.compile(
-    r"(?i)(?<![A-Za-z])(?:BEA|BLS|EIA|IEA|Census|IMF|OECD|BIS|ECB|ONS|BOJ|METI|"
-    r"SEC|FDIC|FHFA|CBO|FERC|USDA|NBS|PBOC|SAFE|CSRC|NDRC|MIIT|NEA)(?![A-Za-z])|"
-    r"美国商务部经济分析局|美国经济分析局|美国劳工统计局|美国人口普查局|美国能源信息署|"
-    r"美国财政部|美国劳工部|美国证券交易委员会|美国联邦存款保险公司|美国联邦住房金融局|"
-    r"美国联邦能源监管委员会|美国农业部|美国商务部|美国能源部|美国国会预算办公室|白宫|White House|"
-    r"圣路易斯联邦储备银行|圣路易斯联储|"
-    r"国家统计局|中国人民银行|海关总署|国家发展和改革委员会|中国财政部|工业和信息化部|"
-    r"国家外汇管理局|中国商务部|中国证券监督管理委员会|国家能源局|"
-    r"国际货币基金组织|世界银行|经济合作与发展组织|经合组织|国际清算银行|国际能源署|"
-    r"欧洲中央银行|欧盟委员会|欧盟统计局|英格兰银行|日本银行|日本总务省统计局|日本内阁府|"
-    r"经济产业省|日本经济产业省|"
-    r"Bureau of Economic Analysis|Bureau of Labor Statistics|"
-    r"Energy Information Administration|U\.?S\.? Census Bureau|Census Bureau|"
-    r"Department of the Treasury|U\.?S\.? Treasury|Treasury Department|"
-    r"Department of Labor|Securities and Exchange Commission|"
-    r"Federal Deposit Insurance Corporation|Federal Housing Finance Agency|"
-    r"Federal Energy Regulatory Commission|Department of Agriculture|"
-    r"Department of Commerce|Department of Energy|Congressional Budget Office|"
-    r"Federal Reserve Bank of St\.? Louis|St\.? Louis Fed|"
-    r"International Monetary Fund|World Bank|"
-    r"Organisation for Economic Co-?operation and Development|"
-    r"Organization for Economic Co-?operation and Development|"
-    r"Bank for International Settlements|International Energy Agency|"
-    r"European Central Bank|Eurostat|European Commission|"
-    r"Office for National Statistics|Bank of England|Bank of Japan|"
-    r"Ministry of Economy,? Trade and Industry|"
-    r"Statistics Bureau of Japan|Cabinet Office of Japan"
+# 产业数值：白名单放行（Grok Bot 2026-10-25）——同块须命中已开放机构，否则有数值即拦；
+# 不再维护「未开放机构名」黑名单。BEA 硬拦独立：BEA 名/bea.gov + 数值一律拦（即使同段有 FRB）。
+# 域名另走 E-INDUSTRY-AGENCY-LINK（未开放主机）。
+_IND_BEA_HARD_NAME_RE = re.compile(
+    r"(?i)(?<![A-Za-z])BEA(?![A-Za-z])|"
+    r"美国商务部经济分析局|美国经济分析局|"
+    r"Bureau of Economic Analysis"
 )
+_IND_OPEN_AGENCY_NAME_RE = re.compile(
+    r"(?i)美联储理事会|美国联邦储备理事会|"
+    r"Federal Reserve Board|"
+    r"Board of Governors of the Federal Reserve System"
+)
+BEA_DOMAIN = "bea.gov"
+
 FRED_DOMAIN = "fred.stlouisfed.org"
 
 
@@ -862,6 +846,14 @@ def _has_number(text):
     return any(_ud.category(ch) == "Nd" or ch in _IND_PCT for ch in t) or any(ch in _IND_PCT for ch in text)
 
 
+_IND_SHORTCODE_FENCE_RE = re.compile(r"\{\{[%<]|[%>]\}\}")
+
+
+def _ind_number_probe(text):
+    """数值探测用：抹掉 Hugo 短代码围栏，避免 {{% %}} 里的 % 被当成百分号数值。"""
+    return _IND_SHORTCODE_FENCE_RE.sub(" ", text)
+
+
 _HOST_DOTS = str.maketrans({"。": ".", "．": ".", "｡": ".", "︒": ".", "\u2024": "."})
 _HOST_RE = re.compile(r"(?<![a-z0-9\-.])((?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)(?![a-z0-9\-]|\.[a-z0-9])")
 _URL_RE = re.compile(r"(?:[a-z][a-z0-9+.\-]*:)?//([^\s/?#\\<>\"'）)\]]*)([^\s<>\"'）)\]]*)")
@@ -962,11 +954,18 @@ def _ind_text_for_agency_names(text):
     return _ud.normalize("NFKC", _ud.normalize("NFKD", "".join(parts)))
 
 
-def _ind_closed_agency_name(text):
-    """块内出现尚未对公开日报开放数值的机构名称（未开放机构中英文名）。
-    按实际 URL 边界去除主机与路径，保留中英文句读后的正文；裸域名连同其后路径一并去掉，
-    避免 bea.gov.example 主机片段或 /BEA/ 路径被当成 BEA 名。"""
-    return bool(_IND_CLOSED_AGENCY_NAME_RE.search(_ind_text_for_agency_names(text)))
+def _ind_bea_hard(text):
+    """BEA 硬拦：名称（切掉 URL/裸域名路径后）或 bea.gov 主机；与句读、同段 FRB 无关。"""
+    if any(_host_in(h, (BEA_DOMAIN,)) for h in _hosts(text)):
+        return True
+    return bool(_IND_BEA_HARD_NAME_RE.search(_ind_text_for_agency_names(text)))
+
+
+def _ind_open_agency(text):
+    """已开放机构：federalreserve.gov 主机，或美联储理事会等已批名称（切掉 URL 后匹配名称）。"""
+    if any(_host_in(h, INDUSTRY_OPEN_AGENCY_DOMAINS) for h in _hosts(text)):
+        return True
+    return bool(_IND_OPEN_AGENCY_NAME_RE.search(_ind_text_for_agency_names(text)))
 
 
 def _ind_unopened_agency_hosts(text):
@@ -976,13 +975,17 @@ def _ind_unopened_agency_hosts(text):
 
 
 def industry_violations(doc):
-    """[(code, line)]：未开放机构的数值表述 → E-INDUSTRY-NUMBER；未开放机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。
-    已开放机构（当前 federalreserve.gov）的数值与链接放行；BEA 域名与 BEA/BLS/Census/EIA 数值表述仍拦。"""
+    """[(code, line)]：产业块数值 → E-INDUSTRY-NUMBER（白名单）；未开放机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。
+
+    数值放行：同块命中已开放机构（federalreserve.gov / 美联储理事会等）且未触 BEA 硬拦。
+    BEA 硬拦：BEA 名或 bea.gov + 数值一律拦，与中文句读、同段是否有 FRB 无关。
+    无已开放机构标记的数值一律拦（不再靠未开放机构名黑名单）。
+    """
     res = set()
     for a, b, tags in industry_blocks(doc):
         block = doc[a:b]
-        block_closed_name = _ind_closed_agency_name(block)
-        block_unopened_hosts = bool(_ind_unopened_agency_hosts(block))
+        block_bea = _ind_bea_hard(block)
+        block_open = _ind_open_agency(block)
         ex = _ind_exempt_spans(doc, a, b, tags)
         masked = list(block)
         for x0, x1 in ex:
@@ -992,16 +995,18 @@ def industry_violations(doc):
         off = a
         for raw_ln, m_ln in zip(block.split("\n"), masked.split("\n")):
             line_no = doc.count("\n", 0, off) + 1
-            # 数值：开放后默认放行；与未开放机构名称/域名同块出现时仍硬拦（BEA 数值表述等）
-            if _has_number(m_ln) and (block_closed_name or block_unopened_hosts
-                                      or _ind_closed_agency_name(raw_ln) or _ind_unopened_agency_hosts(raw_ln)):
-                res.add(("E-INDUSTRY-NUMBER", line_no))
+            if _has_number(_ind_number_probe(m_ln)):
+                bea = block_bea or _ind_bea_hard(raw_ln)
+                opened = block_open or _ind_open_agency(raw_ln)
+                if bea or not opened:
+                    res.add(("E-INDUSTRY-NUMBER", line_no))
             if _ind_unopened_agency_hosts(raw_ln):
                 res.add(("E-INDUSTRY-AGENCY-LINK", line_no))
             if _ind_markup_bad(raw_ln):
                 res.add(("E-INDUSTRY-MARKUP", line_no))
             off += len(raw_ln) + 1
     return sorted(res, key=lambda x: (x[1], x[0]))
+
 
 
 # —— E-FRED-CITED（Grok Bot 15:28 + 15:43）：fred.stlouisfed.org（含子域名）或大写 FRED 字样；只管新增或改动的行
