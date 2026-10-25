@@ -192,6 +192,16 @@ class IndustryNumber(unittest.TestCase):
         )
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
 
+    def test_block_cjk_period_then_slashslash_bea(self):
+        # r5 MEDIUM：_host_norm 勿先把 。→. 再切；「FRB。//bea」须 NUMBER+AGENCY-LINK
+        doc = TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '见 https://www.federalreserve.gov/x。//www.bea.gov/data 读数 2.1 [1]。'
+            '{{< /industry-link >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
+
+
     def test_open_agency_english_name_trailing_boundary(self):
         # r4 MEDIUM：Federal Reserve Boardwalk / Boardroom 勿误开放
         doc = TITLE + (
@@ -291,6 +301,10 @@ class FredCited(unittest.TestCase):
     def test_fred_url_cjk_comma_still_hit(self):
         # 与产业 URL 句读断开同类：勿因「fred…，https://…」漏 FRED
         self.assertEqual(codes(TITLE + "某说明见 https://fred.stlouisfed.org/series/X，https://example.org/y [1]。\n"), {"E-FRED-CITED": 1})
+    def test_fred_period_slashslash_still_hit(self):
+        # r5：。//fred 在 norm 前切开，仍须 E-FRED-CITED
+        self.assertEqual(codes(TITLE + "某说明见 https://example.org/x。//fred.stlouisfed.org/series/X [1]。\n"), {"E-FRED-CITED": 1})
+
 
 
 
