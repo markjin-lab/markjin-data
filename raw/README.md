@@ -1,13 +1,17 @@
 # raw/ 原始存档（只追加）
 
 ## 路径
-`raw/YYYY-MM-DD/<source>/<文件>`，source ∈ arxiv | fred | x；采集时间：自 2026-10-12 起为 05:00（round1）与 06:00（round2）SGT，日报 07:00 SGT 发布；2026-10-11 及以前为 07:00 与 08:15 SGT（历史目录保持原样）。
+`raw/YYYY-MM-DD/<source>/<文件>`，source ∈ arxiv | fred | x | frb-g17；采集时间：自 2026-10-12 起为 05:00（round1）与 06:00（round2）SGT，日报 07:00 SGT 发布；2026-10-11 及以前为 07:00 与 08:15 SGT（历史目录保持原样）。
 
 
 另有以下子目录（同样逐字节保存、在当天 MANIFEST.sha256 登记）：
 - `raw/YYYY-MM-DD/fulltext/`：许可允许转载的全文（遮盖联系邮箱后的公开版）；未获转载授权的只记 URL 与 sha256。说明见目录内 `PROVENANCE.md`。
 - `raw/YYYY-MM-DD/nbs-gdp/`：国家统计局 GDP 公开页面与对账表，说明见目录内 `PROVENANCE.md`、`README.md`。
 - `raw/YYYY-MM-DD/round2/<source>/`：当天第二轮（round2）采集，结构与第一轮的 arxiv / fred / x 相同。
+- `raw/YYYY-MM-DD/frb-g17/`：美联储理事会 G.17（Industrial Production and Capacity Utilization）release-page XML zip
+  （`FRB_g17_xml.zip`）及同目录 query-log / PROVENANCE；provenance 宜 `copied-file`。
+  启用条件：sources.yaml `frb-g17-xml` 合并且启用，且已有覆盖该 URL 的 AGENCY-PERMIT（r11+）。
+  与 FRED / `source-fred` / RETRACTIONS 无关，勿混标签。不附 headers.json。
 
 ## 只追加规则
 - 逐字节保存，**已提交文件永不编辑、永不覆盖、永不删除/改名**。
