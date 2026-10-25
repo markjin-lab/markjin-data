@@ -174,7 +174,7 @@ class _Binary:
         self.sha256 = h
 
 
-BINARY_EXT = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp")
+BINARY_EXT = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".zip")
 _DAY_MANIFEST_RE = re.compile(r"raw/\d{4}-\d{2}-\d{2}/MANIFEST\.sha256")
 _RAW_BIN_RE = re.compile(r"(raw/\d{4}-\d{2}-\d{2})/(.+)")
 

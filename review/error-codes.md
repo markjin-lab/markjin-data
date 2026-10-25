@@ -118,7 +118,7 @@
 | `E-LEDGER-CARD` | 台账 card_id 在公开稿件中没有对应锚点 |
 | `E-CHECK-GIT` | 守卫无法读取 git 对象（git 调用失败、子模块或对象缺失），按失败处理 |
 | `E-CHECK-STDIN` | pre-push stdin 为空或格式异常，或未指定检查目标，拒绝推送 |
-| `E-CHECK-DECODE` | 路径、文件内容或提交说明不是合法 UTF-8，或二进制类型文件（.pdf/.jpg/.jpeg/.png/.gif/.webp，不论能否解码）未登记，拒绝（不跳过）；唯一例外：raw/<日期>/ 下已在同一提交树的 raw/<日期>/MANIFEST.sha256 按字节 sha256 登记、扩展名为 pdf/jpg/jpeg/png/gif/webp 的二进制原件 |
+| `E-CHECK-DECODE` | 路径、文件内容或提交说明不是合法 UTF-8，或二进制类型文件（.pdf/.jpg/.jpeg/.png/.gif/.webp/.zip，不论能否解码）未登记，拒绝（不跳过）；唯一例外：raw/<日期>/ 下已在同一提交树的 raw/<日期>/MANIFEST.sha256 按字节 sha256 登记、扩展名为 pdf/jpg/jpeg/png/gif/webp/zip 的二进制原件 |
 | `E-PUBLIC-INTERNAL-PATH` | 内部材料路径被 git 跟踪 |
 | `I-AUTO-APPROVED` | 已停用（王总 t161u：日报一律过 Codex，不再有自动批准）；路由不再产生；台账只许记 count=0，非零判 E-LEDGER-VALUE（r11） |
 | `I-NEEDS-REVIEW` | 计数：尚未取得有效 Codex APPROVED（及按类型要求的王总批准）的稿件 |

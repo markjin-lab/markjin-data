@@ -54,8 +54,8 @@
 
 ## 二进制原件与审查结论格式（整体验收 r1，2026-10-11）
 
-- check-public / check-internal 对路径、提交说明和文件内容都按 UTF-8 解码，解码失败判 `E-CHECK-DECODE`。唯一的例外是已登记的二进制原件：路径为 `raw/<日期>/<相对路径>`，扩展名是 pdf、jpg、jpeg、png、gif 或 webp，并且同一提交树的 `raw/<日期>/MANIFEST.sha256` 里有 `<sha256>  ./<相对路径>` 一行与这份字节的 sha256 一致。这类文件的路径照常扫描，内容不作文本扫描。没登记的、字节不符的、扩展名不在单上的、不在 `raw/<日期>/` 下的，仍然判失败。
-- 整体验收 r4：扩展名为 .pdf/.jpg/.jpeg/.png/.gif/.webp 的文件一律先做登记校验（不以能否按 UTF-8 解码为条件）；未登记、字节不符或不在 raw/<日期>/ 下 → `E-CHECK-DECODE`。
+- check-public / check-internal 对路径、提交说明和文件内容都按 UTF-8 解码，解码失败判 `E-CHECK-DECODE`。唯一的例外是已登记的二进制原件：路径为 `raw/<日期>/<相对路径>`，扩展名是 pdf、jpg、jpeg、png、gif、webp 或 zip，并且同一提交树的 `raw/<日期>/MANIFEST.sha256` 里有 `<sha256>  ./<相对路径>` 一行与这份字节的 sha256 一致。这类文件的路径照常扫描，内容不作文本扫描。没登记的、字节不符的、扩展名不在单上的、不在 `raw/<日期>/` 下的，仍然判失败。
+- 整体验收 r4：扩展名为 .pdf/.jpg/.jpeg/.png/.gif/.webp/.zip 的文件一律先做登记校验（不以能否按 UTF-8 解码为条件）；未登记、字节不符或不在 raw/<日期>/ 下 → `E-CHECK-DECODE`。
 - review/ 下审查结果文件最后一行可以是 `VERDICT: APPROVED`、`VERDICT: APPROVED_WITH_FOLLOWUPS` 或 `VERDICT: REJECTED`，其中第二种（`APPROVED_WITH_FOLLOWUPS`）供规划文件使用。稿件批准记录（approvals/codex）仍然只认 `APPROVED`。
 - `review/error-codes.md` 由 `python3 scripts/gen-error-codes.py` 生成，`--check` 用来核对是否一致，测试也会核对。合并 PR 后如果 codes.py 有变化，要重新生成。
 
