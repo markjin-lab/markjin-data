@@ -665,12 +665,13 @@ def gloss_has_label(text):
     return any(l in c for l in _GL_LABELS_C)
 
 
-# ================================================================ 产业与经济数据小节（站点 PR #125 的 industry-* 短代码；Grok Bot 2026-10-19 15:28 裁定）
+# ================================================================ 产业与经济数据小节（站点 PR #125 的 industry-* 短代码；Grok Bot 2026-10-19 15:28 裁定；
+# 2026-10-25 开放非 BEA 已批数字：王总 chat t549u「加快」+ Grok Bot 开放非 BEA 数字裁定）
 # 站点用 {{< industry-data >}}…{{< /industry-data >}}（内含 industry-datum）和 {{< industry-link … >}}…{{< /industry-link >}}
 # 渲染“产业与经济数据 / Industry and economic data”小节与产业链接段，稿件里没有字面的 Markdown 标题。selfcheck 把这些块
-# （含短代码参数）当作该小节，检查块内文字：任何数值（Unicode 十进制数字、百分号类）和任何数据机构链接一律硬拦。
-# 这比路线图 L393 的 ③④ 更严，在开放数字之前代替它们；开放数字时须先完整落实 ③④。
-# 数值的例外只有：industry-* 短代码自身的 cite、item 参数（值须是出处编号 / 正整数格式），以及块内正文（短代码标签以外）的真实引注 [n]。
+# （含短代码参数）当作该小节检查。开放数字后落实路线图审查口径：允许数值与已开放机构链接；仍拦 BEA 域名与 BEA 数值表述、
+# 拦 FRED（E-FRED-CITED）、拦未开放/未转常规机构链接；投资措辞与宏观涨跌预测走既有门禁。
+# 数值豁免（不算“出现数值”）：industry-* 短代码自身的 cite、item 参数（值须是出处编号 / 正整数格式），以及块内正文（短代码标签以外）的真实引注 [n]。
 INDUSTRY_SHORTCODES = ("industry-data", "industry-datum", "industry-link")
 _IND_PAIRED = ("industry-data", "industry-link")
 _IND_EXEMPT_PARAMS = {"cite": re.compile(r"[1-9][0-9]*(?:\s*,\s*[1-9][0-9]*)*"), "item": re.compile(r"[1-9][0-9]*")}
@@ -684,6 +685,23 @@ INDUSTRY_AGENCY_DOMAINS = (
     "mofcom.gov.cn", "csrc.gov.cn", "nea.gov.cn", "imf.org", "worldbank.org", "oecd.org", "bis.org", "iea.org",
     "ecb.europa.eu", "ec.europa.eu", "eurostat.ec.europa.eu", "ons.gov.uk", "bankofengland.co.uk", "boj.or.jp",
     "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
+# 已对公开日报产业块开放数值与原始机构链接的域名（当前仅美联储理事会；BEA 书面授权未回，BLS/Census/EIA 条款待核）。
+INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov",)
+# 产业数值：白名单放行（Grok Bot 2026-10-25）——同块须命中已开放机构，否则有数值即拦；
+# 不再维护「未开放机构名」黑名单。BEA 硬拦独立：BEA 名/bea.gov + 数值一律拦（即使同段有 FRB）。
+# 域名另走 E-INDUSTRY-AGENCY-LINK（未开放主机）。
+_IND_BEA_HARD_NAME_RE = re.compile(
+    r"(?i)(?<![A-Za-z])BEA(?![A-Za-z])|"
+    r"美国商务部经济分析局|美国经济分析局|"
+    r"Bureau of Economic Analysis(?![A-Za-z])"
+)
+_IND_OPEN_AGENCY_NAME_RE = re.compile(
+    r"(?i)美联储理事会|美国联邦储备理事会|"
+    r"Federal Reserve Board(?![A-Za-z])|"
+    r"Board of Governors of the Federal Reserve System(?![A-Za-z])"
+)
+BEA_DOMAIN = "bea.gov"
+
 FRED_DOMAIN = "fred.stlouisfed.org"
 
 
@@ -828,9 +846,24 @@ def _has_number(text):
     return any(_ud.category(ch) == "Nd" or ch in _IND_PCT for ch in t) or any(ch in _IND_PCT for ch in text)
 
 
-_HOST_DOTS = str.maketrans({"。": ".", "．": ".", "｡": ".", "︒": ".", "\u2024": "."})
+_IND_SHORTCODE_FENCE_RE = re.compile(r"\{\{[%<]|[%>]\}\}")
+
+
+def _ind_number_probe(text):
+    """数值探测用：抹掉 Hugo 短代码围栏，避免 {{% %}} 里的 % 被当成百分号数值。"""
+    return _IND_SHORTCODE_FENCE_RE.sub(" ", text)
+
+
+_HOST_DOT_SRC = "。．｡︒\u2024"  # 经 _host_norm 收成 ASCII "."；句读切开须含这些字符
+_HOST_DOTS = str.maketrans({c: "." for c in _HOST_DOT_SRC})
 _HOST_RE = re.compile(r"(?<![a-z0-9\-.])((?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)(?![a-z0-9\-]|\.[a-z0-9])")
-_URL_RE = re.compile(r"(?:[a-z][a-z0-9+.\-]*:)?//([^\s/?#\\<>\"'）)\]]*)([^\s<>\"'）)\]]*)")
+# URL 在空白/围栏/中英文句读处断开，避免「url，url」把第二个主机吞进路径（漏 BEA/FRED）
+_URL_PUNCT_STOP = r"\s<>\"\'）)\]，,：:;。．、；！？｡"
+_URL_RE = re.compile(
+    r"(?:[a-z][a-z0-9+.\-]*:)?"
+    r"//([^/?#\\" + _URL_PUNCT_STOP + r"]*)"
+    r"([^" + _URL_PUNCT_STOP + r"]*)"
+)
 
 
 def _host_norm(t):
@@ -846,10 +879,24 @@ def _host_norm(t):
     return _ud.normalize("NFKC", t).translate(_HOST_DOTS).lower()
 
 
+# 句读后紧跟 // 或 scheme://：在 _host_norm 把 。→. 之前切开，避免「/x。//bea」变成「/x.//bea」吞进路径
+# _HOST_DOTS 会收成 "." 的字符 + 其它句读：norm 前切开，避免 ︒/․ 漏 BEA/FRED；勿拆字面量 ASCII .//
+_HOST_CJK_URL_BREAK_CHARS = _HOST_DOT_SRC + "，：；、！？"
+_HOST_CJK_URL_BREAK_RE = re.compile(
+    r"([" + re.escape(_HOST_CJK_URL_BREAK_CHARS) + r"])(?=(?://|[a-z][a-z0-9+.\-]*://))",
+    re.I,
+)
+
+
 def _hosts(text):
     """URL 主机与裸域名分开取：先规范化；URL（scheme:// 或 //）只取 authority 里的主机（去掉用户信息、端口），路径、查询不算；
-    URL 以外的文字按空白切词，词里含“/”时只看第一个“/”之前的部分，再按完整主机边界取裸域名。"""
-    t = _host_norm(text)
+    URL 以外的文字按空白切词，词里含“/”时只看第一个“/”之前的部分，再按完整主机边界取裸域名。
+
+    句读及 _HOST_DOT_SRC（_HOST_DOTS 会收成 "." 的字符，含 。．｡︒․）后紧跟下一 URL 时，须在 _host_norm/NFKC 之前切开；调用方须传未经 norm 的原文。
+    勿无条件把字面量 ASCII .// 断开：假路径 x.//federalreserve.gov 不得误认开放域。
+    """
+    t = _HOST_CJK_URL_BREAK_RE.sub(r"\1 ", _unescape(text))
+    t = _host_norm(t)
     hosts = []
     def url_host(m):
         auth = m.group(1).rsplit("@", 1)[-1]
@@ -867,7 +914,8 @@ def _host_in(host, domains):
     return any(host == d or host.endswith("." + d) for d in domains)
 
 
-_IND_URL_RAW_RE = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//[^\s<>\"'）)\]]*")
+_IND_URL_RAW_RE = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*:)?"
+                                   r"//[^" + _URL_PUNCT_STOP + r"]*")
 
 
 def _ind_markup_bad(seg):
@@ -894,27 +942,93 @@ def _ind_markup_bad(seg):
     return False
 
 
+# 名称匹配时 URL 终止于空白、围栏符、中英文句读（含 ，：； 与 NFKC 后的 ,:;）。
+# 必须在 NFKC 之前切 URL：NFKC 会把 ，→, ：→: ；→;，若先规范化再切，会吞掉「，BEA」。
+_IND_NAME_URL_STOP = r"\s<>\"\'）)\]，,：:;。．、；！？｡"
+_IND_NAME_URL_RE = re.compile(
+    r"(?i)(?:[a-z][a-z0-9+.\-]*:)?"  # optional scheme
+    r"//[^" + _IND_NAME_URL_STOP + r"]*"
+)
+_IND_NAME_TRAIL_PUNCT_RE = re.compile(r"^(.*?)([，,：:;。．、；！？｡].*)?$", re.S)
+
+
+def _ind_text_for_agency_names(text):
+    """供机构名匹配：去掉 URL 与「裸域名[/路径]」，保留句读后的正文。
+
+    先按原始中英文句读切掉 URL，再 NFKC，避免 ，：； 被收成 ASCII 后仍被 URL 吞进路径。
+    """
+    t = _gl_strip_marks(_unescape(text))
+    t = _IND_NAME_URL_RE.sub(lambda m: " " * len(m.group(0)), t)
+    parts = []
+    for tok in re.split(r"(\s+)", t):
+        if not tok or tok.isspace():
+            parts.append(tok)
+            continue
+        m = _IND_NAME_TRAIL_PUNCT_RE.match(tok)
+        head, trail = (m.group(1), m.group(2) or "") if m else (tok, "")
+        host_part = head.split("/", 1)[0]
+        # 仅对主机片段做点号规范化再判定是否像域名；整段 head（含 /路径）一并抹掉
+        if host_part and _HOST_RE.search(_host_norm(host_part)):
+            parts.append(" " * len(head) + trail)
+        else:
+            parts.append(tok)
+    # 名称匹配前再 NFKC（句读后的 BEA 等已保留）
+    return _ud.normalize("NFKC", _ud.normalize("NFKD", "".join(parts)))
+
+
+def _ind_bea_hard(text):
+    """BEA 硬拦：名称（切掉 URL/裸域名路径后）或 bea.gov 主机；与句读、同段 FRB 无关。"""
+    if any(_host_in(h, (BEA_DOMAIN,)) for h in _hosts(text)):
+        return True
+    return bool(_IND_BEA_HARD_NAME_RE.search(_ind_text_for_agency_names(text)))
+
+
+def _ind_open_agency(text):
+    """已开放机构：federalreserve.gov 主机，或美联储理事会等已批名称（切掉 URL 后匹配名称）。"""
+    if any(_host_in(h, INDUSTRY_OPEN_AGENCY_DOMAINS) for h in _hosts(text)):
+        return True
+    return bool(_IND_OPEN_AGENCY_NAME_RE.search(_ind_text_for_agency_names(text)))
+
+
+def _ind_unopened_agency_hosts(text):
+    """未开放机构主机：在 INDUSTRY_AGENCY_DOMAINS 内、且不是 INDUSTRY_OPEN_AGENCY_DOMAINS。"""
+    return [h for h in _hosts(text)
+            if _host_in(h, INDUSTRY_AGENCY_DOMAINS) and not _host_in(h, INDUSTRY_OPEN_AGENCY_DOMAINS)]
+
+
 def industry_violations(doc):
-    """[(code, line)]：块内数值 → E-INDUSTRY-NUMBER；块内数据机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。"""
+    """[(code, line)]：产业块数值 → E-INDUSTRY-NUMBER（白名单）；未开放机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。
+
+    数值放行：同块命中已开放机构（federalreserve.gov / 美联储理事会等）且未触 BEA 硬拦。
+    BEA 硬拦：BEA 名或 bea.gov + 数值一律拦，与中文句读、同段是否有 FRB 无关。
+    无已开放机构标记的数值一律拦（不再靠未开放机构名黑名单）。
+    """
     res = set()
     for a, b, tags in industry_blocks(doc):
+        block = doc[a:b]
+        block_bea = _ind_bea_hard(block)
+        block_open = _ind_open_agency(block)
         ex = _ind_exempt_spans(doc, a, b, tags)
-        masked = list(doc[a:b])
+        masked = list(block)
         for x0, x1 in ex:
             for p in range(x0, x1):
                 masked[p - a] = " "
         masked = "".join(masked)
         off = a
-        for raw_ln, m_ln in zip(doc[a:b].split("\n"), masked.split("\n")):
+        for raw_ln, m_ln in zip(block.split("\n"), masked.split("\n")):
             line_no = doc.count("\n", 0, off) + 1
-            if _has_number(m_ln):
-                res.add(("E-INDUSTRY-NUMBER", line_no))
-            if any(_host_in(h, INDUSTRY_AGENCY_DOMAINS) for h in _hosts(raw_ln)):
+            if _has_number(_ind_number_probe(m_ln)):
+                bea = block_bea or _ind_bea_hard(raw_ln)
+                opened = block_open or _ind_open_agency(raw_ln)
+                if bea or not opened:
+                    res.add(("E-INDUSTRY-NUMBER", line_no))
+            if _ind_unopened_agency_hosts(raw_ln):
                 res.add(("E-INDUSTRY-AGENCY-LINK", line_no))
             if _ind_markup_bad(raw_ln):
                 res.add(("E-INDUSTRY-MARKUP", line_no))
             off += len(raw_ln) + 1
     return sorted(res, key=lambda x: (x[1], x[0]))
+
 
 
 # —— E-FRED-CITED（Grok Bot 15:28 + 15:43）：fred.stlouisfed.org（含子域名）或大写 FRED 字样；只管新增或改动的行
@@ -1303,7 +1417,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                 body_err("E-REPLAY-001", i)
 
     # —— 整篇（跨行）层面
-    for code, ln in industry_violations(doc):          # 产业与经济数据小节（industry-* 短代码块）
+    # 产业检查用原文：norm/NFKC 会把 ․(U+2024)/． 收成 ASCII "."，若先规范化再查，句读切开无法区分假路径 x.//federalreserve.gov
+    for code, ln in industry_violations("\n".join(raw_lines)):
         err(code, ln)
     for ln in shortcode_malformed_lines(doc):          # 不能解析或没有结束符的短代码标签：从严报错
         err("E-SHORTCODE-MALFORMED", ln)
