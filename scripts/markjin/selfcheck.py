@@ -889,11 +889,11 @@ def _hosts(text):
     """URL 主机与裸域名分开取：先规范化；URL（scheme:// 或 //）只取 authority 里的主机（去掉用户信息、端口），路径、查询不算；
     URL 以外的文字按空白切词，词里含“/”时只看第一个“/”之前的部分，再按完整主机边界取裸域名。
 
-    中文句读后紧跟下一 URL 时，须在 。→. 之前切开（或对 norm 后的 .// 断开），否则漏 BEA/FRED。
+    中文句读后紧跟下一 URL 时，须在 。→. 之前切开，否则漏 BEA/FRED。
+    勿无条件把 .// 断开：假路径 x.//federalreserve.gov 不得误认开放域。
     """
     t = _HOST_CJK_URL_BREAK_RE.sub(r"\1 ", _unescape(text))
     t = _host_norm(t)
-    t = t.replace(".//", ". //")  # norm 后兜底：。已收成 . 时仍断开
     hosts = []
     def url_host(m):
         auth = m.group(1).rsplit("@", 1)[-1]

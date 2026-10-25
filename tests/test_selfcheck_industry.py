@@ -202,6 +202,16 @@ class IndustryNumber(unittest.TestCase):
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
 
 
+    def test_block_fake_dot_slashslash_frb_not_open(self):
+        # r6 MEDIUM：勿无条件 .//→. //，假路径不得误认开放域放行数值
+        doc = TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '见 https://example.org/x.//federalreserve.gov 读数 2.1 [1]。'
+            '{{< /industry-link >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+
+
     def test_open_agency_english_name_trailing_boundary(self):
         # r4 MEDIUM：Federal Reserve Boardwalk / Boardroom 勿误开放
         doc = TITLE + (
