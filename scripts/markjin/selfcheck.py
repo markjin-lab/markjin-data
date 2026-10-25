@@ -688,21 +688,35 @@ INDUSTRY_AGENCY_DOMAINS = (
 # 已对公开日报产业块开放数值与原始机构链接的域名（当前仅美联储理事会；BEA 书面授权未回，BLS/Census/EIA 条款待核）。
 INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov",)
 # 未对产业块开放数值的机构名称（与数值同块 → E-INDUSTRY-NUMBER）；域名另走 E-INDUSTRY-AGENCY-LINK。
-# 含 BEA/BLS/Census/EIA 及 INDUSTRY_AGENCY_DOMAINS 中其余未开放机构的常用中英文名；已开放的美联储理事会不在此列。
+# 与 INDUSTRY_AGENCY_DOMAINS 中未开放域名对应的常用中英文名；已开放的美联储理事会不在此列。
 _IND_CLOSED_AGENCY_NAME_RE = re.compile(
-    r"(?i)(?<![A-Za-z])(?:BEA|BLS|EIA|Census)(?![A-Za-z])|"
+    r"(?i)(?<![A-Za-z])(?:BEA|BLS|EIA|IEA|Census|IMF|OECD|BIS|ECB|ONS|BOJ|METI|"
+    r"SEC|FDIC|FHFA|CBO|FERC|USDA|NBS|PBOC|SAFE|CSRC|NDRC|MIIT|NEA)(?![A-Za-z])|"
     r"美国商务部经济分析局|美国经济分析局|美国劳工统计局|美国人口普查局|美国能源信息署|"
     r"美国财政部|美国劳工部|美国证券交易委员会|美国联邦存款保险公司|美国联邦住房金融局|"
-    r"美国联邦能源监管委员会|美国农业部|美国商务部|美国能源部|美国国会预算办公室|"
+    r"美国联邦能源监管委员会|美国农业部|美国商务部|美国能源部|美国国会预算办公室|白宫|"
+    r"圣路易斯联邦储备银行|圣路易斯联储|"
     r"国家统计局|中国人民银行|海关总署|国家发展和改革委员会|中国财政部|工业和信息化部|"
     r"国家外汇管理局|中国商务部|中国证券监督管理委员会|国家能源局|"
+    r"国际货币基金组织|世界银行|经济合作与发展组织|经合组织|国际清算银行|国际能源署|"
+    r"欧洲中央银行|欧盟统计局|英格兰银行|日本银行|日本总务省统计局|日本内阁府|"
+    r"经济产业省|日本经济产业省|"
     r"Bureau of Economic Analysis|Bureau of Labor Statistics|"
     r"Energy Information Administration|U\.?S\.? Census Bureau|Census Bureau|"
     r"Department of the Treasury|U\.?S\.? Treasury|Treasury Department|"
     r"Department of Labor|Securities and Exchange Commission|"
     r"Federal Deposit Insurance Corporation|Federal Housing Finance Agency|"
     r"Federal Energy Regulatory Commission|Department of Agriculture|"
-    r"Department of Commerce|Department of Energy|Congressional Budget Office"
+    r"Department of Commerce|Department of Energy|Congressional Budget Office|"
+    r"Federal Reserve Bank of St\.? Louis|St\.? Louis Fed|"
+    r"International Monetary Fund|World Bank|"
+    r"Organisation for Economic Co-?operation and Development|"
+    r"Organization for Economic Co-?operation and Development|"
+    r"Bank for International Settlements|International Energy Agency|"
+    r"European Central Bank|Eurostat|European Commission|"
+    r"Office for National Statistics|Bank of England|Bank of Japan|"
+    r"Ministry of Economy,? Trade and Industry|"
+    r"Statistics Bureau of Japan|Cabinet Office of Japan"
 )
 FRED_DOMAIN = "fred.stlouisfed.org"
 
@@ -914,17 +928,39 @@ def _ind_markup_bad(seg):
     return False
 
 
+# 名称匹配时 URL 终止于空白、围栏符或中文句读（勿先把 。收成 .，否则会吞掉「。BEA」）
+_IND_NAME_URL_RE = re.compile(
+    r"(?i)(?:[a-z][a-z0-9+.\-]*:)?"  # optional scheme
+    r"//[^\s<>\"\'）)\]。．、；！？｡]*"
+)
+_IND_NAME_TRAIL_PUNCT_RE = re.compile(r"^(.*?)([。．、；！？｡].*)?$", re.S)
+
+def _ind_text_for_agency_names(text):
+    """供机构名匹配：去掉 URL 与「裸域名[/路径]」，保留中文句读后的正文。"""
+    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(text)))
+    t = _ud.normalize("NFKC", t)
+    t = _IND_NAME_URL_RE.sub(lambda m: " " * len(m.group(0)), t)
+    parts = []
+    for tok in re.split(r"(\s+)", t):
+        if not tok or tok.isspace():
+            parts.append(tok)
+            continue
+        m = _IND_NAME_TRAIL_PUNCT_RE.match(tok)
+        head, trail = (m.group(1), m.group(2) or "") if m else (tok, "")
+        host_part = head.split("/", 1)[0]
+        # 仅对主机片段做点号规范化再判定是否像域名；整段 head（含 /路径）一并抹掉
+        if host_part and _HOST_RE.search(_host_norm(host_part)):
+            parts.append(" " * len(head) + trail)
+        else:
+            parts.append(tok)
+    return "".join(parts)
+
+
 def _ind_closed_agency_name(text):
     """块内出现尚未对公开日报开放数值的机构名称（未开放机构中英文名）。
-    先去掉 URL 主机与路径以及裸域名，避免 bea.gov.example 一类主机片段被当成 BEA 名。"""
-    # 与 _hosts 同一规范化路径抹掉 URL/裸域名，再做名称匹配
-    t = _host_norm(text)
-    def _blank_url(m):
-        return " " * len(m.group(0))
-    t = _URL_RE.sub(_blank_url, t)
-    for h in _hosts(text):
-        t = t.replace(h, " " * len(h))
-    return bool(_IND_CLOSED_AGENCY_NAME_RE.search(t))
+    按实际 URL 边界去除主机与路径，保留中文句读后的正文；裸域名连同其后路径一并去掉，
+    避免 bea.gov.example 主机片段或 /BEA/ 路径被当成 BEA 名。"""
+    return bool(_IND_CLOSED_AGENCY_NAME_RE.search(_ind_text_for_agency_names(text)))
 
 
 def _ind_unopened_agency_hosts(text):
