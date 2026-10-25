@@ -854,7 +854,8 @@ def _ind_number_probe(text):
     return _IND_SHORTCODE_FENCE_RE.sub(" ", text)
 
 
-_HOST_DOTS = str.maketrans({"。": ".", "．": ".", "｡": ".", "︒": ".", "\u2024": "."})
+_HOST_DOT_SRC = "。．｡︒\u2024"  # 经 _host_norm 收成 ASCII "."；句读切开须含这些字符
+_HOST_DOTS = str.maketrans({c: "." for c in _HOST_DOT_SRC})
 _HOST_RE = re.compile(r"(?<![a-z0-9\-.])((?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)(?![a-z0-9\-]|\.[a-z0-9])")
 # URL 在空白/围栏/中英文句读处断开，避免「url，url」把第二个主机吞进路径（漏 BEA/FRED）
 _URL_PUNCT_STOP = r"\s<>\"\'）)\]，,：:;。．、；！？｡"
@@ -879,8 +880,10 @@ def _host_norm(t):
 
 
 # 句读后紧跟 // 或 scheme://：在 _host_norm 把 。→. 之前切开，避免「/x。//bea」变成「/x.//bea」吞进路径
+# _HOST_DOTS 会收成 "." 的字符 + 其它句读：norm 前切开，避免 ︒/․ 漏 BEA/FRED；勿拆字面量 ASCII .//
+_HOST_CJK_URL_BREAK_CHARS = _HOST_DOT_SRC + "，：；、！？"
 _HOST_CJK_URL_BREAK_RE = re.compile(
-    r"([，。：；、！？｡．])(?=(?://|[a-z][a-z0-9+.\-]*://))",
+    r"([" + re.escape(_HOST_CJK_URL_BREAK_CHARS) + r"])(?=(?://|[a-z][a-z0-9+.\-]*://))",
     re.I,
 )
 
@@ -889,8 +892,8 @@ def _hosts(text):
     """URL 主机与裸域名分开取：先规范化；URL（scheme:// 或 //）只取 authority 里的主机（去掉用户信息、端口），路径、查询不算；
     URL 以外的文字按空白切词，词里含“/”时只看第一个“/”之前的部分，再按完整主机边界取裸域名。
 
-    中文句读后紧跟下一 URL 时，须在 。→. 之前切开，否则漏 BEA/FRED。
-    勿无条件把 .// 断开：假路径 x.//federalreserve.gov 不得误认开放域。
+    句读及 _HOST_DOT_SRC（_HOST_DOTS 会收成 "." 的字符，含 。．｡︒․）后紧跟下一 URL 时，须在 _host_norm/NFKC 之前切开；调用方须传未经 norm 的原文。
+    勿无条件把字面量 ASCII .// 断开：假路径 x.//federalreserve.gov 不得误认开放域。
     """
     t = _HOST_CJK_URL_BREAK_RE.sub(r"\1 ", _unescape(text))
     t = _host_norm(t)
@@ -1414,7 +1417,8 @@ def check_text(text, repo, date, card_type, internal_terms="load", link_checker=
                 body_err("E-REPLAY-001", i)
 
     # —— 整篇（跨行）层面
-    for code, ln in industry_violations(doc):          # 产业与经济数据小节（industry-* 短代码块）
+    # 产业检查用原文：norm/NFKC 会把 ․(U+2024)/． 收成 ASCII "."，若先规范化再查，句读切开无法区分假路径 x.//federalreserve.gov
+    for code, ln in industry_violations("\n".join(raw_lines)):
         err(code, ln)
     for ln in shortcode_malformed_lines(doc):          # 不能解析或没有结束符的短代码标签：从严报错
         err("E-SHORTCODE-MALFORMED", ln)

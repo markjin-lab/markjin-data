@@ -212,6 +212,31 @@ class IndustryNumber(unittest.TestCase):
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
 
+    def test_block_fe12_period_then_slashslash_bea(self):
+        # r7 MEDIUM：︒(U+FE12) 经 _HOST_DOTS 收成 .，须在 norm 前切开
+        doc = TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '见 https://www.federalreserve.gov/x︒//www.bea.gov/data 读数 2.1 [1]。'
+            '{{< /industry-link >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
+
+    def test_fred_fe12_slashslash_still_hit(self):
+        self.assertEqual(
+            codes(TITLE + "某说明见 https://example.org/x︒//fred.stlouisfed.org/series/X [1]。\n"),
+            {"E-FRED-CITED": 1},
+        )
+
+    def test_block_u2024_period_then_slashslash_bea(self):
+        # ․(U+2024) 同形
+        doc = TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '见 https://www.federalreserve.gov/x․//www.bea.gov/data 读数 2.1 [1]。'
+            '{{< /industry-link >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
+
+
     def test_open_agency_english_name_trailing_boundary(self):
         # r4 MEDIUM：Federal Reserve Boardwalk / Boardroom 勿误开放
         doc = TITLE + (
