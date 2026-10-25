@@ -183,6 +183,37 @@ class IndustryNumber(unittest.TestCase):
         )), {"E-INDUSTRY-NUMBER": 1})
 
 
+    def test_block_cjk_comma_glued_frb_then_bea_url(self):
+        # r4 MEDIUM：主机提取勿吞「URL，URL」；须 NUMBER + AGENCY-LINK
+        doc = TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '见 https://www.federalreserve.gov/x，https://www.bea.gov/data 读数 2.1 [1]。'
+            '{{< /industry-link >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
+
+    def test_open_agency_english_name_trailing_boundary(self):
+        # r4 MEDIUM：Federal Reserve Boardwalk / Boardroom 勿误开放
+        doc = TITLE + (
+            '{{< industry-data >}}\n'
+            '{{< industry-datum series="甲" publisher="Federal Reserve Boardwalk" value="2.1" cite="4" >}}\n'
+            '{{< /industry-data >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+        doc = TITLE + (
+            '{{< industry-data >}}\n'
+            '{{< industry-datum series="甲" publisher="Boardroom of Governors of the Federal Reserve System" value="2.1" cite="4" >}}\n'
+            '{{< /industry-data >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+        doc = TITLE + (
+            '{{< industry-data >}}\n'
+            '{{< industry-datum series="甲" publisher="Federal Reserve Board" value="2.1" cite="4" >}}\n'
+            '{{< /industry-data >}}\n'
+        )
+        self.assertEqual(codes(doc), {})
+
+
     def test_block_bls_number_statement(self):
         doc = TITLE + '{{< industry-link item="1" industry="energy" side="cost" >}}BLS 电价 16.5 对应成本 [1]。{{< /industry-link >}}\n'
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
@@ -257,6 +288,10 @@ class FredCited(unittest.TestCase):
 
     def test_pass_no_fred(self):
         self.assertEqual(codes(TITLE + "某模型的说明 [1]。\n"), {})
+    def test_fred_url_cjk_comma_still_hit(self):
+        # 与产业 URL 句读断开同类：勿因「fred…，https://…」漏 FRED
+        self.assertEqual(codes(TITLE + "某说明见 https://fred.stlouisfed.org/series/X，https://example.org/y [1]。\n"), {"E-FRED-CITED": 1})
+
 
 
 L = '{{< industry-link item="1" industry="ai" side="demand" >}}'

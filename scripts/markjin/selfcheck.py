@@ -693,12 +693,12 @@ INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov",)
 _IND_BEA_HARD_NAME_RE = re.compile(
     r"(?i)(?<![A-Za-z])BEA(?![A-Za-z])|"
     r"美国商务部经济分析局|美国经济分析局|"
-    r"Bureau of Economic Analysis"
+    r"Bureau of Economic Analysis(?![A-Za-z])"
 )
 _IND_OPEN_AGENCY_NAME_RE = re.compile(
     r"(?i)美联储理事会|美国联邦储备理事会|"
-    r"Federal Reserve Board|"
-    r"Board of Governors of the Federal Reserve System"
+    r"Federal Reserve Board(?![A-Za-z])|"
+    r"Board of Governors of the Federal Reserve System(?![A-Za-z])"
 )
 BEA_DOMAIN = "bea.gov"
 
@@ -856,7 +856,13 @@ def _ind_number_probe(text):
 
 _HOST_DOTS = str.maketrans({"。": ".", "．": ".", "｡": ".", "︒": ".", "\u2024": "."})
 _HOST_RE = re.compile(r"(?<![a-z0-9\-.])((?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)(?![a-z0-9\-]|\.[a-z0-9])")
-_URL_RE = re.compile(r"(?:[a-z][a-z0-9+.\-]*:)?//([^\s/?#\\<>\"'）)\]]*)([^\s<>\"'）)\]]*)")
+# URL 在空白/围栏/中英文句读处断开，避免「url，url」把第二个主机吞进路径（漏 BEA/FRED）
+_URL_PUNCT_STOP = r"\s<>\"\'）)\]，,：:;。．、；！？｡"
+_URL_RE = re.compile(
+    r"(?:[a-z][a-z0-9+.\-]*:)?"
+    r"//([^/?#\\" + _URL_PUNCT_STOP + r"]*)"
+    r"([^" + _URL_PUNCT_STOP + r"]*)"
+)
 
 
 def _host_norm(t):
@@ -893,7 +899,8 @@ def _host_in(host, domains):
     return any(host == d or host.endswith("." + d) for d in domains)
 
 
-_IND_URL_RAW_RE = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*:)?//[^\s<>\"'）)\]]*")
+_IND_URL_RAW_RE = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*:)?"
+                                   r"//[^" + _URL_PUNCT_STOP + r"]*")
 
 
 def _ind_markup_bad(seg):
