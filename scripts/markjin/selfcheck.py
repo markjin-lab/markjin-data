@@ -694,12 +694,12 @@ _IND_CLOSED_AGENCY_NAME_RE = re.compile(
     r"SEC|FDIC|FHFA|CBO|FERC|USDA|NBS|PBOC|SAFE|CSRC|NDRC|MIIT|NEA)(?![A-Za-z])|"
     r"美国商务部经济分析局|美国经济分析局|美国劳工统计局|美国人口普查局|美国能源信息署|"
     r"美国财政部|美国劳工部|美国证券交易委员会|美国联邦存款保险公司|美国联邦住房金融局|"
-    r"美国联邦能源监管委员会|美国农业部|美国商务部|美国能源部|美国国会预算办公室|白宫|"
+    r"美国联邦能源监管委员会|美国农业部|美国商务部|美国能源部|美国国会预算办公室|白宫|White House|"
     r"圣路易斯联邦储备银行|圣路易斯联储|"
     r"国家统计局|中国人民银行|海关总署|国家发展和改革委员会|中国财政部|工业和信息化部|"
     r"国家外汇管理局|中国商务部|中国证券监督管理委员会|国家能源局|"
     r"国际货币基金组织|世界银行|经济合作与发展组织|经合组织|国际清算银行|国际能源署|"
-    r"欧洲中央银行|欧盟统计局|英格兰银行|日本银行|日本总务省统计局|日本内阁府|"
+    r"欧洲中央银行|欧盟委员会|欧盟统计局|英格兰银行|日本银行|日本总务省统计局|日本内阁府|"
     r"经济产业省|日本经济产业省|"
     r"Bureau of Economic Analysis|Bureau of Labor Statistics|"
     r"Energy Information Administration|U\.?S\.? Census Bureau|Census Bureau|"
@@ -928,17 +928,22 @@ def _ind_markup_bad(seg):
     return False
 
 
-# 名称匹配时 URL 终止于空白、围栏符或中文句读（勿先把 。收成 .，否则会吞掉「。BEA」）
+# 名称匹配时 URL 终止于空白、围栏符、中英文句读（含 ，：； 与 NFKC 后的 ,:;）。
+# 必须在 NFKC 之前切 URL：NFKC 会把 ，→, ：→: ；→;，若先规范化再切，会吞掉「，BEA」。
+_IND_NAME_URL_STOP = r"\s<>\"\'）)\]，,：:;。．、；！？｡"
 _IND_NAME_URL_RE = re.compile(
     r"(?i)(?:[a-z][a-z0-9+.\-]*:)?"  # optional scheme
-    r"//[^\s<>\"\'）)\]。．、；！？｡]*"
+    r"//[^" + _IND_NAME_URL_STOP + r"]*"
 )
-_IND_NAME_TRAIL_PUNCT_RE = re.compile(r"^(.*?)([。．、；！？｡].*)?$", re.S)
+_IND_NAME_TRAIL_PUNCT_RE = re.compile(r"^(.*?)([，,：:;。．、；！？｡].*)?$", re.S)
+
 
 def _ind_text_for_agency_names(text):
-    """供机构名匹配：去掉 URL 与「裸域名[/路径]」，保留中文句读后的正文。"""
-    t = _gl_strip_marks(_ud.normalize("NFKD", _unescape(text)))
-    t = _ud.normalize("NFKC", t)
+    """供机构名匹配：去掉 URL 与「裸域名[/路径]」，保留句读后的正文。
+
+    先按原始中英文句读切掉 URL，再 NFKC，避免 ，：； 被收成 ASCII 后仍被 URL 吞进路径。
+    """
+    t = _gl_strip_marks(_unescape(text))
     t = _IND_NAME_URL_RE.sub(lambda m: " " * len(m.group(0)), t)
     parts = []
     for tok in re.split(r"(\s+)", t):
@@ -953,12 +958,13 @@ def _ind_text_for_agency_names(text):
             parts.append(" " * len(head) + trail)
         else:
             parts.append(tok)
-    return "".join(parts)
+    # 名称匹配前再 NFKC（句读后的 BEA 等已保留）
+    return _ud.normalize("NFKC", _ud.normalize("NFKD", "".join(parts)))
 
 
 def _ind_closed_agency_name(text):
     """块内出现尚未对公开日报开放数值的机构名称（未开放机构中英文名）。
-    按实际 URL 边界去除主机与路径，保留中文句读后的正文；裸域名连同其后路径一并去掉，
+    按实际 URL 边界去除主机与路径，保留中英文句读后的正文；裸域名连同其后路径一并去掉，
     避免 bea.gov.example 主机片段或 /BEA/ 路径被当成 BEA 名。"""
     return bool(_IND_CLOSED_AGENCY_NAME_RE.search(_ind_text_for_agency_names(text)))
 

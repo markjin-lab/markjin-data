@@ -107,6 +107,19 @@ class IndustryNumber(unittest.TestCase):
         )
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
 
+    def test_block_frb_url_cjk_clause_punct_then_bea_number(self):
+        # r3 MEDIUM：NFKC 前按 ，：； 切 URL；覆盖全角与（规范化后）半角
+        for punct in ("，", "：", "；", ",", ":", ";"):
+            with self.subTest(punct=punct):
+                doc = TITLE + (
+                    '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+                    '可对照 https://www.federalreserve.gov/releases/g17/current/default.htm'
+                    + punct +
+                    'BEA 读数 2.1 [1]。'
+                    '{{< /industry-link >}}\n'
+                )
+                self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1}, punct)
+
     def test_block_imf_publisher_without_domain(self):
         # r2 MEDIUM：未开放机构名相对 INDUSTRY_AGENCY_DOMAINS 须覆盖 IMF 等；无域名数值不得放行
         doc = TITLE + (
@@ -124,6 +137,21 @@ class IndustryNumber(unittest.TestCase):
         doc = TITLE + (
             '{{< industry-data >}}\n'
             '{{< industry-datum series="甲" publisher="World Bank" value="2.1" cite="4" >}}\n'
+            '{{< /industry-data >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+
+    def test_block_white_house_and_eu_commission_publisher(self):
+        # r3 MEDIUM：补 White House / 欧盟委员会 等未开放域名常用名
+        doc = TITLE + (
+            '{{< industry-data >}}\n'
+            '{{< industry-datum series="甲" publisher="White House" value="2.1" cite="4" >}}\n'
+            '{{< /industry-data >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+        doc = TITLE + (
+            '{{< industry-data >}}\n'
+            '{{< industry-datum series="甲" publisher="欧盟委员会" value="2.1" cite="4" >}}\n'
             '{{< /industry-data >}}\n'
         )
         self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
