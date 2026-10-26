@@ -78,14 +78,31 @@ class FrameMatch(unittest.TestCase):
         text = "宏观中枢可以作为股市分析的上位状态机"
         self.assertGreaterEqual(CS.frame_hit_count(text, tagged), 1)
 
-    def test_rewrite_not_auto_pass(self):
-        # 改写后不含完整子串：不得直接判 pass（fail 或 pending_human）
+    def test_rewrite_without_substring_is_pass(self):
+        # 定夺②：不做同义/改写启发式；无子串命中 → pass（不猜测 fail）
         rewrite = "把宏观中枢当作股市分析的上层状态机来用。"
         hits, pending = CS.frame_match(rewrite, self.entries)
+        self.assertEqual(hits, 0)
+        self.assertFalse(pending)
         item = CS.score_item_frame(rewrite, self.entries)
-        self.assertNotEqual(item["status"], "pass",
-                            msg=f"rewrite must not auto-pass; hits={hits} pending={pending}")
-        self.assertIn(item["status"], ("fail", "pending_human"))
+        self.assertEqual(item["status"], "pass")
+        self.assertEqual(item["codes"], [])
+
+    def test_substring_hit_fails(self):
+        # 纯子串命中 → fail + E-FRAME-CONJECTURE
+        text = "宏观中枢可以作为股市分析的上位状态机"
+        item = CS.score_item_frame(text, self.entries)
+        self.assertEqual(item["status"], "fail")
+        self.assertEqual(item["codes"], ["E-FRAME-CONJECTURE"])
+        self.assertGreaterEqual(item["hit_count"], 1)
+
+    def test_pending_human_when_uncertain(self):
+        # 不确定是否改写泄露 → pending_human（不经改写启发式；直接测分支）
+        with mock.patch.object(CS, "frame_match", return_value=(0, True)):
+            item = CS.score_item_frame("任意正文", self.entries)
+        self.assertEqual(item["status"], "pending_human")
+        self.assertEqual(item["codes"], [])
+        self.assertEqual(item["hit_count"], 0)
 
     def test_no_hit(self):
         self.assertEqual(CS.frame_hit_count("今日 arXiv 动态摘要。", self.entries), 0)
@@ -214,6 +231,34 @@ class ScaleMapping(unittest.TestCase):
         self.assertNotIn(str(self.flist.parent), blob)
         self.assertIn("E-FRAME-CONJECTURE", pub["codes"])
         self.assertGreaterEqual(pub["hit_count"], 1)
+
+    def test_public_codes_whitelist_only(self):
+        # 定夺②：公开 codes 只含白名单（含 E-FRAME-CONJECTURE）；不透出 R-* / 投资码
+        mixed = {
+            "date": DATE,
+            "summary": {
+                "date": DATE,
+                "pass_count": 2,
+                "fail_count": 2,
+                "pending_human_count": 1,
+                "item_count": 5,
+                "pass_ratio": 0.4,
+                "codes": [
+                    "E-FRAME-CONJECTURE",
+                    "E-BLOCK-INVEST",
+                    "R-QUOTE-UNVERIFIED",
+                    "R-INFERENCE",
+                    "E-REPLAY-001",
+                    "not-a-code",
+                ],
+                "hit_count": 1,
+            },
+        }
+        pub = CS.public_score(mixed)
+        self.assertEqual(pub["codes"], ["E-FRAME-CONJECTURE"])
+        for banned in ("E-BLOCK-INVEST", "R-QUOTE-UNVERIFIED", "R-INFERENCE", "E-REPLAY-001", "not-a-code"):
+            self.assertNotIn(banned, pub["codes"])
+        self.assertTrue(set(pub["codes"]).issubset(CS.PUBLIC_CODES))
 
     def test_cli_has_no_frame_list_override(self):
         cli = (Path(__file__).resolve().parents[1] / "scripts" / "card-scale.py").read_text(encoding="utf-8")

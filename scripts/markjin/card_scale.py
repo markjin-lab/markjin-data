@@ -6,8 +6,10 @@
 (1)(3)(4) 映射复用 selfcheck 结果中的错误码 / 审查原因码。
 (2) 机器能判的用直引/回放；未逐条核验的结构化复述与自由转述标 pending_human，不硬编。
 (5) 只读本机内部目录下的 frame-conjecture.md（路径解析对齐 internal.py）；
-    清单与卡片双侧去标签后再匹配；子串/强改写信号 → fail；弱信号 → pending_human；
-    清单缺失 fail-closed。公开持久化只含错误码、计数、比率、日期（无命中原文、无清单路径、
+    清单与卡片双侧去标签后再做子串匹配（不做同义/改写启发式）：
+    能确定子串命中 → fail（E-FRAME-CONJECTURE）；不确定是否改写泄露 → pending_human；
+    明确无框架内容/无命中 → pass。清单缺失 fail-closed。
+    公开持久化只含白名单错误码、计数、比率、日期（无命中原文、无清单路径、
     无 card_type / 逐项 status / overall_pass / list_available）。
 """
 from __future__ import annotations
@@ -29,6 +31,10 @@ ITEM_KEYS = (
 )
 STATUSES = ("pass", "fail", "pending_human")
 
+# 公开 JSON 的 codes 白名单（宁缺毋滥；量表内部仍可用 selfcheck 码做项判定）。
+PUBLIC_CODES = frozenset({"E-FRAME-CONJECTURE"})
+
+
 # 匹配时只剥标签式写法（括号/引号/「标为」），不剥嵌入专名中的「假说」等字
 _TAG_RE = re.compile(
     r"标为\s*[「『]?(?:猜想|待王总定|假说)[」』]?"
@@ -38,12 +44,6 @@ _TAG_RE = re.compile(
 
 _SEP = re.compile(r"^:?-{3,}:?$")
 _HEADERS = ("id", "phrase", "kind", "source_note")
-
-# 第(5)项改写启发式：bigram 覆盖率。高 → fail（改写仍不达标）；中 → pending_human。
-_REWRITE_FAIL = 0.80
-_REWRITE_PENDING = 0.50
-_REWRITE_MIN_PHRASE = 4
-
 
 def frame_list_path() -> Path:
     """对照清单路径：<internal_dir>/frame-conjecture.md（不把绝对路径写入公开输出）。"""
@@ -127,23 +127,11 @@ def strip_frame_tags(text: str) -> str:
     return _TAG_RE.sub("", text)
 
 
-def _bigram_coverage(hay: str, needle: str) -> float:
-    """needle 的字符 bigram 有多少比例出现在 hay 中（无序）。空/过短单独处理。"""
-    if not needle:
-        return 0.0
-    if len(needle) == 1:
-        return 1.0 if needle in hay else 0.0
-    grams = [needle[i:i + 2] for i in range(len(needle) - 1)]
-    if not grams:
-        return 0.0
-    return sum(1 for g in grams if g in hay) / len(grams)
-
-
 def frame_match(text: str, entries):
-    """对清单与卡片双侧去标签后匹配。
+    """对清单与卡片双侧去标签后做子串匹配（不做同义/改写启发式）。
 
-    返回 (hit_count, pending)：hit_count 为确切/强改写命中数；pending 表示存在
-    无法可靠机判的弱改写信号（应标 pending_human，不得直接 pass）。
+    返回 (hit_count, pending)：hit_count 为确定子串命中数；pending 预留给
+    「不确定是否改写泄露」的人工复核路径（本函数不做改写猜测，故恒为 False）。
     不回显命中原文。
     """
     if not entries:
@@ -152,7 +140,6 @@ def frame_match(text: str, entries):
     card_stripped = compact(strip_frame_tags(text))
     probes = [card_raw, card_stripped]
     hits = 0
-    pending = False
     for ph in (e["phrase"] for e in entries):
         variants = [compact(ph), compact(strip_frame_tags(ph))]
         variants = [v for v in variants if v]
@@ -160,23 +147,11 @@ def frame_match(text: str, entries):
             continue
         if any(v in c for v in variants for c in probes):
             hits += 1
-            continue
-        # 改写启发式：双侧去标签后的 phrase 相对卡片的 bigram 覆盖
-        best = 0.0
-        for v in variants:
-            if len(v) < _REWRITE_MIN_PHRASE:
-                continue
-            for c in probes:
-                best = max(best, _bigram_coverage(c, v))
-        if best >= _REWRITE_FAIL:
-            hits += 1
-        elif best >= _REWRITE_PENDING:
-            pending = True
-    return hits, pending
+    return hits, False
 
 
 def frame_hit_count(text: str, entries) -> int:
-    """返回确切/强改写命中条目数。不回显命中原文。"""
+    """返回确定子串命中条目数。不回显命中原文。"""
     n, _ = frame_match(text, entries)
     return n
 
@@ -243,8 +218,8 @@ def score_item_investment(sc) -> dict:
 
 def score_item_frame(text: str, entries) -> dict:
     """(5) 不含框架猜想/待王总定。entries is None → fail-closed（清单缺失）。
-    双侧去标签后子串/强改写 → fail；弱改写信号 → pending_human；无信号 → pass。
-    本机审查侧可含 list_available/hit_count；公开持久化见 public_score。"""
+    双侧去标签后仅子串：命中 → fail；pending 信号 → pending_human；无命中 → pass。
+    不做同义/改写启发式。本机审查侧可含 list_available/hit_count；公开见 public_score。"""
     if entries is None:
         return _item("fail", [], list_available=False, hit_count=0)
     n, pending = frame_match(text if isinstance(text, str) else "", entries)
@@ -302,12 +277,17 @@ def score_card(text: str, selfcheck_result: dict, *, frame_entries=None) -> dict
 
 
 def public_score(result: dict) -> dict:
-    """公开持久化白名单：错误码 / 计数 / 比率 / 日期。不含逐项 status、overall_pass、
-    card_type、list_available、命中原文或清单路径。"""
+    """公开持久化白名单：白名单错误码 / 计数 / 比率 / 日期。不含逐项 status、overall_pass、
+    card_type、list_available、命中原文或清单路径。codes 只含 PUBLIC_CODES（至少
+    E-FRAME-CONJECTURE）；R-* / E-BLOCK-INVEST 等不得透出。"""
     s = (result or {}).get("summary") or {}
     date = s.get("date")
     if date is None:
         date = (result or {}).get("date")
+    codes = []
+    for c in (s.get("codes") or []):
+        if isinstance(c, str) and c in PUBLIC_CODES and c not in codes:
+            codes.append(c)
     return {
         "date": date if valid_date(date) else None,
         "pass_count": int(s.get("pass_count") or 0),
@@ -315,7 +295,7 @@ def public_score(result: dict) -> dict:
         "pending_human_count": int(s.get("pending_human_count") or 0),
         "item_count": int(s.get("item_count") or len(ITEM_KEYS)),
         "pass_ratio": float(s.get("pass_ratio") or 0.0),
-        "codes": [c for c in (s.get("codes") or []) if isinstance(c, str)],
+        "codes": codes,
         "hit_count": int(s.get("hit_count") or 0),
     }
 

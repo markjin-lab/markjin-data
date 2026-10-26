@@ -6,8 +6,8 @@
 量表只统计，不改变发布/拒发；本脚本不调用 route。
 
 第(5)项只读本机内部目录下的 frame-conjecture.md（$MARKJIN_INTERNAL_DIR 或 <repo>/../markjin-internal）；
-无生产路径清单覆盖参数；测试请 mock internal_dir()。
---json 输出公开白名单字段（错误码/计数/比率/日期）；人读模式可显示本机审查侧明细。
+双侧去标签后仅子串匹配（无同义/改写启发式）；无生产路径清单覆盖参数；测试请 mock internal_dir()。
+--json 输出公开白名单字段（白名单错误码/计数/比率/日期）；人读模式可显示本机审查侧明细。
 """
 import argparse, json, sys
 from pathlib import Path
