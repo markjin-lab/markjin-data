@@ -4,10 +4,11 @@
 不得改变发布或拒发；本模块不得被 route 导入或调用。
 
 (1)(3)(4) 映射复用 selfcheck 结果中的错误码 / 审查原因码。
-(2) 机器能判的用直引/回放；判不了的标 pending_human，不硬编。
+(2) 机器能判的用直引/回放；未逐条核验的结构化复述与自由转述标 pending_human，不硬编。
 (5) 只读本机内部目录下的 frame-conjecture.md（路径解析对齐 internal.py）；
-    清单缺失 fail-closed；公开输出只含 E-FRAME-CONJECTURE、计数、比率、日期，
-    不得含命中原文或清单路径。
+    清单与卡片双侧去标签后再匹配；子串/强改写信号 → fail；弱信号 → pending_human；
+    清单缺失 fail-closed。公开持久化只含错误码、计数、比率、日期（无命中原文、无清单路径、
+    无 card_type / 逐项 status / overall_pass / list_available）。
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import re
 from pathlib import Path
 
 from . import internal
-from .selfcheck import check_file, check_text, valid_date, CARD_TYPES
+from .selfcheck import check_file, check_text, valid_date
 from .textnorm import compact, norm
 
 FRAME_LIST_NAME = "frame-conjecture.md"
@@ -37,6 +38,11 @@ _TAG_RE = re.compile(
 
 _SEP = re.compile(r"^:?-{3,}:?$")
 _HEADERS = ("id", "phrase", "kind", "source_note")
+
+# 第(5)项改写启发式：bigram 覆盖率。高 → fail（改写仍不达标）；中 → pending_human。
+_REWRITE_FAIL = 0.80
+_REWRITE_PENDING = 0.50
+_REWRITE_MIN_PHRASE = 4
 
 
 def frame_list_path() -> Path:
@@ -102,12 +108,13 @@ def parse_frame_list(text: str):
     return None
 
 
-def load_frame_list(path: Path | None = None):
+def load_frame_list():
     """读取本机清单。缺失/不可读/不合规 → None（调用方 fail-closed）。
 
-    path 仅供测试注入临时 fixture；生产调用不传，用 frame_list_path()。
+    路径固定为 frame_list_path()（对齐 internal.internal_dir()）。测试注入请 mock
+    internal.internal_dir() / MARKJIN_INTERNAL_DIR，勿给生产 CLI 开任意路径旁路。
     """
-    p = Path(path) if path is not None else frame_list_path()
+    p = frame_list_path()
     try:
         text = p.read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError, TypeError, ValueError):
@@ -120,19 +127,57 @@ def strip_frame_tags(text: str) -> str:
     return _TAG_RE.sub("", text)
 
 
-def frame_hit_count(text: str, entries) -> int:
-    """返回命中条目数。不回显命中原文。entries 为 parse_frame_list 的结果。
+def _bigram_coverage(hay: str, needle: str) -> float:
+    """needle 的字符 bigram 有多少比例出现在 hay 中（无序）。空/过短单独处理。"""
+    if not needle:
+        return 0.0
+    if len(needle) == 1:
+        return 1.0 if needle in hay else 0.0
+    grams = [needle[i:i + 2] for i in range(len(needle) - 1)]
+    if not grams:
+        return 0.0
+    return sum(1 for g in grams if g in hay) / len(grams)
 
-    对原文与去标签文本都做 compact 子串匹配（去标签/改写空白后仍算命中）。
+
+def frame_match(text: str, entries):
+    """对清单与卡片双侧去标签后匹配。
+
+    返回 (hit_count, pending)：hit_count 为确切/强改写命中数；pending 表示存在
+    无法可靠机判的弱改写信号（应标 pending_human，不得直接 pass）。
+    不回显命中原文。
     """
     if not entries:
-        return 0
-    probes = [compact(text), compact(strip_frame_tags(text))]
-    n = 0
+        return 0, False
+    card_raw = compact(text)
+    card_stripped = compact(strip_frame_tags(text))
+    probes = [card_raw, card_stripped]
+    hits = 0
+    pending = False
     for ph in (e["phrase"] for e in entries):
-        cp = compact(ph)
-        if cp and any(cp in c for c in probes):
-            n += 1
+        variants = [compact(ph), compact(strip_frame_tags(ph))]
+        variants = [v for v in variants if v]
+        if not variants:
+            continue
+        if any(v in c for v in variants for c in probes):
+            hits += 1
+            continue
+        # 改写启发式：双侧去标签后的 phrase 相对卡片的 bigram 覆盖
+        best = 0.0
+        for v in variants:
+            if len(v) < _REWRITE_MIN_PHRASE:
+                continue
+            for c in probes:
+                best = max(best, _bigram_coverage(c, v))
+        if best >= _REWRITE_FAIL:
+            hits += 1
+        elif best >= _REWRITE_PENDING:
+            pending = True
+    return hits, pending
+
+
+def frame_hit_count(text: str, entries) -> int:
+    """返回确切/强改写命中条目数。不回显命中原文。"""
+    n, _ = frame_match(text, entries)
     return n
 
 
@@ -157,8 +202,8 @@ def score_item_evidence(sc) -> dict:
 
 def score_item_faithful(sc) -> dict:
     """(2) 忠实原文：直引核对失败或数字未在存档出现 → fail；
-    自由转述/非结构化复述机器无法确认是否夹带原文之外内容 → pending_human；
-    仅直引/结构化且机检通过 → pass。不把 structure_other 当作待人工（结构化断言也会置该标记）。"""
+    自由转述 / 非结构化 / 未逐条核验的结构化复述（structure_other）→ pending_human；
+    仅白名单直引等已机检通过、无可疑复述 → pass。"""
     codes = _codes_of(sc)
     flags = sc.get("flags") or {}
     hard = []
@@ -173,7 +218,7 @@ def score_item_faithful(sc) -> dict:
             uniq.append(c)
     if uniq:
         return _item("fail", uniq)
-    if flags.get("free_text") or flags.get("unstructured"):
+    if flags.get("free_text") or flags.get("unstructured") or flags.get("structure_other"):
         return _item("pending_human", [])
     return _item("pass", [])
 
@@ -198,25 +243,27 @@ def score_item_investment(sc) -> dict:
 
 def score_item_frame(text: str, entries) -> dict:
     """(5) 不含框架猜想/待王总定。entries is None → fail-closed（清单缺失）。
-    公开侧只返回错误码与 hit_count，不回显命中原文。"""
+    双侧去标签后子串/强改写 → fail；弱改写信号 → pending_human；无信号 → pass。
+    本机审查侧可含 list_available/hit_count；公开持久化见 public_score。"""
     if entries is None:
         return _item("fail", [], list_available=False, hit_count=0)
-    n = frame_hit_count(text, entries)
+    n, pending = frame_match(text if isinstance(text, str) else "", entries)
     if n > 0:
         return _item("fail", ["E-FRAME-CONJECTURE"], list_available=True, hit_count=n)
+    if pending:
+        return _item("pending_human", [], list_available=True, hit_count=0)
     return _item("pass", [], list_available=True, hit_count=0)
 
 
-def score_card(text: str, selfcheck_result: dict, *, frame_entries=None, frame_list_path_override=None) -> dict:
-    """对一篇卡片做五项评分。
+def score_card(text: str, selfcheck_result: dict, *, frame_entries=None) -> dict:
+    """对一篇卡片做五项评分（本机审查侧完整结果）。
 
-    selfcheck_result：已有的 selfcheck.check_text / check_file 结果（须含 error_codes/flags/counts/date/card_type）。
-    frame_entries：测试可直接注入解析后的清单；默认从本机清单加载。
-    frame_list_path_override：测试用临时清单路径。
-    返回公开白名单字段：五项 status、codes、计数/比率/日期；不含命中原文与清单绝对路径。
+    selfcheck_result：已有的 selfcheck.check_text / check_file 结果。
+    frame_entries：测试可直接注入解析后的清单；默认从本机清单加载（internal_dir）。
+    公开持久化请用 public_score()，勿直接把本结果写入公开仓。
     """
     if frame_entries is None:
-        frame_entries = load_frame_list(frame_list_path_override)
+        frame_entries = load_frame_list()
 
     items = {
         "evidence_replayable": score_item_evidence(selfcheck_result),
@@ -230,17 +277,15 @@ def score_card(text: str, selfcheck_result: dict, *, frame_entries=None, frame_l
     fail_n = sum(1 for s in statuses if s == "fail")
     pending_n = sum(1 for s in statuses if s == "pending_human")
     date = selfcheck_result.get("date")
-    card_type = selfcheck_result.get("card_type")
     overall = all(s == "pass" for s in statuses)
-    # 公开摘要：只含计数、比率、日期与错误码聚合
     public_codes = []
     for k in ITEM_KEYS:
         for c in items[k].get("codes") or []:
             if c not in public_codes:
                 public_codes.append(c)
+    frame_hits = int(items["no_frame_conjecture"].get("hit_count") or 0)
     return {
         "date": date if valid_date(date) else None,
-        "card_type": card_type if card_type in CARD_TYPES else None,
         "items": items,
         "overall_pass": overall,
         "summary": {
@@ -251,20 +296,40 @@ def score_card(text: str, selfcheck_result: dict, *, frame_entries=None, frame_l
             "pass_ratio": round(pass_n / len(ITEM_KEYS), 4),
             "date": date if valid_date(date) else None,
             "codes": public_codes,
+            "hit_count": frame_hits,
         },
     }
 
 
-def score_file(path, repo, date, card_type, *, link_checker=None, frame_list_path_override=None, **kw) -> dict:
+def public_score(result: dict) -> dict:
+    """公开持久化白名单：错误码 / 计数 / 比率 / 日期。不含逐项 status、overall_pass、
+    card_type、list_available、命中原文或清单路径。"""
+    s = (result or {}).get("summary") or {}
+    date = s.get("date")
+    if date is None:
+        date = (result or {}).get("date")
+    return {
+        "date": date if valid_date(date) else None,
+        "pass_count": int(s.get("pass_count") or 0),
+        "fail_count": int(s.get("fail_count") or 0),
+        "pending_human_count": int(s.get("pending_human_count") or 0),
+        "item_count": int(s.get("item_count") or len(ITEM_KEYS)),
+        "pass_ratio": float(s.get("pass_ratio") or 0.0),
+        "codes": [c for c in (s.get("codes") or []) if isinstance(c, str)],
+        "hit_count": int(s.get("hit_count") or 0),
+    }
+
+
+def score_file(path, repo, date, card_type, *, link_checker=None, frame_entries=None, **kw) -> dict:
     """读稿件 → selfcheck → 量表评分。不调用 route，也不被 route 调用。"""
     try:
         text = Path(path).read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError, TypeError, ValueError):
         text = ""
     sc = check_file(path, repo, date, card_type, link_checker=link_checker, **kw)
-    return score_card(text, sc, frame_list_path_override=frame_list_path_override)
+    return score_card(text, sc, frame_entries=frame_entries)
 
 
-def score_text(text, repo, date, card_type, *, link_checker=None, frame_list_path_override=None, **kw) -> dict:
+def score_text(text, repo, date, card_type, *, link_checker=None, frame_entries=None, **kw) -> dict:
     sc = check_text(text, repo, date, card_type, link_checker=link_checker, **kw)
-    return score_card(text, sc, frame_list_path_override=frame_list_path_override)
+    return score_card(text, sc, frame_entries=frame_entries)

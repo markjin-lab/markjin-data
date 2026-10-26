@@ -33,6 +33,11 @@ def _write_frame_list(idir: Path, body: str = FIXTURE_LIST) -> Path:
     return p
 
 
+def _with_internal(idir: Path):
+    """测试注入清单：mock internal_dir()，不经生产 CLI 旁路。"""
+    return mock.patch("markjin.internal.internal_dir", return_value=Path(idir))
+
+
 class ParseFrameList(unittest.TestCase):
     def test_ok(self):
         rows = CS.parse_frame_list(FIXTURE_LIST)
@@ -48,7 +53,8 @@ class ParseFrameList(unittest.TestCase):
 
     def test_load_missing_fail_closed(self):
         d = Path(tempfile.mkdtemp())
-        self.assertIsNone(CS.load_frame_list(d / "nope.md"))
+        with _with_internal(d):
+            self.assertIsNone(CS.load_frame_list())
 
 
 class FrameMatch(unittest.TestCase):
@@ -56,14 +62,35 @@ class FrameMatch(unittest.TestCase):
         self.entries = CS.parse_frame_list(FIXTURE_LIST)
 
     def test_hit_and_tag_strip(self):
-        # 去标签仍算命中
+        # 卡片侧去标签仍算命中
         t = "本文认为宏观中枢可以作为股市分析的上位状态机（猜想）。"
         self.assertGreaterEqual(CS.frame_hit_count(t, self.entries), 1)
         t2 = "讨论认知训练假说的公开表述。"
         self.assertGreaterEqual(CS.frame_hit_count(t2, self.entries), 1)
 
+    def test_bilateral_tag_strip(self):
+        # 清单 phrase 本身带标签时，双侧去标签后仍应命中
+        tagged = CS.parse_frame_list(
+            "| id | phrase | kind | source_note |\n"
+            "|---|---|---|---|\n"
+            "| FC-X | 宏观中枢可以作为股市分析的上位状态机（猜想） | 猜想 | t |\n"
+        )
+        text = "宏观中枢可以作为股市分析的上位状态机"
+        self.assertGreaterEqual(CS.frame_hit_count(text, tagged), 1)
+
+    def test_rewrite_not_auto_pass(self):
+        # 改写后不含完整子串：不得直接判 pass（fail 或 pending_human）
+        rewrite = "把宏观中枢当作股市分析的上层状态机来用。"
+        hits, pending = CS.frame_match(rewrite, self.entries)
+        item = CS.score_item_frame(rewrite, self.entries)
+        self.assertNotEqual(item["status"], "pass",
+                            msg=f"rewrite must not auto-pass; hits={hits} pending={pending}")
+        self.assertIn(item["status"], ("fail", "pending_human"))
+
     def test_no_hit(self):
         self.assertEqual(CS.frame_hit_count("今日 arXiv 动态摘要。", self.entries), 0)
+        item = CS.score_item_frame("今日 arXiv 动态摘要。", self.entries)
+        self.assertEqual(item["status"], "pass")
 
     def test_public_output_no_phrase(self):
         text = "宏观中枢可以作为股市分析的上位状态机"
@@ -78,7 +105,8 @@ class FrameMatch(unittest.TestCase):
 class ScaleMapping(unittest.TestCase):
     def setUp(self):
         self.repo = make_repo()
-        self.flist = _write_frame_list(Path(tempfile.mkdtemp()) / "markjin-internal")
+        self.idir = Path(tempfile.mkdtemp()) / "markjin-internal"
+        self.flist = _write_frame_list(self.idir)
 
     def _sc(self, body, card_type="daily"):
         return check_text(
@@ -95,13 +123,12 @@ class ScaleMapping(unittest.TestCase):
 
     def test_evidence_pass_on_clean_quote(self):
         body = "\n".join([
-            "# 动态",
+            f"# 日报 {DATE}",
             quote_line(),
             source_line(),
             "",
         ])
         sc = self._sc(body)
-        # 可能仍有其他码，但证据项只看 E-REPLAY-*
         replay = [c for c in sc["error_codes"] if c.startswith("E-REPLAY-")]
         item = CS.score_item_evidence(sc)
         self.assertEqual(item["status"], "fail" if replay else "pass")
@@ -133,6 +160,11 @@ class ScaleMapping(unittest.TestCase):
         sc = {"error_codes": [], "flags": {"free_text": True}}
         self.assertEqual(CS.score_item_faithful(sc)["status"], "pending_human")
 
+    def test_faithful_pending_on_structure_other(self):
+        # 未逐条核验的结构化复述不得机判 pass
+        sc = {"error_codes": ["R-STRUCTURE"], "flags": {"structure_other": True}}
+        self.assertEqual(CS.score_item_faithful(sc)["status"], "pending_human")
+
     def test_faithful_pass_clean(self):
         sc = {"error_codes": [], "flags": {}}
         self.assertEqual(CS.score_item_faithful(sc)["status"], "pass")
@@ -144,9 +176,10 @@ class ScaleMapping(unittest.TestCase):
         self.assertEqual(item["codes"], [])
 
     def test_overall_and_public_summary(self):
-        body = "\n".join(["# 动态", quote_line(), source_line(), ""])
+        body = "\n".join([f"# 日报 {DATE}", quote_line(), source_line(), ""])
         sc = self._sc(body)
-        r = CS.score_card(body, sc, frame_list_path_override=self.flist)
+        with _with_internal(self.idir):
+            r = CS.score_card(body, sc)
         self.assertIn("overall_pass", r)
         self.assertEqual(set(r["items"]), set(CS.ITEM_KEYS))
         for it in r["items"].values():
@@ -154,20 +187,38 @@ class ScaleMapping(unittest.TestCase):
         s = r["summary"]
         self.assertEqual(s["item_count"], 5)
         self.assertEqual(s["pass_count"] + s["fail_count"] + s["pending_human_count"], 5)
-        blob = json.dumps(r, ensure_ascii=False)
-        # 不得含清单绝对路径或 fixture 命中原文（本样本无命中；另测命中样本）
+        pub = CS.public_score(r)
+        allowed = {
+            "date", "pass_count", "fail_count", "pending_human_count",
+            "item_count", "pass_ratio", "codes", "hit_count",
+        }
+        self.assertEqual(set(pub), allowed)
+        self.assertNotIn("overall_pass", pub)
+        self.assertNotIn("card_type", pub)
+        self.assertNotIn("items", pub)
+        self.assertNotIn("list_available", pub)
+        blob = json.dumps(pub, ensure_ascii=False)
         self.assertNotIn(str(self.flist), blob)
         self.assertNotIn("/" + "workspace" + "/", blob)
 
     def test_hit_public_no_leak(self):
         body = "宏观中枢可以作为股市分析的上位状态机\n"
         sc = self._sc(body)
-        r = CS.score_card(body, sc, frame_list_path_override=self.flist)
+        with _with_internal(self.idir):
+            r = CS.score_card(body, sc)
         self.assertEqual(r["items"]["no_frame_conjecture"]["status"], "fail")
         self.assertIn("E-FRAME-CONJECTURE", r["items"]["no_frame_conjecture"]["codes"])
-        blob = json.dumps(r, ensure_ascii=False)
+        pub = CS.public_score(r)
+        blob = json.dumps(pub, ensure_ascii=False)
         self.assertNotIn("宏观中枢可以作为股市分析的上位状态机", blob)
         self.assertNotIn(str(self.flist.parent), blob)
+        self.assertIn("E-FRAME-CONJECTURE", pub["codes"])
+        self.assertGreaterEqual(pub["hit_count"], 1)
+
+    def test_cli_has_no_frame_list_override(self):
+        cli = (Path(__file__).resolve().parents[1] / "scripts" / "card-scale.py").read_text(encoding="utf-8")
+        self.assertNotIn("--frame-list", cli)
+        self.assertNotIn("frame_list_path_override", cli)
 
     def test_error_code_registered(self):
         self.assertIn("E-FRAME-CONJECTURE", ERROR_CODES)
@@ -190,7 +241,7 @@ class RouteIsolation(unittest.TestCase):
         self.assertTrue(all("card_scale" not in (x or "") for x in names))
 
     def test_score_does_not_change_route_diagnose(self):
-        # 最小合法 selfcheck 结果 + draft，调用 card_scale 前后 _diagnose 一致
+        # 命中 fixture → 第(5)项 fail；断言量表失败后再比较 route 诊断不变
         now = __import__("datetime").datetime(2026, 1, 5, 1, 0, tzinfo=__import__("datetime").timezone.utc)
         sc = {
             "status": "PASS",
@@ -212,9 +263,14 @@ class RouteIsolation(unittest.TestCase):
         }
         records = {"codex": {}, "wang": {}}
         before = R._diagnose(sc, draft, state, records, now)
-        # 调用量表（注入空清单目录 → 第5项 fail，但不准影响 route）
-        flist = _write_frame_list(Path(tempfile.mkdtemp()) / "mi")
-        CS.score_card("# x\n", sc, frame_list_path_override=flist)
+        idir = Path(tempfile.mkdtemp()) / "mi"
+        _write_frame_list(idir)
+        hit_draft = "宏观中枢可以作为股市分析的上位状态机\n"
+        with _with_internal(idir):
+            scored = CS.score_card(hit_draft, sc)
+        self.assertEqual(scored["items"]["no_frame_conjecture"]["status"], "fail")
+        self.assertIn("E-FRAME-CONJECTURE", scored["items"]["no_frame_conjecture"]["codes"])
+        self.assertFalse(scored["overall_pass"])
         after = R._diagnose(sc, draft, state, records, now)
         self.assertEqual(before.state, after.state)
         self.assertEqual(before.codes, after.codes)
@@ -233,9 +289,13 @@ class InternalDirAlignment(unittest.TestCase):
         with mock.patch.dict(os.environ, {"MARKJIN_INTERNAL_DIR": "/tmp/fake-internal-xyz"}):
             p = CS.frame_list_path()
             self.assertEqual(p, Path("/tmp/fake-internal-xyz") / "frame-conjecture.md")
-            # 公开 API 文档字符串/返回值不得把真实本机路径写进评分结果
             r = CS.score_item_frame("x", None)
             self.assertNotIn("fake-internal", json.dumps(r))
+            pub = CS.public_score({"summary": {"date": DATE, "codes": [], "pass_count": 0,
+                                              "fail_count": 1, "pending_human_count": 0,
+                                              "item_count": 5, "pass_ratio": 0.0, "hit_count": 0},
+                                   "date": DATE})
+            self.assertNotIn("fake-internal", json.dumps(pub))
 
 
 if __name__ == "__main__":
