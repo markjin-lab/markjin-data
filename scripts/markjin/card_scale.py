@@ -7,8 +7,8 @@
 (2) 机器能判的用直引/回放；未逐条核验的结构化复述与自由转述标 pending_human，不硬编。
 (5) 只读本机内部目录下的 frame-conjecture.md（路径解析对齐 internal.py）；
     清单与卡片双侧去标签后再做子串匹配（不做同义/改写启发式）：
-    能确定子串命中 → fail（E-FRAME-CONJECTURE）；不确定是否改写泄露 → pending_human；
-    明确无框架内容/无命中 → pass。清单缺失 fail-closed。
+    子串命中 → fail（E-FRAME-CONJECTURE）；否则 pass。第(5)项无 pending_human。
+    清单缺失 fail-closed。
     公开持久化只含白名单错误码、计数、比率、日期（无命中原文、无清单路径、
     无 card_type / 逐项 status / overall_pass / list_available）。
 """
@@ -127,15 +127,14 @@ def strip_frame_tags(text: str) -> str:
     return _TAG_RE.sub("", text)
 
 
-def frame_match(text: str, entries):
+def frame_match(text: str, entries) -> int:
     """对清单与卡片双侧去标签后做子串匹配（不做同义/改写启发式）。
 
-    返回 (hit_count, pending)：hit_count 为确定子串命中数；pending 预留给
-    「不确定是否改写泄露」的人工复核路径（本函数不做改写猜测，故恒为 False）。
+    返回确定子串命中条目数。第(5)项只据此判 pass/fail，无 pending_human。
     不回显命中原文。
     """
     if not entries:
-        return 0, False
+        return 0
     card_raw = compact(text)
     card_stripped = compact(strip_frame_tags(text))
     probes = [card_raw, card_stripped]
@@ -147,13 +146,12 @@ def frame_match(text: str, entries):
             continue
         if any(v in c for v in variants for c in probes):
             hits += 1
-    return hits, False
+    return hits
 
 
 def frame_hit_count(text: str, entries) -> int:
     """返回确定子串命中条目数。不回显命中原文。"""
-    n, _ = frame_match(text, entries)
-    return n
+    return frame_match(text, entries)
 
 
 def _codes_of(sc) -> list:
@@ -218,15 +216,14 @@ def score_item_investment(sc) -> dict:
 
 def score_item_frame(text: str, entries) -> dict:
     """(5) 不含框架猜想/待王总定。entries is None → fail-closed（清单缺失）。
-    双侧去标签后仅子串：命中 → fail；pending 信号 → pending_human；无命中 → pass。
-    不做同义/改写启发式。本机审查侧可含 list_available/hit_count；公开见 public_score。"""
+    双侧去标签后仅子串：命中 → fail（E-FRAME-CONJECTURE）；否则 pass。
+    第(5)项无 pending_human。不做同义/改写启发式。
+    本机审查侧可含 list_available/hit_count；公开见 public_score。"""
     if entries is None:
         return _item("fail", [], list_available=False, hit_count=0)
-    n, pending = frame_match(text if isinstance(text, str) else "", entries)
+    n = frame_match(text if isinstance(text, str) else "", entries)
     if n > 0:
         return _item("fail", ["E-FRAME-CONJECTURE"], list_available=True, hit_count=n)
-    if pending:
-        return _item("pending_human", [], list_available=True, hit_count=0)
     return _item("pass", [], list_available=True, hit_count=0)
 
 

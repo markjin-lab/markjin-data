@@ -79,11 +79,9 @@ class FrameMatch(unittest.TestCase):
         self.assertGreaterEqual(CS.frame_hit_count(text, tagged), 1)
 
     def test_rewrite_without_substring_is_pass(self):
-        # 定夺②：不做同义/改写启发式；无子串命中 → pass（不猜测 fail）
+        # 定夺②/②b：不做同义/改写启发式；无子串命中 → pass（不猜测 fail；无 pending_human）
         rewrite = "把宏观中枢当作股市分析的上层状态机来用。"
-        hits, pending = CS.frame_match(rewrite, self.entries)
-        self.assertEqual(hits, 0)
-        self.assertFalse(pending)
+        self.assertEqual(CS.frame_match(rewrite, self.entries), 0)
         item = CS.score_item_frame(rewrite, self.entries)
         self.assertEqual(item["status"], "pass")
         self.assertEqual(item["codes"], [])
@@ -95,14 +93,6 @@ class FrameMatch(unittest.TestCase):
         self.assertEqual(item["status"], "fail")
         self.assertEqual(item["codes"], ["E-FRAME-CONJECTURE"])
         self.assertGreaterEqual(item["hit_count"], 1)
-
-    def test_pending_human_when_uncertain(self):
-        # 不确定是否改写泄露 → pending_human（不经改写启发式；直接测分支）
-        with mock.patch.object(CS, "frame_match", return_value=(0, True)):
-            item = CS.score_item_frame("任意正文", self.entries)
-        self.assertEqual(item["status"], "pending_human")
-        self.assertEqual(item["codes"], [])
-        self.assertEqual(item["hit_count"], 0)
 
     def test_no_hit(self):
         self.assertEqual(CS.frame_hit_count("今日 arXiv 动态摘要。", self.entries), 0)
