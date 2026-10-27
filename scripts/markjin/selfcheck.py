@@ -685,8 +685,8 @@ INDUSTRY_AGENCY_DOMAINS = (
     "mofcom.gov.cn", "csrc.gov.cn", "nea.gov.cn", "imf.org", "worldbank.org", "oecd.org", "bis.org", "iea.org",
     "ecb.europa.eu", "ec.europa.eu", "eurostat.ec.europa.eu", "ons.gov.uk", "bankofengland.co.uk", "boj.or.jp",
     "stat.go.jp", "esri.cao.go.jp", "meti.go.jp")
-# 已对公开日报产业块开放数值与原始机构链接的域名（当前仅美联储理事会；BEA 书面授权未回，BLS/Census/EIA 条款待核）。
-INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov",)
+# 已对公开日报产业块开放数值与原始机构链接的域名（当前美联储理事会 federalreserve.gov 与国家统计局 stats.gov.cn；BEA 书面授权未回，BLS/Census/EIA 条款待核）。
+INDUSTRY_OPEN_AGENCY_DOMAINS = ("federalreserve.gov", "stats.gov.cn")
 # 产业数值：白名单放行（Grok Bot 2026-10-25）——同块须命中已开放机构，否则有数值即拦；
 # 不再维护「未开放机构名」黑名单。BEA 硬拦独立：BEA 名/bea.gov + 数值一律拦（即使同段有 FRB）。
 # 域名另走 E-INDUSTRY-AGENCY-LINK（未开放主机）。
@@ -698,7 +698,8 @@ _IND_BEA_HARD_NAME_RE = re.compile(
 _IND_OPEN_AGENCY_NAME_RE = re.compile(
     r"(?i)美联储理事会|美国联邦储备理事会|"
     r"Federal Reserve Board(?![A-Za-z])|"
-    r"Board of Governors of the Federal Reserve System(?![A-Za-z])"
+    r"Board of Governors of the Federal Reserve System(?![A-Za-z])|"
+    r"国家统计局"
 )
 BEA_DOMAIN = "bea.gov"
 
@@ -984,7 +985,7 @@ def _ind_bea_hard(text):
 
 
 def _ind_open_agency(text):
-    """已开放机构：federalreserve.gov 主机，或美联储理事会等已批名称（切掉 URL 后匹配名称）。"""
+    """已开放机构：federalreserve.gov 或 stats.gov.cn 主机，或美联储理事会、国家统计局等已批名称（切掉 URL 后匹配名称）。"""
     if any(_host_in(h, INDUSTRY_OPEN_AGENCY_DOMAINS) for h in _hosts(text)):
         return True
     return bool(_IND_OPEN_AGENCY_NAME_RE.search(_ind_text_for_agency_names(text)))
@@ -999,7 +1000,7 @@ def _ind_unopened_agency_hosts(text):
 def industry_violations(doc):
     """[(code, line)]：产业块数值 → E-INDUSTRY-NUMBER（白名单）；未开放机构主机 → E-INDUSTRY-AGENCY-LINK。按行报。
 
-    数值放行：同块命中已开放机构（federalreserve.gov / 美联储理事会等）且未触 BEA 硬拦。
+    数值放行：同块命中已开放机构（federalreserve.gov / 美联储理事会，或 stats.gov.cn / 国家统计局）且未触 BEA 硬拦。
     BEA 硬拦：BEA 名或 bea.gov + 数值一律拦，与中文句读、同段是否有 FRB 无关。
     无已开放机构标记的数值一律拦（不再靠未开放机构名黑名单）。
     """
