@@ -7,6 +7,7 @@
 另有以下子目录（同样逐字节保存、在当天 MANIFEST.sha256 登记）：
 - `raw/YYYY-MM-DD/fulltext/`：许可允许转载的全文（遮盖联系邮箱后的公开版）；未获转载授权的只记 URL 与 sha256。说明见目录内 `PROVENANCE.md`。
 - `raw/YYYY-MM-DD/nbs-gdp/`：国家统计局 GDP 公开页面与对账表，说明见目录内 `PROVENANCE.md`、`README.md`。
+- `raw/YYYY-MM-DD/nbs-industry/`：国家统计局工业/能源/固投发布页公开摘录（#132；工增同比环比、能源四项同比、固投设备工器具同比；占比不写），说明见目录内 `PROVENANCE.md`、`README.md`。
 - `raw/YYYY-MM-DD/round2/<source>/`：当天第二轮（round2）采集，结构与第一轮的 arxiv / fred / x 相同。
 - `raw/YYYY-MM-DD/frb-g17/`：美联储理事会 G.17（Industrial Production and Capacity Utilization）release-page XML zip
   （`FRB_g17_xml.zip`）及同目录 query-log / PROVENANCE；provenance 宜 `copied-file`。
