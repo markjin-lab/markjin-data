@@ -1,6 +1,6 @@
 """selfcheck：产业与经济数据小节（站点 industry-* 短代码块）与 E-FRED-CITED。
-2026-10-25 起产业数值改白名单（Grok Bot）：同块须命中已开放机构（federalreserve.gov / 美联储理事会等）才放行数值；
-否则有数字/百分号即拦。BEA 名或 bea.gov + 数值硬拦（与句读、同段 FRB 无关）。未开放机构主机仍走 E-INDUSTRY-AGENCY-LINK；FRED 仍拦。
+2026-10-25 起产业数值改白名单（Grok Bot）：同块须命中已开放机构（federalreserve.gov / 美联储理事会，或 stats.gov.cn / 国家统计局）才放行数值；
+否则有数字/百分号即拦。BEA 名或 bea.gov + 数值硬拦（与句读、同段 FRB 或国家统计局无关）。未开放机构主机仍走 E-INDUSTRY-AGENCY-LINK；FRED 仍拦。
 每条规则至少一个拦截例和一个放行例；用例文字为中性占位内容。"""
 import collections, unittest
 from helpers import make_repo, DUMMY_INTERNAL, DATE
@@ -75,6 +75,34 @@ class IndustryNumber(unittest.TestCase):
                        '可对照 https://www.federalreserve.gov/releases/g17/current/default.htm 读数 102.3 [1]。'
                        '{{< /industry-link >}}\n')
         self.assertEqual(codes(doc), {})
+
+    def test_pass_nbs_datum_and_link_with_numbers(self):
+        # 国家统计局 / stats.gov.cn 与 FRB 同口径放行数值与机构链接（占位读数，不是本 vintage 公开正文）
+        doc = TITLE + ('{{< industry-data >}}\n'
+                       '{{< industry-datum series="甲" publisher="国家统计局" '
+                       'frequency="monthly" period="2026-09" value="102.3" released="2026-10-17" cite="4" >}}\n'
+                       '{{< /industry-data >}}\n')
+        self.assertEqual(codes(doc), {})
+        doc = TITLE + ('{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+                       '可对照 https://www.stats.gov.cn/sj/zxfb/x 读数 102.3 [1]。'
+                       '{{< /industry-link >}}\n')
+        self.assertEqual(codes(doc), {})
+        doc = TITLE + ('{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+                       '可对照 https://data.stats.gov.cn/easyquery.htm 读数 102.3 [1]。'
+                       '{{< /industry-link >}}\n')
+        self.assertEqual(codes(doc), {})
+
+    def test_nbs_does_not_lift_bea_or_closed_agencies(self):
+        doc = TITLE + (
+            '{{< industry-link item="1" industry="manufacturing" side="demand" >}}'
+            '可对照 https://www.stats.gov.cn/sj/zxfb/x。BEA 读数 2.1 [1]。'
+            '{{< /industry-link >}}\n'
+        )
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1})
+        doc = TITLE + '{{< industry-link item="1" industry="energy" side="cost" >}}见 https://www.eia.gov/x 读数 2.1 [1]。{{< /industry-link >}}\n'
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
+        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}见 https://www.census.gov/x 读数 2.1 [1]。{{< /industry-link >}}\n'
+        self.assertEqual(codes(doc), {"E-INDUSTRY-NUMBER": 1, "E-INDUSTRY-AGENCY-LINK": 1})
 
     def test_block_bea_number_statement(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}BEA 公布的读数 2.1% 对应需求 [1]。{{< /industry-link >}}\n'
@@ -277,9 +305,11 @@ class IndustryAgencyLink(unittest.TestCase):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}对应需求，见 https://www.bea.gov/data [1]。{{< /industry-link >}}\n'
         self.assertEqual(codes(doc), {"E-INDUSTRY-AGENCY-LINK": 1})
 
-    def test_block_agency_subdomain_cn(self):
+    def test_pass_open_stats_subdomain(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}对应需求，见 data.stats.gov.cn [1]。{{< /industry-link >}}\n'
-        self.assertEqual(codes(doc), {"E-INDUSTRY-AGENCY-LINK": 1})
+        self.assertEqual(codes(doc), {})
+        doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}对应需求，见 https://www.stats.gov.cn/sj/zxfb/x [1]。{{< /industry-link >}}\n'
+        self.assertEqual(codes(doc), {})
 
     def test_pass_non_agency_url(self):
         doc = TITLE + '{{< industry-link item="1" industry="ai" side="demand" >}}对应需求，见 https://arxiv.org/abs/x [1]。{{< /industry-link >}}\n'
@@ -300,7 +330,11 @@ class IndustryAgencyLink(unittest.TestCase):
     def test_domain_list_contains_required(self):
         for d in ("bea.gov", "bls.gov", "census.gov", "eia.gov", "federalreserve.gov", "stats.gov.cn", "pbc.gov.cn", "customs.gov.cn", "sec.gov"):
             self.assertIn(d, _sc.INDUSTRY_AGENCY_DOMAINS)
-        self.assertEqual(_sc.INDUSTRY_OPEN_AGENCY_DOMAINS, ("federalreserve.gov",))
+        self.assertEqual(_sc.INDUSTRY_OPEN_AGENCY_DOMAINS, ("federalreserve.gov", "stats.gov.cn"))
+        self.assertIn("federalreserve.gov", _sc.INDUSTRY_OPEN_AGENCY_DOMAINS)
+        self.assertNotIn("bea.gov", _sc.INDUSTRY_OPEN_AGENCY_DOMAINS)
+        self.assertNotIn("census.gov", _sc.INDUSTRY_OPEN_AGENCY_DOMAINS)
+        self.assertNotIn("eia.gov", _sc.INDUSTRY_OPEN_AGENCY_DOMAINS)
 
 
 class IndustryInternalTerm(unittest.TestCase):           # 内部用语沿用 E-BLOCK-INTERNAL
