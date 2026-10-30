@@ -2209,6 +2209,158 @@ class FinalR5(FinalR1):
         sc, d = self._go([NOW, NOW, NOW])["daily/" + self.draft.name]
         self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
 
+    def _route_daily(self, t):
+        self.write("state/publish-state.json", json.dumps(state())); self.commit("st"); self.git("tag", "-f", "base")
+        self.draft.write_text(t, encoding="utf-8")
+        dr = {"content_sha256": hashlib.sha256(t.encode()).hexdigest(), "draft_id": "daily-2026-01-05-d1"}
+        self.write(f"approvals/codex/{dr['content_sha256']}.json", json.dumps(codex(dr))); self.commit("d")
+        return self._go([NOW, NOW, NOW])["daily/" + self.draft.name]
+
+    def test_same_number_other_metric_not_publishable_via_route_pr(self):
+        # #32 反例一：同一个数字（90%），但对象/指标不同（原文是 MMLU，断言写 GSM8K）；有效 Codex APPROVED 也不可发布
+        from helpers import ARXIV_LOC
+        sc, d = self._route_daily(TITLE + arxiv_line("模型在 GSM8K 上达到 90% 准确率。", locator=ARXIV_LOC) + DISC)
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"])
+
+    def test_locator_missing_not_publishable_via_route_pr(self):
+        sc, d = self._route_daily(TITLE + arxiv_line(locator=None) + DISC)
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISSING", sc["error_codes"])
+
+    def test_x_plus_unsupporting_nonx_not_publishable_via_route_pr(self):
+        # #32 反例二（迁移自旧库 #51）：X 来源 + 一条并不支撑断言的非 X 来源；有效 Codex APPROVED 也不可发布
+        from helpers import x_line, ARXIV_LOC, ARXIV_ID
+        line = x_line() + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕"
+        sc, d = self._route_daily(TITLE + line + DISC)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_paragraph_heading_without_locator_not_publishable_via_route_pr(self):
+        # #32 r2：段落、标题里带来源但没写支持位置（或位置不支持断言）→ 有效 Codex APPROVED 也不可发布
+        from helpers import ARXIV_LOC, ARXIV_ID, XPOST_ID
+        asrc = f"`raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
+        xsrc = f"`raw/{DATE}/x/01.json` · https://x.com/i/status/{XPOST_ID}"
+        for body, want in ((f"模型在 GSM8K 上达到 90%。见 {asrc}\n", "E-SUPPORT-LOCATOR-MISSING"),
+                           (f"## 模型在 GSM8K 上达到 90% {asrc} 〔原文：{ARXIV_LOC}〕\n", "E-SUPPORT-LOCATOR-MISMATCH"),
+                           (f"该方法远超所有对手。见 {xsrc} 与 {asrc}\n", "E-X-ONLY")):
+            sc, d = self._route_daily(TITLE + arxiv_line() + "\n" + body + DISC)
+            self.assertFalse(d.publishable, body); self.assertIn(want, sc["error_codes"], body)
+
+    def test_paragraph_with_locator_publishable_via_route_pr(self):
+        from helpers import ARXIV_LOC, ARXIV_ID
+        asrc = f"`raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
+        sc, d = self._route_daily(TITLE + arxiv_line() + f"\n模型在 MMLU 上达到 90%。见 {asrc} 〔原文：{ARXIV_LOC}〕\n" + DISC)
+        self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
+
+    def test_fred_unit_mismatch_not_publishable_via_route_pr(self):
+        # #32 r3：FRED 序列单位为 Percent，断言写“4.2 倍”→ 有效 Codex 与王总批准也不可发布
+        bad = TITLE + fred_line("UNRATE 为 4.2 倍。") + DISC
+        self.write("state/publish-state.json", json.dumps(state())); self.commit("st"); self.git("tag", "-f", "base")
+        self.draft.write_text(bad, encoding="utf-8")
+        dr = {"content_sha256": hashlib.sha256(bad.encode()).hexdigest(), "draft_id": "daily-2026-01-05-d1"}
+        self.write(f"approvals/codex/{dr['content_sha256']}.json", json.dumps(codex(dr)))
+        self.write(f"approvals/wang/{dr['content_sha256']}.json", json.dumps(wang(dr))); self.commit("bad")
+        sc, d = self._go([NOW, NOW, NOW])["daily/" + self.draft.name]
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"])
+
+    def _route_daily_src(self, t, summary):
+        # r5：替换存档 arXiv 摘要（同步改 MANIFEST），再走发布路由
+        from helpers import ARXIV_ID, FILES, write_manifest
+        files = dict(FILES)
+        files["arxiv/cs.AI.xml"] = f"<feed><entry><id>http://arxiv.org/abs/{ARXIV_ID}v1</id><summary>{summary}</summary></entry></feed>"
+        day = self.repo / "raw" / DATE
+        (day / "arxiv" / "cs.AI.xml").write_text(files["arxiv/cs.AI.xml"], encoding="utf-8")
+        write_manifest(day, files)
+        self.commit("raw-b")
+        return self._route_daily(t)
+
+    def test_b1_wrong_object_negation_not_publishable_via_route_pr(self):
+        # #32 r5（审查 r4 HIGH B1）：原文 A 未达到、B 达到；断言“B 未能达到”→ 有效 Codex APPROVED 也不可发布
+        loc = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
+        sc, d = self._route_daily_src(TITLE + arxiv_line("Model B 在 MMLU 上未能达到 90%。", locator=loc) + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"])
+
+    def test_b2_right_object_publishable_via_route_pr(self):
+        loc = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
+        sc, d = self._route_daily_src(TITLE + arxiv_line("Model B 在 MMLU 上达到 90%。", locator=loc) + DISC, loc)
+        self.assertNotIn("E-SUPPORT-LOCATOR-MISMATCH", sc["error_codes"]); self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
+
+    def test_b1_with_x_still_x_only_via_route_pr(self):
+        # B1 的错误非 X 支持不能解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "Model A does not reach 90%; on MMLU, Model B reaches 90%."
+        line = x_line("Model B 在 MMLU 上未能达到 90%。") + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_keyless_swap_with_x_still_x_only_via_route_pr(self):
+        # #32 r6（r5 审查 HIGH）：无数字、无代号的分句借用另一对象的否定（A 不可靠 → B 不可靠），非 X 来源不支撑，不能解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "Model A is not reliable; Model B is reliable."
+        claim = "Model B is not reliable."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_keyless_right_pairing_with_x_publishable_via_route_pr(self):
+        # 对照：断言与原文同一对象的否定状态一致 → 非 X 来源支撑，可发布
+        from helpers import x_line, ARXIV_ID
+        loc = "Model A is not reliable; Model B is reliable."
+        claim = "Model B is reliable."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertNotIn("E-X-ONLY", sc["error_codes"]); self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
+
+    def test_keyless_negation_word_pairing_with_x_still_x_only_via_route_pr(self):
+        # #32 r6 审查 HIGH：否定词不参与配对；“The baseline does not improve recall.” 不能借用 new method 的否定解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "The new method does not improve recall, and the baseline improves recall clearly."
+        claim = "The baseline does not improve recall."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_keyless_predicate_overlap_with_x_still_x_only_via_route_pr(self):
+        # #32 r7 审查 HIGH：baseline 的断言与 new method 分句共享谓语词更多，也不能借用其否定解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "The new method does not improve recall on long documents; the baseline improves recall."
+        claim = "The baseline does not improve recall on long documents."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_keyless_tied_other_objects_with_x_still_x_only_via_route_pr(self):
+        # #32 r7 审查：两个同状态的并列候选（first/second system）不能替 replacement 配对、解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "The first system processes audio quickly; The second system processes audio quickly; The replacement does not process audio."
+        claim = "The replacement processes audio quickly."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_keyless_alias_with_x_still_x_only_via_route_pr(self):
+        # #32 r8 审查 HIGH：异名对象（substitute 对 replacement）不能借用 baseline 分句的否定解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "The baseline does not improve recall on long documents; the replacement improves recall."
+        claim = "The substitute does not improve recall on long documents."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_keyless_tense_variant_with_x_still_x_only_via_route_pr(self):
+        # #32 r9 审查 HIGH：谓语过去式（improved）不能让 replacement 的断言借用 baseline 分句的否定、解除 E-X-ONLY
+        from helpers import x_line, ARXIV_ID
+        loc = "The baseline does not improve recall on long documents for the replacement; the replacement improved recall."
+        claim = "The replacement does not improve recall on long documents."
+        line = x_line(claim) + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{loc}〕"
+        sc, d = self._route_daily_src(TITLE + line + DISC, loc)
+        self.assertFalse(d.publishable); self.assertIn("E-X-ONLY", sc["error_codes"])
+
+    def test_x_plus_supporting_nonx_publishable_via_route_pr(self):
+        # 对照：X + 经原文支持位置核对确实支撑的非 X 来源 → 可发布
+        from helpers import x_line, ARXIV_LOC, ARXIV_ID
+        line = x_line("模型在 MMLU 上达到 90% 准确率。") + f" ; `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1 〔原文：{ARXIV_LOC}〕"
+        sc, d = self._route_daily(TITLE + line + DISC)
+        self.assertNotIn("E-X-ONLY", sc["error_codes"]); self.assertTrue(d.publishable, (sc["error_codes"], d.codes))
+
     def test_pair_one_link_fails_both_unpublishable(self):
         self.write("state/publish-state.json", json.dumps(state())); self.commit("st"); self.git("tag", "-f", "base")
         zh = INFER + "\n" + DISC
