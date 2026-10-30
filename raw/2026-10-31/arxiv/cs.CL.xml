@@ -1,0 +1,1622 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/AjqiJLBP/Dh39qWmUocGMGZ5ALg</id>
+  <title>arXiv Query: search_query=cat:cs.CL&amp;id_list=&amp;start=0&amp;max_results=50</title>
+  <updated>2026-10-30T20:30:28Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=cat:cs.CL&amp;start=0&amp;max_results=50&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>50</opensearch:itemsPerPage>
+  <opensearch:totalResults>124184</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40655v1</id>
+    <title>Elucidating the Design Space of LM Data Attribution</title>
+    <updated>2026-10-29T17:59:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.40655v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40655v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Data attribution methods for Language Models (LMs) are typically evaluated using downstream tasks like fact retrieval. However, existing evaluations vary multiple dataset properties simultaneously, making it impossible to isolate exactly why an attribution algorithm fails. To diagnose these failures, we explore the design space of LLM data attribution, with a primary focus on evaluation. We introduce the Controlled Attribution Benchmark (CATT) for fact tracing, in which we fine-tune LLMs on entirely fictitious knowledge, providing unambiguous ground truth for attribution. This synthetic setup allows us to systematically alter one dataset configuration at a time, such as document redundancy and lexical distractors. With this configurable evaluation, we demonstrate that redundancy and distractors consistently degrade attribution performance. Rather than proposing a new estimator, we examine two design choices that are underexplored: the loss used to compute gradients and how per-token attribution scores are aggregated into a document score. We find that the true causal evidence within a training document is highly localized, but standard methods dilute this evidence into noise by averaging attribution scores across the entire document. We find that replacing standard cross-entropy loss gradients with the negative log-odds gradients surfaces the critical tokens from other uninformative ones. We can then aggregate only the top token scores to improve ground truth recall by 35 to 72 percentage points across multiple baselines on our diagnostic benchmark. The negative log-odds correction also generalizes to FTRACE-TREX, improving counterfactual retraining performance for every method we test, by up to 4.9x.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:59:53Z</published>
+    <arxiv:comment>Project Page: https://catt.baulab.info/</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Steven Yu</name>
+    </author>
+    <author>
+      <name>Sheng-Yu Wang</name>
+    </author>
+    <author>
+      <name>Kimia Hamidieh</name>
+    </author>
+    <author>
+      <name>Antonio Torralba</name>
+    </author>
+    <author>
+      <name>David Bau</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40627v1</id>
+    <title>ShallowDefend: Harnessing Shallow Safety Alignment for Multi-Turn Defender</title>
+    <updated>2026-10-29T17:56:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.40627v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40627v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Safety alignment has enabled large language models to reliably refuse harmful requests directly, yet the same request distributed across a multi-turn conversation still succeeds far too often. This brittleness has a mechanistic root: Alignment is shallow, with safety behavior concentrated in a model's first few output tokens, and existing defenses inherit the weakness, supervising the surface form of the response without ever giving the model an explicit safety decision to learn. We take the opposite view of shallowness: if a short span determines the trajectory of an entire response, that span is the highest-leverage place to intervene, and the defender can occupy it first. We propose Assess $\to$ Decide $\to$ Respond, a framework in which the defender assesses the user's intent, commits to an explicit, parseable safety decision, and only then generates a reply conditioned on it, with the commitment trained by reinforcement learning at the payload turn. Because the decision is a token span, the reward can be a rule: a self-verified reward checks the committed label against the conversation's known nature, requiring no judge and no annotation, while the same format also supports an LLM-as-judge reward over a graded decision space with safe redirection. Across two model families and fourteen benchmarks spanning safety, utility, and helpfulness, our defenders achieve the strongest multi-turn safety in a controlled comparison, maintaining their lead in safety while preserving utility at a modest cost to helpfulness. A per-token KL analysis and interventional probes confirm why this works: training concentrates its effect on the brief deliberation that sets a response's trajectory, and the decision committed there is a causal control point. The very shallowness attackers exploit becomes the mechanism of defense.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:56:53Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Qiyao Ma</name>
+    </author>
+    <author>
+      <name>Xiaodong Liu</name>
+    </author>
+    <author>
+      <name>Weiwei Yang</name>
+    </author>
+    <author>
+      <name>Mingqian Feng</name>
+    </author>
+    <author>
+      <name>Chengquan Guo</name>
+    </author>
+    <author>
+      <name>Jialin Song</name>
+    </author>
+    <author>
+      <name>Carolyn Buractaon</name>
+    </author>
+    <author>
+      <name>Zhe Zhao</name>
+    </author>
+    <author>
+      <name>Junshan Zhang</name>
+    </author>
+    <author>
+      <name>Sandeep Atluri</name>
+    </author>
+    <author>
+      <name>Christopher White</name>
+    </author>
+    <author>
+      <name>Jianfeng Gao</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40619v1</id>
+    <title>Testimony from Timelines: Evidence-Grounded Significance Testing of Temporal Clinical Hypotheses</title>
+    <updated>2026-10-29T17:55:30Z</updated>
+    <link href="https://arxiv.org/abs/2610.40619v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40619v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Ask a language model whether sales tend to dip after a product recall, or whether one side effect tends to follow another after a vaccine, and it answers in a fluent sentence that reads like a finding, with no test behind it. Assertions about how events unfold across many cases fill the Web, and each is a temporal hypothesis that only a significance test over the right records can settle. The verifier must specify the null, select the test and decide which records bear on the hypothesis, and any of these choices can go wrong while the conclusion still comes out right. Yet benchmarks for language-model data analysis grade only the conclusion, with the relevant data handed over. We study the problem in health, where a wrong verdict is costly, and present STRATA, a benchmark that grades every decision on the way to a verdict: 8,735 hypotheses over the clinical timelines of vaccine adverse-event reports, with gold plans, evidence sets, p-values and verdicts derived under a released codebook and reproduced by a deterministic oracle. We also propose ART (articulate, retrieve, test), a staged paradigm that exposes each decision as an inspectable output. Extensive experiments with five model configurations show that systems fail mostly at choosing which records count, a verdict-evidence gap that accuracy alone conceals. ART closes most of this gap and brings a 31B open model to within 0.01 of the frontier models under the same paradigm; the frontier models succeed once given the codebook.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:55:30Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Chengyang He</name>
+    </author>
+    <author>
+      <name>Wenlong Zhang</name>
+    </author>
+    <author>
+      <name>Koduvayur Subbalakshmi</name>
+    </author>
+    <author>
+      <name>Ping Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40613v1</id>
+    <title>TextSeal2: Distortion-Free LLM Watermarking with Copula Mixing and Memoryless Races</title>
+    <updated>2026-10-29T17:54:12Z</updated>
+    <link href="https://arxiv.org/abs/2610.40613v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40613v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We present TextSeal2, a distortion-free watermark for large language models that keeps its signal under speculative decoding: tokens that replace rejected drafts remain watermarked with the same keys, and the acceptance rate is unchanged. It also preserves output diversity and adds no measurable inference latency. Its predecessor, TextSeal, restores diversity in the Gumbel-max scheme by routing each token to one of two keys via a coin flip. This is suboptimal because the detector averages the scores from both keys without knowing which key was used. TextSeal2 instead merges two or more keys into a single virtual key and couples it to fresh noise through AutoMark's Gaussian copula. Any number of keys, including publicly shared keys, can be merged this way without diluting detection. Under speculative decoding, TextSeal2 verifies keyed drafts with one more exponential race, run on the leftovers of the draft races. By memorylessness, this race reproduces block verification, so the output follows the target model exactly. We evaluate TextSeal2 on three LLMs. At equal output token diversity, TextSeal2 detects 8 to 22 percentage points more 100-token answers than TextSeal at a false-positive rate of $10^{-3}$, and is comparable to textGrain while requiring no post-logits optimization. Under speculative decoding, it detects 18 and 22 percentage points more 200-token answers than TextSeal and textGrain, respectively, at the same acceptance rate.</summary>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:54:12Z</published>
+    <arxiv:comment>Code: https://github.com/facebookresearch/textseal</arxiv:comment>
+    <arxiv:primary_category term="cs.CR"/>
+    <author>
+      <name>Tom Sander</name>
+    </author>
+    <author>
+      <name>Pierre Fernandez</name>
+    </author>
+    <author>
+      <name>Itai Gat</name>
+    </author>
+    <author>
+      <name>Haiming Bao</name>
+    </author>
+    <author>
+      <name>Jiaxin Shi</name>
+    </author>
+    <author>
+      <name>Jason Park</name>
+    </author>
+    <author>
+      <name>Valeriu Lacatusu</name>
+    </author>
+    <author>
+      <name>Sylvestre-Alvise Rebuffi</name>
+    </author>
+    <author>
+      <name>Hongyan Chang</name>
+    </author>
+    <author>
+      <name>Hady Elsahar</name>
+    </author>
+    <author>
+      <name>Tomáš Souček</name>
+    </author>
+    <author>
+      <name>Tuan Tran</name>
+    </author>
+    <author>
+      <name>Surya Parimi</name>
+    </author>
+    <author>
+      <name>Alexandre Mourachko</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40611v1</id>
+    <title>When to Assist and What to Suggest: Joint Gating and Memory-Grounded Hint Generation in One Compact Decoder</title>
+    <updated>2026-10-29T17:54:07Z</updated>
+    <link href="https://arxiv.org/abs/2610.40611v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40611v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Proactive assistants offer short, memory-grounded hints during a conversation, deciding when to assist and what to suggest. Current systems split this between a gate and a larger generator; we evaluate both together on 28,058 decision points. Stage-wise generation scores are oracle-gate ceilings: behind a real gate, end-to-end exact match is 0.2619 against a ceiling of 0.2971, and end-to-end precision is 0.2387, leaving substantial headroom. A gate pays off through precision and compute, whose saving falls from 4.39x with an 8B generator to 1.38x with a 1B one. The memory profile drives hint quality: removing it costs 24.7 exact-match points (rescaled BERTScore 0.57 to 0.35), while retrieval and a larger generator add nothing on exact match. One 1B decoder can do both, gating from an intermediate layer and generating in the same pass. At its final checkpoint it matches or exceeds the two-model pipelines on automatic end-to-end measures with 1.31-1.76x less wall-clock time than the matched 1B pipeline; across three seeds, its deeper exit ties the separate gate. A human evaluation (1,144 ratings over 32 dialogues) supports the memory effect and rates the single model level with the matched 1B pipeline and below the 8B one. Graded metrics and LlamaPIE's native judge track human ratings more closely than exact match, which we report as a strict lower bound.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:54:07Z</published>
+    <arxiv:comment>20 pages, 10 figures, 13 tables; supplementary material included (Sections S1-S8)</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>A. J. A. Jubayer Talukder</name>
+    </author>
+    <author>
+      <name>Mohammad Ariful Haque</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40578v1</id>
+    <title>VeriCUA: Verification as Agentic Exploration for Computer-Using Agents</title>
+    <updated>2026-10-29T17:45:26Z</updated>
+    <link href="https://arxiv.org/abs/2610.40578v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40578v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Building and scaling computer-using agents (CUAs) across desktop, mobile, and web environments requires reliable task-completion verification for data curation, evaluation, and reinforcement learning. Typical automated approaches prompt vision-language models (VLMs) to judge trajectories or generate programs to inspect application state. However, both rely on partial views of complex digital environments. VLM judges are restricted to supplied observations, while generated programs depend on accessible state. These views can omit decisive evidence or leave completion judgments unsupported. Tailoring separate verifiers to different platforms and access settings adds further engineering cost. We present VeriCUA, a platform-agnostic framework for verification through agentic exploration. It treats verification as dynamic evidence gathering and assessment within a shared procedure for online and offline settings across platforms and observation modalities. After inspecting the available context to construct a task rubric, the verifier selects GUI or code checks for unresolved requirements and combines their findings under explicit evidence rules. Experiments show improved agreement with reference labels over the compared baselines across these settings, with the largest offline gains on hard cases and stronger rejection of false completion claims online. Further analyses connect these gains to complementary evidence and test-time exploration.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:45:26Z</published>
+    <arxiv:comment>Work in progress</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Qiushi Sun</name>
+    </author>
+    <author>
+      <name>Da Yu</name>
+    </author>
+    <author>
+      <name>Alexander Knop</name>
+    </author>
+    <author>
+      <name>Amer Sinha</name>
+    </author>
+    <author>
+      <name>Lingpeng Kong</name>
+    </author>
+    <author>
+      <name>Ben Kao</name>
+    </author>
+    <author>
+      <name>Ravi Kumar</name>
+    </author>
+    <author>
+      <name>Pritish Kamath</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40577v1</id>
+    <title>Multi-View MoE: Letting Every Router Shape Expert Computation</title>
+    <updated>2026-10-29T17:45:12Z</updated>
+    <link href="https://arxiv.org/abs/2610.40577v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40577v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Sparse mixture-of-experts (MoE) models expand parameter capacity by activating a small subset of experts per token. Expert selection directly affects model capabilities under a fixed active-expert budget. Dense evaluation of all experts reveals weak agreement between single-router rankings and expert-utility evaluation rankings, especially in middle and deep layers. Richer signals for selection and computation incur additional cost: selection based on internal expert activations requires preliminary computation, while processing multiple full representations separately through the same expert repeats its computation. We propose Multi-View MoE to improve expert selection with multiple routers and reuse their preferences to modulate expert computation under a fixed expert budget. Its Multi-Router submodule aggregates sigmoid scores from independently initialized routers. These routers develop highly differentiated expert preferences during training, allowing experts strongly favored by one router or jointly supported by several routers to be selected. Multi-View further uses each selected expert's relative scores across routers to mix learned latent views into its input, reusing routing preferences for both selection and computation. Each selected expert executes one forward pass, preserving the active-expert count, expert FLOPs, and all-to-all communication volume. On a 24-layer 10B-A1B model trained on 708B tokens, full Multi-View MoE improves the nine-task downstream mean by 1.18 percentage points over the baseline. Multi-Router alone yields a 0.6-percentage-point gain and improves the rank correlation between router scores and evaluated expert utility, with relative increases of 8.1% globally and approximately 58% in the layer with the lowest single-router alignment. Controlled mixing interventions show the model uses input differences that depend on both the expert and the token.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:45:12Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Zelin Zhao</name>
+    </author>
+    <author>
+      <name>Tianchi Ma</name>
+    </author>
+    <author>
+      <name>Junyuan Shang</name>
+    </author>
+    <author>
+      <name>Shuohuan Wang</name>
+    </author>
+    <author>
+      <name>Dianhai Yu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40576v1</id>
+    <title>PIVOT: Progressive Intervention via Online Teacher Correction</title>
+    <updated>2026-10-29T17:45:07Z</updated>
+    <link href="https://arxiv.org/abs/2610.40576v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40576v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Reinforcement learning from verifiable rewards (RLVR) is limited by sparse outcome-level feedback on hard reasoning tasks: when all rollouts in a group fail, rewards provide no learning signal. Stronger teachers can provide additional guidance, but this raises a central question: how can such signals be incorporated into RLVR to support successful rollouts while remaining learnable for the student? We distinguish two complementary mechanisms: trajectory-level intervention, which improves access to reward-bearing trajectories, and token-level supervision, which provides dense targets to guide student learning. Our controlled experiments show that either mechanism alone can remain insufficient, motivating their combination. We therefore introduce PIVOT, which inserts teacher-generated corrections into student rollouts and applies token-level KL supervision to these segments alongside the RLVR objective. Beyond their combination, we systematically analyze where to intervene and how to supervise, yielding a recipe for effective guidance. Across hard logic games and mathematical reasoning benchmarks, PIVOT consistently outperforms existing methods, nearly doubling mean avg@8 on logic games from 19.5% for the best-performing baseline to 35.6%.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:45:07Z</published>
+    <arxiv:comment>19 pages, 9 figures, 6 tables. Project page: https://zhihaoyang30.github.io/PIVOT/</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Zhihao Yang</name>
+    </author>
+    <author>
+      <name>Boyuan Zheng</name>
+    </author>
+    <author>
+      <name>Puhui Tan</name>
+    </author>
+    <author>
+      <name>Yukun Chen</name>
+    </author>
+    <author>
+      <name>Kuan Zhang</name>
+    </author>
+    <author>
+      <name>Longze Chen</name>
+    </author>
+    <author>
+      <name>Jiaming Li</name>
+    </author>
+    <author>
+      <name>Renke Shan</name>
+    </author>
+    <author>
+      <name>Lu Wang</name>
+    </author>
+    <author>
+      <name>Xianpei Han</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40574v1</id>
+    <title>Every Token Needs Its Own Teacher: Multi-teacher Adaptive On-policy Self-distillation</title>
+    <updated>2026-10-29T17:44:42Z</updated>
+    <link href="https://arxiv.org/abs/2610.40574v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40574v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>On-policy Self-distillation (OPSD) has proven effective for post-training large language models by constructing a teacher conditioned on privileged references. However, existing approaches keep the teacher fixed either throughout training by consistently exposing it to the full reference, or within each response by adaptively varying partial reference exposure only across responses. In this paper, we argue that neither of them is sufficient. Instead, every token needs its own teacher, as the teacher preference can vary token by token within the same response. Through a teacher-intervention pilot study, we validate that the teacher preference differs across tokens, and reveal that a preferred teacher can be identified for each token through majority voting and KL-based selection. Motivated by these findings, we propose Multi-teacher Adaptive On-policy Self-Distillation (MTA-OPSD), the first token-level adaptive OPSD method. Our method constructs a multi-teacher pool consisting of candidate teachers, and enables every token to adaptively select its preferred teacher during training. Experiments with Qwen3 models on mathematical reasoning tasks show that MTA-OPSD consistently outperforms existing OPSD approaches with an average gain of up to $+5.9$ over the base model, highlighting the importance of adapting teacher supervision at the token level. The code is available at https://github.com/xingzhejun/MTA-OPSD.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:44:42Z</published>
+    <arxiv:comment>Preprint</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Yifu Luo</name>
+    </author>
+    <author>
+      <name>Chuang Ma</name>
+    </author>
+    <author>
+      <name>Zeyu Chen</name>
+    </author>
+    <author>
+      <name>Enkelejda Kasneci</name>
+    </author>
+    <author>
+      <name>Qi Chen</name>
+    </author>
+    <author>
+      <name>Gjergji Kasneci</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40563v1</id>
+    <title>Comparing Human Role-Players and LLM-Simulated Clients in Online Counselling Training: An Analysis of Counselling Patterns</title>
+    <updated>2026-10-29T17:41:59Z</updated>
+    <link href="https://arxiv.org/abs/2610.40563v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40563v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>This study investigates the capabilities of Large Language Models to simulate counselling clients in educational role-plays in comparison to human role-players. Initially, we recorded role-playing sessions, where novice counsellors interacted with human peers acting as clients, followed by role-plays between humans and clients simulated by Mistrals Mixtral 8x7b using 4-bit quantization. These interactions were analysed with a counselling communication pattern system at sentence level. We investigated two key questions: (1) to what extent LLM-generated responses replicate authentic conversational dynamics and (2) whether counsellors' communication behaviour differs when interacting with human versus LLM-simulated clients. The findings highlight both similarities and differences in the application of counselling patterns across scenarios, showing the potential of LLM-based role-playing exercises to enhance counselling competencies and to identify areas for further refinement in virtual client simulations.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:41:59Z</published>
+    <arxiv:comment>Published at EDM 2025 (18th International Conference on Educational Data Mining), short paper. 7 pages</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <arxiv:journal_ref>Proceedings of the 18th International Conference on Educational Data Mining (EDM 2025), short papers</arxiv:journal_ref>
+    <author>
+      <name>Eric Rudolph</name>
+    </author>
+    <author>
+      <name>Philipp Steigerwald</name>
+    </author>
+    <author>
+      <name>Jens Albrecht</name>
+    </author>
+    <arxiv:doi>10.5281/zenodo.15870260</arxiv:doi>
+    <link rel="related" href="https://doi.org/10.5281/zenodo.15870260" title="doi"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40551v1</id>
+    <title>Ramanujan Challenge Results: AI-Assisted Evaluation Pipeline for Multi-Format Proofs</title>
+    <updated>2026-10-29T17:39:04Z</updated>
+    <link href="https://arxiv.org/abs/2610.40551v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40551v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>As AI's mathematical capabilities rapidly improve, meaningful benchmarks are shifting from university-level problems and math olympiads to research-level mathematics. The Ramanujan Challenge is a benchmark comprised of research-level problems in number theory, including unpublished results and open conjectures. It presented concrete formulas for mathematical constants whose correctness can be checked numerically, while their proofs may require non-obvious mathematics. Here, we analyze the Challenge submissions, measuring the relative success of different AI models, Computer Algebra Systems (CAS), and formal tools. We find correct submissions that are conceptually distinct from the official solutions, and a proof of one of the published open conjectures. Evaluating the submissions exposed a second challenge: judging complex proofs reliably at scale. We introduce an AI-assisted evaluation pipeline for natural language proofs, CAS code, and Lean formalizations that assesses semantic and logical correctness. Compared with the conventional one-shot LLM judgment, our pipeline reduces false-positive verdicts on natural language proofs from 23% to 6% and improves judgment accuracy on supporting code from 46% to 58%. This approach provides a methodology for evaluating research-level mathematics at scale, with potential applications across mathematics and AI for science.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.SC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.NT" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:39:04Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Alan Sorani</name>
+    </author>
+    <author>
+      <name>Ashvni Narayanan</name>
+    </author>
+    <author>
+      <name>Michael Shalyt</name>
+    </author>
+    <author>
+      <name>Tali Monderer</name>
+    </author>
+    <author>
+      <name>Rotem Kalisch</name>
+    </author>
+    <author>
+      <name>Hila Barkan</name>
+    </author>
+    <author>
+      <name>Elyasheev Leibtag</name>
+    </author>
+    <author>
+      <name>Shachar Weinbaum</name>
+    </author>
+    <author>
+      <name>Carsten Schneider</name>
+    </author>
+    <author>
+      <name>John Campbell</name>
+    </author>
+    <author>
+      <name>Ido Kaminer</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40541v1</id>
+    <title>On the Fundamental Limits of Prefill-Based Decoding Length Prediction</title>
+    <updated>2026-10-29T17:36:01Z</updated>
+    <link href="https://arxiv.org/abs/2610.40541v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40541v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Predicting how many tokens a large language model (LLM) will decode, using only prefill-phase hidden states, is a key primitive for inference scheduling. We show that current benchmarks conflate predictor quality with task hardness: when the target model, dataset, or sampling configuration changes, reported accuracy collapses even though the predictor is unchanged. We trace this instability to an overlooked error source---the inherent stochasticity of autoregressive decoding---and derive bounds that every prefill-side method must obey. Our analysis treats decoding as a stopped stochastic process. The per-step stopping probability of a response is not constant but ramps up over hundreds of steps, so the decode length inherits a central limit theorem from the many local decisions that determine where a response ends; this yields per-prompt normality with an explicit error term, together with an affine variance law $σ=αμ+b$ whose slope is the coefficient of variation of the number of response segments. Empirically, the normal law reproduces the per-prompt MAE and the central mass of the decode-length distribution to within a few percent, and the residual departures from normality (mild right skew, slight excess kurtosis) are the ones predicted by the sampling-noise correction. Under fixed model, data, and sampling conditions, a broad design space of predictors (MLP, EGTP, FiLM, soft-label, and Mixture-of-Experts variants) converges to similar performance close to the bound, confirming that \emph{system error dominates model error}. We argue for a benchmarking protocol that fixes the model, data, and sampling parameters and that reports relative-error metrics alongside absolute ones. Code and analysis tools are available at https://github.com/ShwStone/DecodingPredict.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IT" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:36:01Z</published>
+    <arxiv:comment>26 pages, 4 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Haowen Shi</name>
+    </author>
+    <author>
+      <name>Xuzhe Yan</name>
+    </author>
+    <author>
+      <name>Fahao Chen</name>
+    </author>
+    <author>
+      <name>Peng Li</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40533v1</id>
+    <title>Homebrewed SLMs: Autoregressive and Masked Diffusion Language Models Built at Home for Portuguese</title>
+    <updated>2026-10-29T17:34:06Z</updated>
+    <link href="https://arxiv.org/abs/2610.40533v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40533v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Building a language model of one's own no longer requires a data centre. This tutorial trains one from scratch, tokenizer included, on one consumer GPU, and shows how to tell whether it is good for the tasks of a specialist domain. It proposes no new method. It releases a tested Python package and two notebooks in Brazilian Portuguese with autoregressive and masked diffusion generation on one network, a preregistered comparison protocol, legal tasks built from text alone with a Kneser-Ney floor and public yardsticks, reference numbers for models of 11 to 12M parameters, and a catalogue of defects that only measurement revealed. On Brazilian prose and federal laws, at minutes per run, the autoregressive mode peaks at 64 epochs over the same text and then memorises it, while masked diffusion improves up to 256. At their best points on test, the diffusion bound exceeds the autoregressive likelihood by 0.06 bits per byte, within the preregistered minimum effect. On held-out laws and on acts published after training, the model ties a 6-gram floor in likelihood on the same windows, and it loses to the floor at continuing those acts. It beats the floor at detecting tampered text, and fills cross-references more often than the floor and public models of 160M and 630M parameters, only in decrees, a genre absent from training, where those scorers stay near or below chance, and in filling the blank only when each group weighs the same, since per item it ties the 630M model. On laws, the public models, trained with about 5x10^2 to 10^5 times its compute, lead in tampered text and continuation. The blind human reading is preregistered and not part of this version.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:34:06Z</published>
+    <arxiv:comment>34 pages, 14 figures, 13 tables. Code and notebooks: https://github.com/pcbrom/homebrewed-slms</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Pedro Carvalho Brom</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40518v1</id>
+    <title>IndicIPR-QA: A Benchmark for Extractive Question Answering on Indian IPR Laws</title>
+    <updated>2026-10-29T17:26:39Z</updated>
+    <link href="https://arxiv.org/abs/2610.40518v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40518v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Legal Question Answering (QA) over statutory texts is a challenging task in Natural Language Processing (NLP), especially in low-resource settings with complex legal systems. It requires answers that are precise and grounded in the law. However, to the best of current knowledge, no existing extractive QA benchmark provides exact answer spans from statutory texts across all seven Indian Intellectual Property Rights (IPR) Acts. This paper presents IndicIPR-QA1, an extractive QA benchmark for Indian IPR laws. The proposed dataset contains 4,462 QA pairs from 1,116 statutory contexts across seven Acts. Questions and answers are generated using GPT-4o and validated through nine automatic quality checks, single and multi-model LLM evaluations, and a 200-pair human audit. Section-level partitioning prevents source-context overlap across the training, validation, and test sets. Further analysis examines answer span length, lexical overlap, and multi-clause structure across the corpus and individual Acts. BM25 achieves a token-level F1 score of 20.21, while fine-tuned InLegalBERT reaches 85.02 under a unified sliding-window inference protocol. The large performance gap between BM25 (20.21 F1) and InLegalBERT (85.02 F1) shows that simple word matching is not enough to answer these legal questions. Performance also varies across the seven Acts, indicating substantial differences in answer-extraction performance.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:26:39Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>M. Mohaiminul Islam</name>
+    </author>
+    <author>
+      <name>Muhammad Abulaish</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40516v1</id>
+    <title>How I Aligned Your Model: Scaling Up Multilingual Safety Training with Templates</title>
+    <updated>2026-10-29T17:26:02Z</updated>
+    <link href="https://arxiv.org/abs/2610.40516v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40516v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Safety alignment for Large Language Models is heavily focused on English with limited multilingual representation, particularly damaging low-resource language performance. Related open training datasets are often limited in size or do not follow region-localized harmful topics to broaden the scope of alignment beyond cultures. We propose a scalable template-based augmentation pipeline to produce massive multilingual refusal and benign corpora, extracting safe templates from harmful prompts, translating them and then filling in the slots with culturally authentic entities, both harmful and benign. As a result, we release MSafeTemp, a validated corpus spanning 60 languages useful for multilingual safety alignment and evaluation. Using the dataset, we show that English-only evaluation misjudges multilingual safety: for several models, attacks that fail in English succeed once translated, while culturally localized variants expose further failures that translation alone misses. We also confirm that augmenting safety training data through templates allows for higher diversity and quality of alignment, resulting in improved safety performance beyond English. MSafeTemp and the respective pipeline are aimed at facilitating research and development of safer and more responsible models for less-represented cultures.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:26:02Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Max Neuwinger</name>
+    </author>
+    <author>
+      <name>Hanna Yukhymenko</name>
+    </author>
+    <author>
+      <name>Imanol Schlag</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40511v1</id>
+    <title>A Low-Rank Space Captures Linear Alignment Between LLM and Human Neural Activity During Naturalistic Language Listening</title>
+    <updated>2026-10-29T17:23:44Z</updated>
+    <link href="https://arxiv.org/abs/2610.40511v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40511v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language models (LLMs) are increasingly used as computational models of human language processing, yet it remains unclear which components of their representations drive alignment with neural activity. Here, we use ridge reduced-rank regression to identify the brain-predictive subspace of LLM representations: the representational directions that support linear prediction of neural responses. Across three naturalistic language-listening datasets spanning intracranial electrophysiology and fMRI, and six model conditions spanning autoregressive, bidirectional masked, and randomly initialized language models, we find that full linear encoding performance can be recovered using only 1-3% of the original embedding dimensionality. These low-dimensional subspaces generalize across held-out participants and, to a lesser extent, across datasets, suggesting that neural predictivity is concentrated in a compact and partially shared representational space. We next compare these brain-predictive directions with the principal axes of variation in the embeddings. Principal component analysis requires substantially more dimensions to recover neural prediction, demonstrating that the directions most useful for predicting neural activity are distinct from those capturing the most overall variance within LLM representations themselves. Finally, characterizing the learned subspaces allows us to surface interpretable features that are overrepresented in neural activity above and beyond the LLM representations. Together, these results show that LLM-brain alignment is supported by a small, structured subset of model representations and provides a framework for better understanding exactly why these representations align. Code can be found at: https://github.com/thefinnlab/low-rank-alignment</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-bio.NC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:23:44Z</published>
+    <arxiv:comment>23 pages, 12 figures. Code: https://github.com/thefinnlab/low-rank-alignment</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Zach Paris</name>
+    </author>
+    <author>
+      <name>Emily Finn</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40505v1</id>
+    <title>Discovering Interpretable Acoustic Features in Autoregressive Voice-Cloning TTS Models</title>
+    <updated>2026-10-29T17:21:36Z</updated>
+    <link href="https://arxiv.org/abs/2610.40505v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40505v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Voice-cloning TTS models synthesize an unseen speaker's voice from brief speech prompts, but it remains unclear which acoustic properties they represent and use. We introduce a feature-based interpretability framework for autoregressive voice-cloning TTS models, analyzing features from sparse autoencoders (SAEs), PCA, and random directions via sparse probing, steering, and quantitative auto-interpretability. We focus on Qwen3-TTS and extend probing and steering to $5$ additional models to test generalization across architectures. These models encode concepts like pitch, energy, noise, and accent, but sparse prediction and steering are effective only for some concepts. Strong probing does not always translate to steering or vice-versa. SAEs are useful for sparse probing of human-labelled concepts and novel-concept discovery, while PCA is competitive for dense probing and steering. Auto-interpretability finds $684$ automatically validated SAE features in Qwen3-TTS covering speaker clusters, speaking style, and recording conditions beyond known concepts. Overall, we perform a comprehensive interpretability study of autoregressive voice-cloning TTS models.</summary>
+    <category term="eess.AS" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.SD" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:21:36Z</published>
+    <arxiv:comment>Under review</arxiv:comment>
+    <arxiv:primary_category term="eess.AS"/>
+    <author>
+      <name>Anuj Diwan</name>
+    </author>
+    <author>
+      <name>David Harwath</name>
+    </author>
+    <author>
+      <name>Eunsol Choi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40492v1</id>
+    <title>Agentic University: Collaborative Agents for Personalized Learning</title>
+    <updated>2026-10-29T17:18:07Z</updated>
+    <link href="https://arxiv.org/abs/2610.40492v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40492v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language models support personalized tutoring, content generation, and adaptive learning paths. However, capability development requires these resources and interactions to form a coherent learning process that evolves with the learner. A central challenge is to align goals, activities, and assessment while using learning evidence to decide what should follow. We introduce Human-Participatory Multi-Agent Organization and instantiate it in Agentic University (AU). In AU, learners participate as organization members and work with specialized agents to maintain a revisable Capability Program. The program connects personal goals, learning activities across modalities, and layered assessment, while learner feedback and performance guide subsequent support. Our evaluation shows advantages in program organization, assessment design, and revision quality. Users achieved larger mean assessment gains (12.19 versus 5.61 points on a 50-point scale) and reported stronger cognitive support. This work contributes an organizational approach to adaptive learning that makes learner participation a continuing basis for multi-agent coordination. The Agentic University project is available at \href{https://github.com/AgenticOrgLab/AgenticUniversity.git}.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:18:07Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Jingru Fan</name>
+    </author>
+    <author>
+      <name>Tianle Zhou</name>
+    </author>
+    <author>
+      <name>Yunjie Zhou</name>
+    </author>
+    <author>
+      <name>Zihao He</name>
+    </author>
+    <author>
+      <name>Yixuan Zhou</name>
+    </author>
+    <author>
+      <name>Kezhao Wu</name>
+    </author>
+    <author>
+      <name>Xinyu Zheng</name>
+    </author>
+    <author>
+      <name>Xiyuan Wang</name>
+    </author>
+    <author>
+      <name>Yuheng Wang</name>
+    </author>
+    <author>
+      <name>Zhi Li</name>
+    </author>
+    <author>
+      <name>Songhua Liu</name>
+    </author>
+    <author>
+      <name>Weinan E</name>
+    </author>
+    <author>
+      <name>Chen Qian</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40488v1</id>
+    <title>rTaste: Do Research Agents Have Taste? Evaluating Early Stage Research Judgment</title>
+    <updated>2026-10-29T17:15:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.40488v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40488v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Do research agents have taste, the judgment of which experiments are worth running before their outcomes are known? We give six frontier models seven recent NLP papers. Each model, working as a research agent alone or as a team, proposes minimum viable experiments (MVEs), forecasts whether each will pass a threshold it sets and ranks them. A separate executor then attempts every MVE, including those ranked last, and three model auditors judge the results. Of 415 MVEs, 194 are judged sound, valuable and new, but fewer than half of these (73) are also judged beyond the seed paper and non obvious. The agents' first choices match the auditors' most valued experiment more often than a random pick, but are not shown to improve on choosing the experiment written first. Their forecasts beat a base rate but are not measurably more accurate than those of a fresh instance of the same model given only the paper and registrations. Teams cost more without a clear overall improvement in proposal quality. The agents produce many worthwhile experiments, but the evidence that their rankings improve the choice of which to run remains limited. The evaluation harness and a dataset of all 415 MVEs, with their forecasts and audited outcomes, are available at https://github.com/ArtKanke/rTaste.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:15:53Z</published>
+    <arxiv:comment>27 pages, 1 figure, 9 tables. Code and data: https://github.com/ArtKanke/rTaste</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Art Kanke</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40483v1</id>
+    <title>Preserving Utility in Continual LLM Unlearning via Orthogonal Projections</title>
+    <updated>2026-10-29T17:13:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.40483v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40483v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Unlearning concerns the task of removing the influence of a sensitive portion of the training data, such as protected, copyrighted or private text, from a model without retraining it from scratch. While unlearning requests happen continuously during a model's lifetime, the vast majority of LLM unlearning methods are ill-suited for iterated removal, yielding steep decay in forgetting and utility upon sequential unlearning. This decay stems from interference between successive updates, as each new deletion can undo earlier ones or push the model further along directions already degraded by them. To address this, we introduce Continual Orthogonal Projection (COP), a gradient-projection scheme that restricts each update to the orthogonal complement of activation subspaces cached from prior forget sets. This approach provably guarantees first-order non-interference with earlier deletions. COP stores only a low-rank basis per layer, requiring neither past gradients nor previous forget sets, and plugs into unlearning methods that update the model through gradient steps on a differentiable loss without modifying its objective. Experiments on standard LLM unlearning benchmarks (TOFU and RWKU) show that COP preserves utility across sequential requests without weakening forgetting, preventing the collapse of standard objectives and forgetting more effectively than continual-specific baselines.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:13:53Z</published>
+    <arxiv:comment>14 pages, 4 figures, 3 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Juan Belieni</name>
+    </author>
+    <author>
+      <name>Ana Carolina Erthal</name>
+    </author>
+    <author>
+      <name>Eliezer de Souza da Silva</name>
+    </author>
+    <author>
+      <name>Diego Mesquita</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40482v1</id>
+    <title>FIRME: Registry-Anchored Memory Graphs for Evolving, Heterogeneous Investor Knowledge</title>
+    <updated>2026-10-29T17:13:45Z</updated>
+    <link href="https://arxiv.org/abs/2610.40482v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40482v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Financial AI workflows that reuse investor knowledge need persistent memory that integrates observations across sources and periods without losing identity or provenance. In a knowledge graph, recurring observations may use different surface forms, fragmenting relationship histories and preventing evidence from accumulating. We introduce Fusion and Identity Registry for Memory Evolution (FIRME), a registry-anchored memory graph that reconciles incoming observations to persistent canonical relationships and retains their source, time, and context. Within periods, rule-based fusion links investor-call discussions to portfolio cash-flow signals, directly or through a fixed product-topic ontology. Across periods, canonical identities and persistent aliases direct recurring observations to the same relationship history; deterministic updates summarize reinforcement, inactivity, and reactivation. We evaluate FIRME on proprietary investor-call and cash-flow records and on S&amp;P 500 earnings-call transcripts. Compared with a historical registry that retains canonical identities and semantic fallback but omits alias memory, FIRME increases final-period Correct Match Rate by 7.8-12.1 percentage points across four dataset-backend settings under a fixed-judge and fallback-review protocol. A blinded human audit of 200 incoming observations per setting finds Correct Match Rate gains of 9.0-16.5 points and reattachment-recall gains of 22.5-29.0 points, with higher observed merge precision in all four samples. A separate audit finds valid evidence paths for 293 of 300 outputs from full within-period fusion in the investor-call setting. Extraction-faithfulness and round-trip diagnostics assess source grounding and preservation of extractor-derived graph content.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:13:45Z</published>
+    <arxiv:comment>20 pages. Accepted at the 3rd Workshop on LLMs and Generative AI for Finance (AI4F) at ACM ICAIF 2026 (non-archival)</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Yunbai Zhang</name>
+    </author>
+    <author>
+      <name>Yunyi Gao</name>
+    </author>
+    <author>
+      <name>Han-Tai Shiao</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40476v1</id>
+    <title>Training language models in simulation for psychiatric intake</title>
+    <updated>2026-10-29T17:10:32Z</updated>
+    <link href="https://arxiv.org/abs/2610.40476v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40476v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In psychiatric practice, the clinical intake interview remains a primary diagnostic instrument, requiring the clinician to establish rapport while disentangling complex, overlapping presentations. Here, we show that multi-turn reinforcement learning (RL) in simulation environments improves language model performance on structured text-based psychiatric intake, spanning history-taking, differential diagnosis, and initial management planning. In a randomized, double-blind crossover study ($N = 60$ matched scenario pairs, 120 encounters) comparing the RL-trained agent against its identically prompted base model, 32 board-certified psychiatrists role-played standardized patients while a separate panel of 15 independent, board-certified psychiatrists scored the de-identified transcripts. The trained agent outperformed the base model in 76.7% of matched scenario pairs ($p &lt; 0.0001$), with gains on an adapted clinical-examination rubric ($d_z = 0.77$, $p &lt; 0.0001$), patient-centered communication (82.0% vs. 65.2%, $p &lt; 0.001$), and differential diagnosis appropriateness (68.3% vs. 33.3%, $p &lt; 0.001$). Across 127 psychiatrist-validated simulated intake scenarios, the trained agent nearly doubled its base model's clinical rubric score (0.706 vs. 0.379; composite reward 0.564 vs. 0.294, $p &lt; 0.0001$). To systematically probe conversational safety, we established two Delphi-consensus taxonomies, of clinical safety risks and relational competencies, from which 256 challenging adversarial presentations were derived; we find that training in simulation environments more than halved under-triage of acute safety risks (12.9% vs. 30.5%, $p &lt; 0.0001$). Simulation environments thus provide a controlled testbed for training and stress-testing psychiatric conversational agents, with gains that transferred to psychiatrist-enacted encounters, though residual gaps require safeguards and clinician oversight.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:10:32Z</published>
+    <arxiv:comment>76 pages, 8 figures, 15 tables (27 pages main text, 7 main figures, 2 main tables)</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Samuel Schmidgall</name>
+    </author>
+    <author>
+      <name>Tim Strother</name>
+    </author>
+    <author>
+      <name>Alex Bijamov</name>
+    </author>
+    <author>
+      <name>Min Woo Sun</name>
+    </author>
+    <author>
+      <name>Anil Palepu</name>
+    </author>
+    <author>
+      <name>Akshay Goel</name>
+    </author>
+    <author>
+      <name>Ulysse Marteau-Ferey</name>
+    </author>
+    <author>
+      <name>Théo Moutakanni</name>
+    </author>
+    <author>
+      <name>Yubin Kim</name>
+    </author>
+    <author>
+      <name>Joseph Breda</name>
+    </author>
+    <author>
+      <name>Christina Chen</name>
+    </author>
+    <author>
+      <name>Justin Chen</name>
+    </author>
+    <author>
+      <name>Paul Jhun</name>
+    </author>
+    <author>
+      <name>Andrew Marshall</name>
+    </author>
+    <author>
+      <name>Sarah Montgomery-Taylor</name>
+    </author>
+    <author>
+      <name>Eun Kyoung Hong</name>
+    </author>
+    <author>
+      <name>Shashank Ravi</name>
+    </author>
+    <author>
+      <name>Kameron C. Black</name>
+    </author>
+    <author>
+      <name>David J. H. Wu</name>
+    </author>
+    <author>
+      <name>Austin Schoeffler</name>
+    </author>
+    <author>
+      <name>John Lyon Havlik</name>
+    </author>
+    <author>
+      <name>Elizabeth C. Stade</name>
+    </author>
+    <author>
+      <name>Jared Moore</name>
+    </author>
+    <author>
+      <name>Johannes C. Eichstaedt</name>
+    </author>
+    <author>
+      <name>Logan Pierce</name>
+    </author>
+    <author>
+      <name>Jeff Jopling</name>
+    </author>
+    <author>
+      <name>Johannes Thrul</name>
+    </author>
+    <author>
+      <name>Thomas H. McCoy</name>
+    </author>
+    <author>
+      <name>Neguine Rezaii</name>
+    </author>
+    <author>
+      <name>Mark S. Chen</name>
+    </author>
+    <author>
+      <name>Ellen E. Fitzsimmons-Craft</name>
+    </author>
+    <author>
+      <name>Shirley Wang</name>
+    </author>
+    <author>
+      <name>Desmond C. Ong</name>
+    </author>
+    <author>
+      <name>Katharina Schultebraucks</name>
+    </author>
+    <author>
+      <name>Torrey Creed</name>
+    </author>
+    <author>
+      <name>Bhavna Daryani</name>
+    </author>
+    <author>
+      <name>Aleksandra Faust</name>
+    </author>
+    <author>
+      <name>S. Sara Mahdavi</name>
+    </author>
+    <author>
+      <name>Caroline Figueroa</name>
+    </author>
+    <author>
+      <name>Eric Lin</name>
+    </author>
+    <author>
+      <name>Kate H. Bentley</name>
+    </author>
+    <author>
+      <name>Ernest Lim</name>
+    </author>
+    <author>
+      <name>Zhihan Jiang</name>
+    </author>
+    <author>
+      <name>Xuhai "Orson" Xu</name>
+    </author>
+    <author>
+      <name>Daniel McDuff</name>
+    </author>
+    <author>
+      <name>John Torous</name>
+    </author>
+    <author>
+      <name>Yun Liu</name>
+    </author>
+    <author>
+      <name>Po-Hsuan Cameron Chen</name>
+    </author>
+    <author>
+      <name>Mike Schaekermann</name>
+    </author>
+    <author>
+      <name>Joelle Barral</name>
+    </author>
+    <author>
+      <name>Alvin Rajkomar</name>
+    </author>
+    <author>
+      <name>Tao Tu</name>
+    </author>
+    <author>
+      <name>Lin Yang</name>
+    </author>
+    <author>
+      <name>Isaac Galatzer-Levy</name>
+    </author>
+    <author>
+      <name>David Racz</name>
+    </author>
+    <author>
+      <name>Valentin Liévin</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40454v1</id>
+    <title>Glance: The Generator Is Its Own Reranker</title>
+    <updated>2026-10-29T17:01:22Z</updated>
+    <link href="https://arxiv.org/abs/2610.40454v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40454v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Retrieval-augmented generation commonly serves separate models for reranking and answering, duplicating model residency and passage processing. We introduce Glance, which equips the generator with a lightweight decision adapter and pointer head to score candidate passages from a shared prefill. Short relevance probes branch from the cached context, producing one score per passage without separately prefilling each query-passage pair. A single resident 9B backbone supports generation, general decisions and reranking, with approximately 0.1 GiB of additional memory per decision skill. After 39 minutes of MS MARCO fine-tuning, Glance achieves nDCG@10 of 0.741 on SciFact and 0.345 on NFCorpus, compared with 0.721 and 0.326 for bge-reranker-v2-m3. On 300 HotpotQA questions, its selected context improves answer F1 by 0.045 over cross-encoder-selected context under the same base generator (paired bootstrap 95% CI [0.014, 0.076]). In a scaling study, reranking quality keeps rising up to 200 candidates (43k tokens) scored from one shared prefill, where it exceeds the cross-encoder by 0.058 nDCG@10, and a probe-only activated adapter lets generation continue from the original passage cache. These initial results demonstrate generator-based reranking with one resident backbone; evaluation currently covers two retrieval datasets, one QA dataset and one backbone family.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T17:01:22Z</published>
+    <arxiv:comment>12 pages, 2 figures, 6 tables. Adapters and code: https://huggingface.co/airun-ai/GlanceRAG-MiMo-9B-Reranker</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Adilet Metinov</name>
+    </author>
+    <author>
+      <name>Chingiz Arziev</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40444v1</id>
+    <title>Prefix Executability: Evaluating Tool-Using Agents Beyond Final Success</title>
+    <updated>2026-10-29T16:58:04Z</updated>
+    <link href="https://arxiv.org/abs/2610.40444v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40444v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Tool-use benchmarks often score agents by final task success, but terminal outcomes can obscure whether the intermediate tool-call trajectory was executable. We propose prefix executability as a trajectory-level evaluation protocol for tool-using agents. The protocol measures whether every prefix of a predicted tool-call sequence remains executable under tool schemas, state preconditions, and data dependencies, and summarizes reliability using Prefix Executability Curves (PEC), First-Error Depth (FED), Trajectory Executability Rate (TER), horizon-normalized AUC-PEC, and Recovery Rate (RR). We instantiate the protocol on stratified samples from BFCL-v3 multi-turn and ToolSandbox, and on the complete Airline/Retail base splits of $τ^3$-bench. We observe that outcome-only and prefix-level rankings diverge: agents whose execution is conditioned on an unverified plan often achieve higher point-estimate final success than non-plan-conditioned baselines while substantially lowering TER and AUC-PEC. These divergences are precisely the failure modes that prefix executability is designed to expose: they reveal whether apparent success rests on an executable trajectory, where invalidity first enters, and whether success follows recovery from an earlier failure. As a validation intervention, explicit pre-execution plan checking can improve executable-prefix survival while maintaining competitive terminal success. These results show that final success alone is insufficient for evaluating tool-use agents and that prefix-level executability provides an actionable reliability signal for comparing agents, diagnosing failures, and assessing validation mechanisms.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T16:58:04Z</published>
+    <arxiv:comment>21 pages, 2 figures. Accepted to NeurIPS 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Amir H. Rezaeian</name>
+    </author>
+    <author>
+      <name>Weiyi Sun</name>
+    </author>
+    <author>
+      <name>Yassine Benajiba</name>
+    </author>
+    <author>
+      <name>Dan Roth</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40394v1</id>
+    <title>Scaling Mathematical Proof Supervision from Structured Textbooks</title>
+    <updated>2026-10-29T16:32:59Z</updated>
+    <link href="https://arxiv.org/abs/2610.40394v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40394v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Mathematical supervision for language models is typically flattened into isolated problem-solution pairs, discarding the curricular organization and evidential structure of the original sources. We introduce TOME-Math (Textbook-Oriented Mathematical Evidence), a large-scale corpus that converts 2,118 textbooks spanning the core areas of university-level mathematics subjects into approximately 380K structured proof-supervision records while preserving chapter order, proposition-proof links, dependency references, and source provenance. Leveraging these structural signals, we explore curriculum learning across multiple mathematical subjects and characterize scaling patterns with supervision volume and source breadth. At full scale, fine-tuning on TOME-Math raises the unweighted mean score across our held-out evaluations and established public benchmarks by 16.7 percentage points over the base model, while exceeding all three public instruction-data baselines evaluated in aggregate. Our findings highlight structured textbooks as both a scalable source of mathematical supervision and an empirical framework for studying the impact of data organization on mathematical reasoning. We will release the corpus to facilitate further research on structured mathematical supervision.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T16:32:59Z</published>
+    <arxiv:comment>35 pages, 18 figures, 14 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Youqing Fang</name>
+    </author>
+    <author>
+      <name>Zhouqi Hua</name>
+    </author>
+    <author>
+      <name>Yinhao Tang</name>
+    </author>
+    <author>
+      <name>Yuzhe Gu</name>
+    </author>
+    <author>
+      <name>Lingkai Kong</name>
+    </author>
+    <author>
+      <name>Bin Liu</name>
+    </author>
+    <author>
+      <name>Weiming Zhang</name>
+    </author>
+    <author>
+      <name>Kai Chen</name>
+    </author>
+    <author>
+      <name>Yanan Sun</name>
+    </author>
+    <author>
+      <name>Wenwei Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40379v1</id>
+    <title>Agentic LLM reasoning in pediatric diabetes outcome prediction from multimodal medical records</title>
+    <updated>2026-10-29T16:23:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.40379v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40379v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language model (LLM) agents are proposed for clinical prediction but are untested in pediatrics, where cohorts are small and outcomes are uncommon. Using records from 2,489 youth with type 2 diabetes (T2D) and 4,018 with type 1 diabetes (T1D), spanning structured data, note-derived social determinants and, in T1D, continuous glucose monitoring data, we predicted seven T2D outcomes, four also in T1D, at 24 months from 18 months of follow-up. CEDAR (Clinical Evidence-Driven Agent for Risk-prediction), an evidence-citing, self-auditing LLM pipeline, outperformed trained machine learning in both cohorts (pooled area under the receiver operating characteristic curve 0.815 versus 0.656 to 0.700 in T2D and 0.756 versus 0.603 to 0.631 in T1D), most on the sparsely screened outcomes. Only 4 of 70,246 values it cited did not match the chart. Reading only the evidence and reasoning cited by CEDAR, two pediatric endocrinologists reached the same prediction as CEDAR in about nine of ten cases, agreeing with each other on 90.5%.</summary>
+    <category term="q-bio.QM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T16:23:47Z</published>
+    <arxiv:comment>18 pages main text plus 40 pages Supplementary Information</arxiv:comment>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <author>
+      <name>Daniel Palacios</name>
+    </author>
+    <author>
+      <name>Guantong Qi</name>
+    </author>
+    <author>
+      <name>Anna Kadi</name>
+    </author>
+    <author>
+      <name>Natali Borrego</name>
+    </author>
+    <author>
+      <name>Sukru Aras</name>
+    </author>
+    <author>
+      <name>Michael L. Ferm</name>
+    </author>
+    <author>
+      <name>Elizabeth Kubota-Mishra</name>
+    </author>
+    <author>
+      <name>Maria J. Redondo</name>
+    </author>
+    <author>
+      <name>Zhandong Liu</name>
+    </author>
+    <author>
+      <name>Mustafa Tosur</name>
+    </author>
+    <author>
+      <name>Hu Chen</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40350v1</id>
+    <title>Don't Lose the Thread: Empowering Long-Horizon LLM Agents with Cognitive Resource Self-Allocation</title>
+    <updated>2026-10-29T16:07:10Z</updated>
+    <link href="https://arxiv.org/abs/2610.40350v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40350v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Agents powered by large language models (LLMs) have demonstrated remarkable progress in solving complex reasoning tasks. However, LLM agents often falter on long-horizon tasks due to cognitive overload, as their working memory becomes cluttered with expanding and irrelevant information, which dilutes their attention and hinders effective planning and reasoning. To mitigate this challenge, we introduce Cognitive Resource Self-Allocation (CORAL), a novel reasoning paradigm that empowers agents to proactively optimize their context. Implemented as an agent-callable working memory management toolset, CORAL allows an agent to checkpoint its task progress and verified facts, and adaptively initiate a new problem-solving episode by resetting cluttered context while preserving only the checkpointed information, enabling it to resume reasoning from a clean state. We further enhance the agent's checkpointing capabilities using a Multi-episode Agentic Reinforced Policy Optimization algorithm. On the GAIA benchmark, CORAL with an 8B model achieves 42.8% average accuracy, with particularly strong gains on the most challenging long-horizon tasks (Level 2 and Level 3). Crucially, these gains come at a substantially lower inference cost: CORAL consumes 6-7$\times$ fewer input tokens than a ReAct agent. It also generalizes to multi-hop Knowledge QA benchmarks and to the considerably harder BrowseComp, where it improves a strong proprietary agent by 8.0 points.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T16:07:10Z</published>
+    <arxiv:comment>Accepted at COLM 2026. Code is available at https://github.com/JIA-Lab-research/CORAL</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Zheng Zhu</name>
+    </author>
+    <author>
+      <name>Xiaozhuan Liang</name>
+    </author>
+    <author>
+      <name>Xi Chen</name>
+    </author>
+    <author>
+      <name>Bei Yu</name>
+    </author>
+    <author>
+      <name>Jiaya Jia</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40328v1</id>
+    <title>Factorized Representations of Concurrent Temporal Variables in Pretrained Language Models</title>
+    <updated>2026-10-29T15:56:31Z</updated>
+    <link href="https://arxiv.org/abs/2610.40328v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40328v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Language models often need to maintain multiple contextual variables that evolve independently within a document. Prior work has identified structured representations of individual temporal or contextual quantities, but their joint organization remains less understood. We study this question using controlled documents with independently phased language-switch and topic-change timers. Across ten pretrained checkpoints, both timers are linearly decodable from the same hidden states. Removing a timer-associated centroid plane substantially reduces access to its associated variable while having little effect on the concurrent timer, although the planes are nonorthogonal and contain cross-timer information. Separate timer contributions also explain most reproducible variation among joint-state centroids. These signatures persist from 3 to 51 timer values and across Qwen3 checkpoints from 0.6B to 14B. Schedule position affects continuation probabilities, but the tested centroid displacement produces no consistent timer-specific output effect. Together, these results support approximate factorization based on selective accessibility and approximately additive joint-state geometry in overlapping subspaces.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:56:31Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Xinhe Zhang</name>
+    </author>
+    <author>
+      <name>Arnau Marin-Llobet</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40318v1</id>
+    <title>Decision and System One models in rheumatology: accuracy and calibration on specialty-training examination questions and diagnostic case vignettes</title>
+    <updated>2026-10-29T15:53:05Z</updated>
+    <link href="https://arxiv.org/abs/2610.40318v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40318v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Objectives: To evaluate the accuracy and calibration of Decision and System One models on rheumatology examination questions and diagnostic vignettes. Methods: Two benchmarks were analysed: 172 rheumatology questions from Spanish specialty-training examinations (expanded RheumaMIR dataset) in Spanish and English, and 70 English diagnostic vignettes from RheumBench with 5-18 candidate diagnoses, 52 of which included the reference diagnosis. Four System One models (Jev 1.13, Clef, Microsoft-Decision-1, Laya) and GPT-6 Luna (OpenAI Decisions API) were compared with GPT-6 Sol and two local generative models. The primary outcome was accuracy; secondary outcomes included calibration, discrimination, accuracy of answers with probability &gt;=0.90 and language differences. Results: In RheumaMIR, Jev's accuracy was 93.0% in Spanish and 91.9% in English, below GPT-6 Sol (99.4%; Holm-adjusted P&lt;=0.005); GPT-6 Luna reached 97.7%, Clef 91.9-93.0% and Microsoft-Decision-1 86.0-87.8%, without detectable language differences. Jev's answers with probability &gt;=0.90 (76-77% of answers) were 98.5% correct. In RheumBench, accuracy was lower: GPT-6 Sol 76.9%, GPT-6 Luna 63.5%, Clef 59.6%, Jev 50.0% and Microsoft-Decision-1 40.4% (each System One model below GPT-6 Sol, Holm-adjusted P&lt;=0.045; chance 9.6%). Jev became overconfident (mean probability 0.659; over/underconfidence index +0.159), and its answers with probability &gt;=0.90 (25% of cases) were 84.6% correct, against 95.5% for GPT-6 Luna (42%). Laya performed near chance in both benchmarks. Conclusion: The best-performing System One models were highly accurate on examination questions but less accurate on diagnostic vignettes, remaining below GPT-6 Sol. Jev's high-confidence predictions were less reliable on vignettes, highlighting the need for task-specific evaluation and calibration.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:53:05Z</published>
+    <arxiv:comment>28 pages, 2 figures, 2 tables; includes supplementary material (8 tables, 1 figure)</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Alfredo Madrid-García</name>
+    </author>
+    <author>
+      <name>Diego Benavent</name>
+    </author>
+    <author>
+      <name>Fabian Lechner</name>
+    </author>
+    <author>
+      <name>Phillip Kremer</name>
+    </author>
+    <author>
+      <name>Johannes Knitza</name>
+    </author>
+    <author>
+      <name>Beatriz Merino-Barbancho</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40290v1</id>
+    <title>Leveraging Recourse and Size Bounds for OnlineKnapsack with Removable Items</title>
+    <updated>2026-10-29T15:40:12Z</updated>
+    <link href="https://arxiv.org/abs/2610.40290v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40290v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In the online unweighted knapsack problem, items arrive sequentially and must be accepted or rejected immediately for a bounded-capacity knapsack, aiming to maximize the total size of accepted items. When decisions are irrevocable, no algorithm achieves a non-trivial competitive ratio. An essential relaxation that circumvents this impossibility is to allow previously accepted items to be removed from the knapsack (a.k.a. removal). In this work, we investigate possible further improvements on the competitive ratio with removal by bringing together two other previously proposed model extensions: knowledge of an upper bound on the item sizes (a.k.a. bound awareness) and ability to reinsert previously rejected items(a.k.a.recourse). Our contributions are twofold. First, we establish close upper and lower bounds on the competitive ratio under bound awareness, removal and recourse. We show that significant improvements on the best known competitive ratio are possible when the upper bound on the item sizes is not too restrictive and only few uses of recourse are available. Second, we introduce the notion of adaptive online algorithms which do not require to know any upper bound on the item sizes but still achieve performance guarantees comparable to the ones obtained under the bound awareness model.</summary>
+    <category term="cs.DS" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:40:12Z</published>
+    <arxiv:primary_category term="cs.DS"/>
+    <author>
+      <name>Dimitris Fotakis</name>
+    </author>
+    <author>
+      <name>Laurent Gourvès</name>
+    </author>
+    <author>
+      <name>Aris Pagourtzis</name>
+    </author>
+    <author>
+      <name>Panagiotis Patsilinakos</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40283v1</id>
+    <title>Latent Path Exploration via Potential-Guided Subtrajectory Balance</title>
+    <updated>2026-10-29T15:35:28Z</updated>
+    <link href="https://arxiv.org/abs/2610.40283v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40283v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Continuous latent reasoning enables language models to perform intermediate computation without generating explicit reasoning traces. Advances in stochastic latent reasoning allow multiple paths to be sampled in continuous space, but stochasticity alone does not ensure effective exploration. A key challenge is guiding stochastic transitions between intermediate latent states toward useful reasoning paths. We introduce SubLAT, which couples a relative answer potential with Subtrajectory Balance to learn stochastic latent exploration. The relative potential evaluates the answer support of sampled states against replacement states, with a correctness signal at the terminal state. Subtrajectory Balance relates potential differences to forward and backward transition densities across subtrajectories of different lengths. The model is jointly trained with answer supervision, CoT supervision, and representation distillation. Experiments on arithmetic and deductive reasoning show increasing solution coverage with larger sampling budgets across in-domain and out-of-domain benchmarks, as well as improvements on several structural OOD benchmarks. Trajectory analyses reveal progressive divergence among sampled latent paths and higher mean relative potentials for correct trajectories across arithmetic benchmarks.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:35:28Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Xiaoling Zeng</name>
+    </author>
+    <author>
+      <name>Qi Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40278v1</id>
+    <title>Neighborhood Elites: Quality-Diversity Search for Uncertainty Quantification in Question Answering</title>
+    <updated>2026-10-29T15:32:57Z</updated>
+    <link href="https://arxiv.org/abs/2610.40278v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40278v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language models (LLMs) are increasingly capable, yet they produce wrong answers indistinguishable from correct ones. In question answering (QA), such an error propagates unnoticed into downstream tasks. Perturbation-based uncertainty quantification (UQ) addresses this by probing a model over a set of input rewrites and reading uncertainty from how much its predictions vary. Yet this set is usually built generically, by free paraphrasing, token-level perturbation, or adversarial search. Such rewrites leave two things uncontrolled that matter in QA: what kind of change is made to the context, and how explicitly the context supports the answer. When neither is controlled, the composition of the set is determined by the generator rather than by design, and the estimate inherits whatever that generator happens to produce. Quality-diversity (QD) search is built to cover a predefined exploration space, so we recast input perturbation as a QD problem and propose \emph{neighborhood elites (NE)}, a neighborhood constructor that spreads answer-preserving rewrites across two axes, the kind of edit and the explicitness of support. We compare NE against three other neighborhood constructors, holding the editor, QA model, uncertainty measure and search objective fixed, and against three scores read from the original context. Across five extractive-QA datasets and five instruction-tuned LLMs, NE improves failure detection against every other constructor in at least 24 of the 25 dataset-model pairs, reaching 0.726 AUROC and 0.211 AUPRC lift over the base rate. Additionally, NE detects failure better than semantic entropy computed over decoder samples, by 0.074 AUROC and 0.062 AUPRC lift, and this advantage widens as the neighborhood grows.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:32:57Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Mesut Ceylan</name>
+    </author>
+    <author>
+      <name>Arda Baris Basaran</name>
+    </author>
+    <author>
+      <name>Elgar Fleisch</name>
+    </author>
+    <author>
+      <name>Filipe Barata</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40256v1</id>
+    <title>When Requirements Interact: Scaling Long-Horizon Coding via Interdependent Specifications</title>
+    <updated>2026-10-29T15:22:49Z</updated>
+    <link href="https://arxiv.org/abs/2610.40256v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40256v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>To succeed in real-world long-horizon software development, coding agents must satisfy multi-dimensional task specifications, such as interface compatibility and error handling, and do so without breaking existing dependencies. However, current works lack specification in both quantity and diversity, often emphasizing primary goals while ignoring complex constraints. Synthesizing tasks to bridge this gap presents two challenges: naively adding specifications risks reducing tasks to trivial checklists rather than compelling joint reasoning, and verifying these subtle interactions risks overlooking hidden flaws or rejecting valid alternatives. To address these challenges, we introduce CodeSpecWeave, a framework for synthesizing tasks with rich, interdependent specifications. Grounded in real developer seeds, a synthesis agent iteratively develops both coupled task requirements and executable tests, while a review agent audits solution trajectories from multiple models to guarantee test reliability. Using this pipeline, we construct 4,670 training tasks across 2,865 repositories. Applying Reinforcement learning on these tasks significantly improves performance over the base model on DeepSWE-v1.1, largely outperforming existing baselines. Furthermore, we curate CodeSpecWeave-Bench, a rigorous benchmark comprising 100 tasks and 1,044 specifications, which clearly separates frontier models and reveals significant headroom in handling interdependent engineering constraints.</summary>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:22:49Z</published>
+    <arxiv:primary_category term="cs.SE"/>
+    <author>
+      <name>Yishuo Cai</name>
+    </author>
+    <author>
+      <name>Minzheng Wang</name>
+    </author>
+    <author>
+      <name>Liang Zhao</name>
+    </author>
+    <author>
+      <name>Linghao Zhang</name>
+    </author>
+    <author>
+      <name>Lei Li</name>
+    </author>
+    <author>
+      <name>Shicheng Li</name>
+    </author>
+    <author>
+      <name>Xu Sun</name>
+    </author>
+    <author>
+      <name>Fuli Luo</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40241v1</id>
+    <title>Judged in Company: In-Context Batching Makes LLM Verdicts Depend on Other Items</title>
+    <updated>2026-10-29T15:14:16Z</updated>
+    <link href="https://arxiv.org/abs/2610.40241v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40241v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>To save cost, practitioners often ask a language model to grade many independent items in one prompt. This assumes that verdicts are separable: that the verdict on an item does not depend on the other items in the prompt or on its position among them. Across three judgement tasks (harm in social-media comments, short-answer grading and review star ratings) and five open-weight models with 4-9B parameters, assigning the same 2,000 items to different random batches of 25 changes 11-22% of decisions on harm and grading, 6.5-13.3 points more than renaming the item keys or rewording the instruction, while AUROC against human labels differs from single-item grading only by -0.033 to +0.010; for four models with 14-32B parameters, 6-15% of decisions change, 4.2-9.1 points more. We show that flip rates decompose exactly into components of order, slot and membership, and that under a threshold model they grow with the square root of the variance that the context contributes, so that effects that are small for scores are large for decisions. Most of the latent dissimilarity between partitions comes from the order of the neighbours and the slot. The main effect of which items share the prompt, the part that voting over permutations of a batch cannot remove, accounts for 0.11-0.22 of it, and majority votes over nine permutations still leave 52-60% of the flips. Batched verdicts also differ systematically from single-item verdicts: even the majority of fifteen random batches disagrees with them on 8.4-17.8% of decisions. Editing a single generation shows that both the model's own earlier verdicts and the neighbours' texts carry the effect. On the easy task, star ratings, only 2.9-3.9% of decisions change. We recommend grading ambiguous items one per prompt, recovering most of the cost with a cached prefix, and reporting agreement with single-item grading whenever items are batched.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:14:16Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Peng Xie</name>
+    </author>
+    <author>
+      <name>Amr Alanwar</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40238v1</id>
+    <title>ScienceJudge: Pattern Perturbation Augmentation for Sentence-Level Scientific Claim Verification</title>
+    <updated>2026-10-29T15:12:35Z</updated>
+    <link href="https://arxiv.org/abs/2610.40238v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40238v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Sentence-level scientific claim verification determines whether each sentence in an AI-generated scientific paragraph is supported by a given multimodal evidence bundle. Fine-grained reporting errors often preserve fluent and plausible statements while introducing subtle evidence-claim deviations, making them difficult to detect under sparse and imbalanced supervision. We propose Pattern Perturbation Augmentation (PPA), which models reporting errors as label-specific faithfulness breaking transformations and induces reusable error patterns from labeled examples. PPA applies these patterns to supported claims to construct controlled hard negatives and expands their coverage through pattern-level, operation-level, and cross-domain augmentation. Based on these augmented views, we develop ScienceJudge, which integrates PPA-trained vision-language predictors and instruction-guided LLM predictors through class-weighted ensemble inference. On the local development set, ScienceJudge improves the average score from 0.8124 to 0.8692, achieving a Macro-F1 of 0.8466 and a Paragraph Exact Match score of 0.8919. Our submitted system ranks first on the official NLPCC 2026 Task 10 Track 1 leaderboard with a final score of 0.6890.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:12:35Z</published>
+    <arxiv:comment>13 pages, 1 figure; NLPCC 2026 Shared Task 10 (Track 1)</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Chuhai Cai</name>
+    </author>
+    <author>
+      <name>Xin Chen</name>
+    </author>
+    <author>
+      <name>Min Yang</name>
+    </author>
+    <author>
+      <name>Feng Jiang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40233v1</id>
+    <title>Mobilizing the Archive: Bitext Extraction at Scale from Archival Documents for Extremely Low-resource Languages</title>
+    <updated>2026-10-29T15:06:58Z</updated>
+    <link href="https://arxiv.org/abs/2610.40233v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40233v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>While mining parallel sentences from web pages has proven effective for low-resource machine translation, the majority of the world's languages have little to no web presence. What they do have, though, are resources that are the result of centuries of efforts by linguists, such as grammars, dictionaries, and other documentation materials. We propose extracting translation examples from such linguistic resources, which offer parallel data for languages under-represented online and could potentially scale to thousands more languages. We develop a pipeline to achieve this, leveraging an Optical Character Recognition (OCR) model as well as a vision language model (VLM), to ensure identified content to be aligned with visual layout information. We demonstrate the utility of the extracted bitexts for bootstrapping translation systems across 20 languages, both by training machine translation models and by applying in-context learning for large language models. For in-context learning, we observe improvements of +15.78 and +6.94 chrF2++ over zero-shot translation for into low- and high-resource languages, respectively.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:06:58Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Chutong Meng</name>
+    </author>
+    <author>
+      <name>Alec J. Bateman</name>
+    </author>
+    <author>
+      <name>Antonios Anastasopoulos</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40227v1</id>
+    <title>EpiAgent: Epistemic Self-Play for LLM Agents</title>
+    <updated>2026-10-29T15:05:08Z</updated>
+    <link href="https://arxiv.org/abs/2610.40227v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40227v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Epistemic game theory explains an agent's strategic behavior via the beliefs it holds about others and how these beliefs are updated as the interactions unfold. Modern LLM-based agents, however, often lack an explicit mechanism for learning and updating such beliefs to guide decisions under incomplete information. To bridge this gap, we propose EpiAgent, a framework that equips LLM-based agents with an explicit, learnable epistemic layer, which maintains beliefs over others' private information and combines these beliefs with the agent's available information into an epistemic state for action selection. Concretely, the agent's policy is decomposed into two coupled stages: Epistemic Update, which updates these beliefs from interaction histories, and Action Planning, which selects actions conditioned on the updated epistemic state. By formulating their dependency as a bi-level optimization problem, we introduce Epistemic Self-Play, an algorithm that alternately optimizes the two stages through self-play, utilizing an intrinsic prediction reward to evaluate how well inferred beliefs predict subsequent observations. Empirical results across both mixed and competitive scenarios show that EpiAgent consistently outperforms prompting-based and RL-based baselines. Further analyses reveal the benefits of dedicated epistemic training, improvements in belief inference accuracy, and the contribution of learned beliefs to action planning. These results demonstrate the value of an explicit, learnable epistemic layer for effective multi-agent interactions.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.MA" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T15:05:08Z</published>
+    <arxiv:comment>23 pages, 5 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Xuanfa Jin</name>
+    </author>
+    <author>
+      <name>Xinyu Cui</name>
+    </author>
+    <author>
+      <name>Zhijian Ma</name>
+    </author>
+    <author>
+      <name>Xue Yan</name>
+    </author>
+    <author>
+      <name>Jian Zhao</name>
+    </author>
+    <author>
+      <name>Haifeng Zhang</name>
+    </author>
+    <author>
+      <name>Jun Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40196v1</id>
+    <title>Towards Full-Text Scholarly Argument Mining using Entity-Anchored Claim Extraction</title>
+    <updated>2026-10-29T14:50:41Z</updated>
+    <link href="https://arxiv.org/abs/2610.40196v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40196v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Argument mining in full-text scholarly articles remains an important yet challenging task. This difficulty stems not only from the need to model long-distance dependencies but also from the substantial effort required to annotate sentence-level argumentative components throughout lengthy documents. To address these challenges, we introduce a novel approach that leverages scientific entity mentions (e.g., tasks, datasets, and models) to identify and structure claims in scholarly literature. We validate our approach through a case study involving 50 full-text research papers on sentiment analysis. We first establish a reliable human gold standard (Krippendorff's $α= 0.80$), identifying 113 claim-bearing sentences and extracting 199 structured claim records from 300 candidate sentences. To address the annotation bottleneck, we employ a majority-voting ensemble of large language models (LLMs) to generate a silver-standard dataset comprising 1,487 claims. Encoders fine-tuned exclusively on the silver-standard dataset outperform those trained on a small human-annotated gold-standard dataset and demonstrate strong zero-shot transfer to NLP papers outside the training corpus.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T14:50:41Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Bhuvanesh Verma</name>
+    </author>
+    <author>
+      <name>Andy Lüking</name>
+    </author>
+    <author>
+      <name>Mounika Marreddy</name>
+    </author>
+    <author>
+      <name>Leon Lukas Hammerla</name>
+    </author>
+    <author>
+      <name>Alexander Mehler</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40124v1</id>
+    <title>It Takes Two to Probe, Thousands to Retrieve: Putting Vision--Language Probes to the Retrieval Test</title>
+    <updated>2026-10-29T14:20:31Z</updated>
+    <link href="https://arxiv.org/abs/2610.40124v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40124v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Vision--language models (VLMs) are tested for fine-grained understanding with image--text matching probes, a model must prefer the correct image or caption over handcrafted negative. In retrieval, the correct item must beat thousands of alternatives. We measure how these two evaluation methods relate by using two probing benchmarks, \svo{} and SugarCrepe, for retrieval tasks. For 100 image and caption queries we judge the top-10 retrievals from full dataset of six VLMs, with human annotators and an LLM assessor. We than compare how well models rank pool of items on the same queries, while changing only where the negatives comes from: the benchmark, a random draw, or the judged-incorrect retrievals of other models. On \svo{} the accuracy of retrieving a positive over handcrafted negatives is significantly higher than for retrieved ones (the correct item is preferred in 85\% against 77\% of the time). Using pool of ten retrieved negatives leads to same accuracy as when one uses pool of 200 to 430 random negatives. On SugarCrepe the order is reversed: its handcrafted negatives are harder than the retrieved ones. Incomplete relevance labels explain most of the low retrieval scores on \svo{}, where the top-ranked item is correct for 54--90\% of the queries under human labels against 6--21\% under the benchmark's labels. However, we detect no association between passing the probe for a query and retrieving a correct item first. The LLM assessor o3 agrees with individual annotators ($κ$ 0.57--0.61) slightly less than they agree with each other (0.64--0.68).</summary>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T14:20:31Z</published>
+    <arxiv:comment>12 pages, 2 figures, 3 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CV"/>
+    <author>
+      <name>Ivana Beňová</name>
+    </author>
+    <author>
+      <name>Michal Gregor</name>
+    </author>
+    <author>
+      <name>Marián Šimko</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40091v1</id>
+    <title>Upcycling Language Models for Multiple Specialized Domains</title>
+    <updated>2026-10-29T13:58:38Z</updated>
+    <link href="https://arxiv.org/abs/2610.40091v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40091v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Effective multi-domain adaptation of large language models requires prioritizing relevant domain knowledge while minimizing interference from irrelevant domains. Existing approaches commonly use Low-Rank Adaptation (LoRA) to train a separate adapter for each domain and combine these adapters within one model. However, they either weight adapters equally regardless of the input domain or dynamically weight adapters while still activating all of them including irrelevant ones. Additionally, while efficient, their low-rank structure limits performance. In contrast, upcycling is a model expansion method that adds experts and a router to a dense Transformer layer offering larger capacity than LoRA approaches. In this paper, we propose Domain-Specialized Upcycling (DS-Upcycling) for multi-domain adaptation. We introduce a new domain-aware supervision that allows the router to effectively learn to distinguish domains by selecting the appropriate experts. During fine-tuning on each new domain, we update only the corresponding expert and router while freezing all other parameters. Experiments show that our method achieves the highest average performance across the adapted domains compared to baselines while retaining general performance. With just 256 examples per domain for router supervision, DS-Upcycling achieves 90-98% routing accuracy after adaptation compared with 43-70% for routers trained without our approach.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T13:58:38Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Mingzi Cao</name>
+    </author>
+    <author>
+      <name>Xi Wang</name>
+    </author>
+    <author>
+      <name>Nikolaos Aletras</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40055v1</id>
+    <title>One Vector or Many? Clustered Optimal-Transport Steering under Quantization</title>
+    <updated>2026-10-29T13:46:39Z</updated>
+    <link href="https://arxiv.org/abs/2610.40055v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40055v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Activation steering changes what a language model generates by editing its hidden states at inference time. Its most common form adds one vector, the difference of class means (DiM), to every hidden state. CHaRS (concept heterogeneity-aware representation steering) uses optimal transport instead: an entropic plan pairs the clusters of the two classes, and each hidden state moves along a mixture of the cluster displacements, weighted toward its nearest clusters. We study this family of clustered optimal-transport maps for toxicity mitigation in Gemma-2-2B and Granite-3.1-2B, and ask what the plan adds to DiM and whether that survives INT8 and NF4 quantization.
+  We prove an identity: whatever the plan, the displacements averaged with the cluster sizes as weights equal DiM, so a clustered map can differ from DiM only for tokens whose routing weights depart from the cluster sizes. In the CHaRS protocol they stay close, and CHaRS is statistically equivalent to Mean-AcT, which adds DiM at every layer, in all eight pre-specified equivalence tests. A variant fitted on individual tokens, which routes each token mainly to its nearest clusters, leaves 37-39% less toxicity than DiM on Gemma and 51-61% less on Granite at steering strength 3 (toxic-bert), where DiM already removes 76-85% of it. Two other toxicity classifiers confirm the gain on Granite, but on Gemma only one does. At equal strength the variant has somewhat higher perplexity, but at matched toxicity it is slightly more fluent than DiM. Yet a nearly constant map from the same clusters also leaves about 30% less toxicity, so the role of treating tokens differently remains open.
+  Under INT8 and NF4 the variant still leaves less toxicity than DiM, and transferring it from full precision to the NF4 model instead of refitting it adds no significant toxicity after correction for multiple tests.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T13:46:39Z</published>
+    <arxiv:comment>34 pages, 12 figures, 14 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Illia Makarov</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40051v1</id>
+    <title>Rethinking Pre-pretraining</title>
+    <updated>2026-10-29T13:45:58Z</updated>
+    <link href="https://arxiv.org/abs/2610.40051v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40051v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We report that allocating compute to synthetic pre-pretraining (PPT) never outperforms pure natural-language training in our compute-matched experiments. This holds across four PPT curricula (k-Dyck, neural cellular automata (NCA), declarative reference corpora, and code) and three training regimes: data-constrained, data-unconstrained, and a high token-to-parameter-ratio regime (881M parameters trained on 50B tokens). When natural language is scarce, repeated epochs over a 100M-token corpus beat every synthetic curriculum on natural-language validation loss, with no consistent downstream accuracy advantage from PPT. We find that PPT gains reported in prior work are sensitive to the weight initialization scheme. In an NCA reproduction, we recover a 5.4% perplexity improvement from PPT under the original initialization scheme. An alternative scheme improves both methods, but the no-PPT baseline more, closing the gap between them. However, when PPT receives additional compute rather than a share of the natural-language budget, gains persist at small natural-language budgets even with improved initialization, but disappear by 1B tokens. Finally, models forget what they learn during PPT in subsequent natural-language training; interleaving the same data throughout training prevents forgetting, but does not significantly improve natural-language performance. Our results suggest limited benefits of synthetic pre-pretraining as a distinct training stage and motivate rethinking how such data are used in language model training.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T13:45:58Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Alexander Stern</name>
+    </author>
+    <author>
+      <name>Tim Rocktäschel</name>
+    </author>
+    <author>
+      <name>Acyr Locatelli</name>
+    </author>
+    <author>
+      <name>Laura Ruis</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.40031v1</id>
+    <title>AI Cosmos: An Agentic Infra for Situated Learning</title>
+    <updated>2026-10-29T13:36:31Z</updated>
+    <link href="https://arxiv.org/abs/2610.40031v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.40031v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language models (LLMs) can improve task performance during learning, yet these gains do not necessarily reflect learners' ability to thereafter apply the knowledge and skills independently. We present AI Cosmos, an agentic infrastructure for situated learning that organizes learning around two complementary principles: scenario-based participation and cumulative assets of practice. AI Cosmos organizes learners and role-specialized agents within learning scenarios that integrate task-relevant knowledge and, when needed, executable workbenches. An asset-memory loop preserves the processes and outcomes of practice as reusable assets with explicit provenance and dependencies. We evaluate scenario-based interaction through two preregistered randomized controlled studies examining the acquisition of legal reasoning and programming competence, holding the same underlying LLM across conditions. AI Cosmos achieves greater learning gains than a conventional LLM in legal reasoning and higher mastery of unseen programming problems than an LLM-as-Teacher baseline.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T13:36:31Z</published>
+    <arxiv:comment>https://github.com/THU-AICosmos</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name> AI Cosmos Team</name>
+    </author>
+    <author>
+      <name>Jinfeng Zhou</name>
+    </author>
+    <author>
+      <name>Yuxuan Chen</name>
+    </author>
+    <author>
+      <name>Fangming Chang</name>
+    </author>
+    <author>
+      <name>Mingyu Su</name>
+    </author>
+    <author>
+      <name>Yifan Zhu</name>
+    </author>
+    <author>
+      <name>Yuan Wang</name>
+    </author>
+    <author>
+      <name>Bo Zhang</name>
+    </author>
+    <author>
+      <name>Bosi Wen</name>
+    </author>
+    <author>
+      <name>Chenhao Yuan</name>
+    </author>
+    <author>
+      <name>Chenwen Liao</name>
+    </author>
+    <author>
+      <name>Dazhi Jiang</name>
+    </author>
+    <author>
+      <name>Deyao Hong</name>
+    </author>
+    <author>
+      <name>Erle Zhu</name>
+    </author>
+    <author>
+      <name>Genrui Zhang</name>
+    </author>
+    <author>
+      <name>Guchan Li</name>
+    </author>
+    <author>
+      <name>Hongwen Gan</name>
+    </author>
+    <author>
+      <name>Huichao Bi</name>
+    </author>
+    <author>
+      <name>Jiahao Yan</name>
+    </author>
+    <author>
+      <name>Jincheng Fan</name>
+    </author>
+    <author>
+      <name>Kehan Zheng</name>
+    </author>
+    <author>
+      <name>Qinren Luo</name>
+    </author>
+    <author>
+      <name>Qiran Liu</name>
+    </author>
+    <author>
+      <name>Ruoqi Cao</name>
+    </author>
+    <author>
+      <name>Shizhi Zhang</name>
+    </author>
+    <author>
+      <name>Sihan Chen</name>
+    </author>
+    <author>
+      <name>Siyan Deng</name>
+    </author>
+    <author>
+      <name>Xuehan Zhou</name>
+    </author>
+    <author>
+      <name>Xujun Li</name>
+    </author>
+    <author>
+      <name>Yang Dang</name>
+    </author>
+    <author>
+      <name>Yanzhuo Zhu</name>
+    </author>
+    <author>
+      <name>Yu Zhang</name>
+    </author>
+    <author>
+      <name>Zheyu Chen</name>
+    </author>
+    <author>
+      <name>Hongning Wang</name>
+    </author>
+    <author>
+      <name>Manli Li</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.39939v1</id>
+    <title>Can LLMs Ignore What They Know? Measuring Knowledge Leakage in Persona-Based User Simulation</title>
+    <updated>2026-10-29T12:38:03Z</updated>
+    <link href="https://arxiv.org/abs/2610.39939v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.39939v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>When persona-conditioned responses are read as respondent-level simulations, each response should reflect the described persona's knowledge, and the respondent written to know nothing must act as if the model's knowledge were not there. We test whether it can, and find persistent favourable-item real-twin rating separation under the tested low-knowledge and explicit-ignorance prompts. We define the resulting problem (knowledge leakage: a response bias that arises when knowledge the real user could not have enters the simulated response) and present a methodology for measuring it quantitatively. The core instrument pairs real items with fabricated twins matched in surface form: screened fabricated variants designed to minimize prior item-specific knowledge. The paired difference therefore provides a diagnostic contrast for knowledge leakage even in rating tasks where no answer is correct. In a rating experiment across three knowledge-handling arms and five API endpoints from two model families, we find, first, that the personas we test do not fully suppress real-item existence and familiarity signals: a favourable-item real-twin rating contrast remains under an explicit in-context statement that the persona has never heard of the item. Second, the unfavourable-item contrast reverses sign across domain groups: pooling all unfavourable-content items across domains the contrast sits near zero (+0.077 [-0.057, +0.204]), yet the same estimator in the same conditions returns -0.359 where the rating scale asks about an item's documented hazard and +0.438 where it asks about a company or an organisation. A pooled analysis of unfavourable-content items against zero therefore does not detect the opposing domain-group differences. All estimates are conditional on the adequacy of twin construction and screening; human low-knowledge baselines remain necessary for population-level interpretation.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T12:38:03Z</published>
+    <arxiv:comment>13 pages, 2 figures. Accepted at UserSim @ NeurIPS 2026 (non-archival workshop)</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Sangmin Lee</name>
+    </author>
+    <author>
+      <name>Sangwon Lee</name>
+    </author>
+    <author>
+      <name>Sungbeom Choi</name>
+    </author>
+    <author>
+      <name>Jeeseung Park</name>
+    </author>
+    <author>
+      <name>Kibeom Myoung</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.39923v1</id>
+    <title>Prompts and probabilities in the linguistic assessment of language models: Evidence from semantic focus-sensitivity</title>
+    <updated>2026-10-29T12:28:54Z</updated>
+    <link href="https://arxiv.org/abs/2610.39923v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.39923v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>As language models (LMs) have improved, an increasingly common means of evaluating their linguistic competence is through explicit prompting (e.g., "Which sentence is more acceptable?"). Prior work indicates that such prompting underperforms compared to standard token-probability-based methods in smaller models, but improves in larger models. We test this in a new domain: semantic focus-sensitivity, responsible for contrasts like "Lucy only SWAM yesterday" vs. "Lucy only swam YESTERDAY". Testing models of various sizes using text-based focus markers like boldface and italics, we find universal above-chance performance for token probabilities. Prompting results mostly align with previous findings, but in some larger models they outperform probabilities by a wide margin. We propose that this is because LMs are not prone to produce out-of-the-blue focus marking, which muddies results from token probabilities in a way that does not affect prompting. We test this by replacing standard focus markers with randomly generated ones; token probabilities still beat chance but show significantly greater performance decrease compared to prompting. These results suggest that metalinguistic prompting, while non-trivial for LMs, can also be more robust when testing stylistically atypical data. We argue that this has important consequences for the assessment of LMs' language competence, even if LMs do not perform metalinguistic judgments through human-like introspection.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T12:28:54Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Robert Pasternak</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.39919v1</id>
+    <title>Tokenizer Tokens Tell Training Tales</title>
+    <updated>2026-10-29T12:25:28Z</updated>
+    <link href="https://arxiv.org/abs/2610.39919v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.39919v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Tokenizers are usually treated as fixed preprocessing tools, but they are trained on text and can retain traces of that text in their vocabularies. We ask whether a BPE tokenizer can reveal if a candidate dataset was part of its training corpus. The key observation is simple. Rare strings become tokens only when enough corpus frequency pushes them over the merge threshold. This suggests that membership signal should appear in rare tokens used by the candidate dataset, rather than in the order in which merges were made. We formalize this under a threshold model of BPE inclusion, showing that the likelihood-ratio test assigns its largest weights to tokens that are rare in the background but frequent in the candidate dataset. The same model suggests that merge rank and merge-graph position should not add a first-order membership signal once token existence and dataset frequency are known. We instantiate this view as RTAM-Fusion, which calibrates rare-token mass with shadow tokenizers and combines signals across rarity levels. On the tokenizer membership benchmark, RTAM-Fusion improves AUC and balanced accuracy over Vocabulary Overlap while using fewer shadow tokenizers. Existing defenses also continue to leak membership signal against adaptive attackers at production vocabulary sizes. Code: https://anonymous.4open.science/r/RTAM-Fusion-F7EE/</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T12:25:28Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Nishita Jain</name>
+    </author>
+    <author>
+      <name>Parth Upman</name>
+    </author>
+    <author>
+      <name>Shreyank N Gowda</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.39854v1</id>
+    <title>Attention, Dynamic Wave and Hybrid Sequence Mixers in Language Models</title>
+    <updated>2026-10-29T11:33:29Z</updated>
+    <link href="https://arxiv.org/abs/2610.39854v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.39854v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large Language Models (LLMs) rely on Multi-Head Attention (MHA) for sequence modeling, but scaling to long contexts is constrained by the quadratic cost of attention, motivating sub-quadratic recurrent alternatives. This paper formalizes a Dynamic Wave recurrent layer, based on input-dependent exponential damping and cosine phase modulation, and evaluates three 10.94M-parameter configurations (Pure Transformer, Pure Wave, and Hybrid Wave-Attention) on TinyStories under perplexity, latency, throughput and peak VRAM profiling up to 4096 tokens. The Hybrid configuration reaches the best perplexity, 5.95 on the full held-out split against 6.93 for the Transformer and 7.26 for Pure Wave. The efficiency picture, however, is governed by implementation rather than by architecture. Against an unfused attention baseline, Pure Wave uses 78.7% less peak VRAM at a 4096-token context (1404.3 MB vs. 6601.6 MB); against a fused scaled-dot-product attention kernel the same comparison yields no advantage at all (1404.3 MB vs. 1403.6 MB), and in training mode Pure Wave is 8.3% more expensive than the Transformer. Likewise, hoisting elementwise terms out of the recurrence loop speeds the layer up 2.53-fold with no custom kernel, reducing its latency gap to attention from 2.48-fold to 1.12-fold. A hybrid stack is found to inherit the cost of its more expensive mixer rather than the advantage of its cheaper one, its peak VRAM matching the Pure Transformer to within 0.1%. A closed-form memory model reproduces these measurements and predicts the context length beyond which attention overtakes the vocabulary projection. The findings indicate that reported efficiency gains for recurrent attention replacements must be stated relative to a named attention backend and a named implementation, and that hybridization is best justified on quality grounds.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T11:33:29Z</published>
+    <arxiv:comment>14 pages, 6 figures, 9 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Dmytro Babarytskyi</name>
+    </author>
+    <author>
+      <name>Oleksandr Babarytskyi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.39853v1</id>
+    <title>KV Cache Quantization for Diffusion Language Models</title>
+    <updated>2026-10-29T11:31:41Z</updated>
+    <link href="https://arxiv.org/abs/2610.39853v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.39853v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>KV cache quantization is well studied for autoregressive language models, where cached prefix states are exact under causal attention and quantization is mainly a cache reconstruction problem. Diffusion language models (dLLMs) break this assumption. Fast dLLM inference reuses KV states across denoising steps, but bidirectional token representations can change as masked tokens are revealed, so the reused cache may already differ from full recomputation before quantization is applied. We study KV cache quantization under this cache-reuse error. We adapt KIVI and KVQuant to Fast-dLLM-style prefix and dual cache reuse, and introduce TRACE and dLLM-KVQ. TRACE reconstructs feasible dLLM reveal trajectories from prompt-answer pairs, providing calibration states that match iterative masked decoding. dLLM-KVQ uses these trajectories to choose per-layer K-cache entries that remain in high precision according to output- and attention-level behavior metrics, while applying standard low-bit value quantization. Across LLaDA and Dream evaluations on GSM8K, HumanEval, MATH, and MBPP, dLLM-KVQ achieves the highest average score among quantized methods across the reported 4-bit and 2-bit prefix/dual cache settings.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T11:31:41Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Yan Tai</name>
+    </author>
+    <author>
+      <name>Yunan Ding</name>
+    </author>
+    <author>
+      <name>Guangzhao Li</name>
+    </author>
+    <author>
+      <name>Siqi Luo</name>
+    </author>
+    <author>
+      <name>Chaoyang Zhang</name>
+    </author>
+    <author>
+      <name>Guangtao Zhai</name>
+    </author>
+    <author>
+      <name>Guodong Guo</name>
+    </author>
+    <author>
+      <name>Xiaohong Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.39840v1</id>
+    <title>Surprise Alone Learns Lies: Evidence-Gated Continual Learning for LLMs from Streaming Claims</title>
+    <updated>2026-10-29T11:19:08Z</updated>
+    <link href="https://arxiv.org/abs/2610.39840v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.39840v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Continual learning methods for large language models increasingly decide what to learn by surprise, keeping the inputs the model finds least predictable. This rule is unsafe when the stream contains lies. A planted falsehood about something the model knows has low probability under the model's belief, so it is highly surprising by construction, and a surprise-driven learner absorbs nearly every such lie, at a rate similar to random selection with the same budget. We study the problem with LoRA-adapted students (Qwen2.5-1.5B, Qwen2.5-3B and Llama-3.2-3B) that learn from a stream of true and false claims about invented people and real CounterFact facts. We report four findings. (1) A verifier key, a judge that must approve each claim, removes lies to the extent that its verifier is accurate; real LLM judges are cautious and reject unsourced truths and even source-backed updates. (2) Calibrated regression tests on unrelated knowledge slow learning down without filtering out lies. (3) The original model's own prior flags claims that contradict what it knows, without a judge. It separates lies about known facts from true new facts (AUC 0.78-0.83 across three models) but not from legitimate updates of the same kind of fact (AUC 0.53). It saves 43% of judge calls, but an attacker with access to the model can choose lies that pass it. (4) If trusted sources exist that an attacker cannot plant, routing contradicted claims to evidence recovers legitimate updates and the combined system has the lowest poison rate among learned claims; when an attacker plants matching sources for 30% of the lies, the system ends up worse than the judge alone. The acceptance signals answer different questions, and none of them decides on its own whether a claim is true.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T11:19:08Z</published>
+    <arxiv:comment>21 pages, 5 figures. Code: https://github.com/Metalesaek/sura-metales</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Abdelkader Metales</name>
+    </author>
+    <author>
+      <name>Miriam Grabenheinrich</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.39800v1</id>
+    <title>Grammar Control for Language Learning with Sequential Monte Carlo and Small Language Models</title>
+    <updated>2026-10-29T10:45:26Z</updated>
+    <link href="https://arxiv.org/abs/2610.39800v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.39800v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Second language learners benefit from exposure to level-appropriate grammar in interactive language use. While prompted frontier language models can usually produce target grammar structures, less resource-intensive models that can be run on device often fail in this task. We use sequential Monte Carlo (SMC) to steer dialogue turn generation in small lan- language models toward target grammar constructions from an expert-developed pedagogical resource. With a minimal set of hand-coded potential functions, SMC achieves near-perfect coverage of target grammar, enabling small models to outperform state-of-the-art results from models 140 times larger. We also use code synthesis with frontier models to generate new potentials, showing that our method scales to hundreds of target grammar skills with no need for additional training or supervised data.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-29T10:45:26Z</published>
+    <arxiv:comment>EMNLP 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Kate McCurdy</name>
+    </author>
+    <author>
+      <name>Jacob Hoover Vigly</name>
+    </author>
+    <author>
+      <name>Thomas Hikaru Clark</name>
+    </author>
+    <author>
+      <name>Karolina Stańczak</name>
+    </author>
+    <author>
+      <name>Yahya Emara</name>
+    </author>
+    <author>
+      <name>Joshua B. Tenenbaum</name>
+    </author>
+    <author>
+      <name>Alexander K. Lew</name>
+    </author>
+    <author>
+      <name>Ryan Cotterell</name>
+    </author>
+    <author>
+      <name>Timothy J. O'Donnell</name>
+    </author>
+  </entry>
+</feed>
