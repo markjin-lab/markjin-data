@@ -1,0 +1,1455 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/AjqiJLBP/Dh39qWmUocGMGZ5ALg</id>
+  <title>arXiv Query: search_query=cat:cs.CL&amp;id_list=&amp;start=0&amp;max_results=50</title>
+  <updated>2026-11-02T19:59:43Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=cat:cs.CL&amp;start=0&amp;max_results=50&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>50</opensearch:itemsPerPage>
+  <opensearch:totalResults>124270</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42149v1</id>
+    <title>Latent Reasoning in Continuous Space for Unified Multimodal Models</title>
+    <updated>2026-10-30T17:59:43Z</updated>
+    <link href="https://arxiv.org/abs/2610.42149v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42149v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Unified Multimodal Models (UMMs) achieve remarkable success on diverse multimodal understanding and generation tasks, yet they still struggle to effectively leverage language-based chain-of-thought reasoning for image generation. As a result, existing reasoning-augmented UMMs often fail to inherit the test-time scaling and fine-grained controllability observed in large language models. We attribute this failure to a fundamental modality mismatch: reasoning is performed in a discrete token space, whereas image generation operates in a continuous space. To bridge this gap, we introduce a Latent Reasoning framework in Continuous space (LARC), which alleviates the token-level bottleneck by reasoning over continuous hidden states. Specifically, the training framework consists of two stages: (i) curriculum supervised fine-tuning (SFT), and (ii) information-gain reinforcement learning (RL). First, the curriculum SFT stage gradually converts token-level reasoning into latent reasoning. Subsequently, the information-gain RL stage self-evolves latent reasoning without ground truth supervision. Experiments across diverse text-to-image generation benchmarks show that LARC consistently improves generation quality, prompt following, and compositional fidelity. Notably, LARC achieves state-of-the-art performance on GenEval with a 7%p gain over BAGEL and demonstrates clear test-time scaling behavior, outperforming token-based generation under both parallel and sequential test-time scaling strategies.</summary>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:59:43Z</published>
+    <arxiv:comment>Published as conference proceeding for NeurIPS 2026. Last two authors advised equally</arxiv:comment>
+    <arxiv:primary_category term="cs.CV"/>
+    <author>
+      <name>Byungwoo Jeon</name>
+    </author>
+    <author>
+      <name>Yoonwoo Jeong</name>
+    </author>
+    <author>
+      <name>Hyunseok Lee</name>
+    </author>
+    <author>
+      <name>Minsu Cho</name>
+    </author>
+    <author>
+      <name>Jinwoo Shin</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42148v1</id>
+    <title>Flide: Accelerating Decision Inference with Exact State Forking</title>
+    <updated>2026-10-30T17:59:38Z</updated>
+    <link href="https://arxiv.org/abs/2610.42148v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42148v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Decision models such as Jev have emerged as a highly promising paradigm for LLM agent systems, providing lightweight and reliable categorical reasoning for rapid System One execution. However, existing generation-oriented inference engines fail to support these workloads effectively, suffering from severe prefix recomputation overheads or distorted output probabilities. To address this challenge, we propose Flide, an efficient and exact inference engine that decouples the logical tree structure of a decision request from its physical execution within a single flattened token stream. Through ForkAttention, Flide navigates request dependencies using GPU-resident indices across both standard attention and recurrent Gated DeltaNet layers, guaranteeing in exact arithmetic that every query branch evaluates identically to an isolated forward pass. By expressing branch topologies directly in GPU-resident metadata, Flide accommodates diverse request mixtures with a compact set of pre-recorded execution graphs while enabling expanding agent histories to resume from checkpoints saved in earlier passes. Extensive evaluations on public hybrid and decision models demonstrate that Flide answers queries up to 9.5 times faster than vLLM and SGLang while staying closest to a float32 reference in total variation distance. By unifying physical execution throughput with mathematical exactness, Flide establishes a principled foundation for scalable, latency-critical decision intelligence in agent systems.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:59:38Z</published>
+    <arxiv:comment>20 pages. Project page: https://flide.org</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Bobo Li</name>
+    </author>
+    <author>
+      <name>Jiajia Song</name>
+    </author>
+    <author>
+      <name>Hao Fei</name>
+    </author>
+    <author>
+      <name>Wynne Hsu</name>
+    </author>
+    <author>
+      <name>Mong Li Lee</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42128v1</id>
+    <title>DecisionRank: On-Policy Distillation for Decision-Model Rerankers</title>
+    <updated>2026-10-30T17:56:58Z</updated>
+    <link href="https://arxiv.org/abs/2610.42128v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42128v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Decision models target structured tasks by directly predicting choices or scores, avoiding autoregressive decoding latency. However, transferring a generative LLM's ranking knowledge to a decision model remains challenging: the teacher expresses preferences through a ranked list of document ID sequences, while the student determines the ranking using scores from the first-token position. To bridge this gap, we introduce DecisionRank, a decision model trained through item-space on-policy distillation (OPD). Item-space OPD constructs the student's rollout by sorting its document scores into a ranked sequence. A generative teacher takes the resulting ranking list as inputs and provides conditional feedback to directly supervise those scores. Combined with offline ranking supervision, DecisionRank achieves state-of-the-art performance on both general and reasoning-intensive retrieval benchmarks such as TREC DL, BEIR, and BRIGHT. Across four benchmarks, item-space OPD consistently outperforms alternative training objectives. Even at 1.7B parameters, DecisionRank surpasses its 27B generative teacher on TREC DL19--23. At 8B, it outperforms its generative listwise counterpart while running $24.5\times$ faster on TREC DL and $16.7\times$ faster on BRIGHT.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:56:58Z</published>
+    <arxiv:comment>25 pages, 8 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Yanran Wu</name>
+    </author>
+    <author>
+      <name>Dian Yu</name>
+    </author>
+    <author>
+      <name>Chongyang Bai</name>
+    </author>
+    <author>
+      <name>Jieyi Zhang</name>
+    </author>
+    <author>
+      <name>Rui Liu</name>
+    </author>
+    <author>
+      <name>Tianyi Chen</name>
+    </author>
+    <author>
+      <name>Shike Mei</name>
+    </author>
+    <author>
+      <name>Hang Cui</name>
+    </author>
+    <author>
+      <name>Frank Shyu</name>
+    </author>
+    <author>
+      <name>Sandeep Pandey</name>
+    </author>
+    <author>
+      <name>Luke Simon</name>
+    </author>
+    <author>
+      <name>Chunwei Liu</name>
+    </author>
+    <author>
+      <name>Xi Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42112v1</id>
+    <title>Subquadratic Attention with a Hierarchical Tree-Structured Indexer</title>
+    <updated>2026-10-30T17:48:37Z</updated>
+    <link href="https://arxiv.org/abs/2610.42112v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42112v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The quadratic scaling of attention is a fundamental bottleneck limiting the long-context capabilities of large language models (LLMs). A variety of approaches have attempted to circumvent this, but they either fail to match attention's expressiveness (e.g., sliding-window or linear attention variants with fixed-size state) or only achieve constant-factor speedups (e.g., sparse attention methods whose indexers themselves scale quadratically). In this paper, we derive an asymptotically subquadratic sparse attention method based on a hierarchical, tree-structured indexer, which we call Zyphra Hierarchical Attention (ZHA). ZHA constructs a tree of recursively compressed key summaries over the KV cache, which future queries traverse from the top down to retrieve a sparse subset of keys. Crucially, by iteratively growing the tree's depth, the total cost including routing and final attention grows sublinearly in sequence length, resulting in overall subquadratic (but superlinear) scaling for attention. We demonstrate that ZHA can be cheaply applied to existing pretrained models with only a short KL distillation training stage over a few billion tokens, and maintains performance on long-context retrieval and challenging reasoning, mathematical, and agentic coding evaluation tasks. Moreover, we show that our method is highly robust to tree geometry including very deep trees of up to 6 levels. Finally, we develop a detailed performance model and show that our approach scales subquadratically, dramatically outperforms competing methods beyond 1 million context, and ultimately has the potential to extend effective context windows to the hundreds of millions or billions of tokens.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:48:37Z</published>
+    <arxiv:comment>43 pages</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Leon Lufkin</name>
+    </author>
+    <author>
+      <name>Cutter Dawes</name>
+    </author>
+    <author>
+      <name>Alexander Speicher</name>
+    </author>
+    <author>
+      <name>Kamesh Krishnamurthy</name>
+    </author>
+    <author>
+      <name>Tomás Figliolia</name>
+    </author>
+    <author>
+      <name>Beren Millidge</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42084v1</id>
+    <title>RangeSWA: Training-Free Length Extrapolation for Continuous Diffusion Language Models</title>
+    <updated>2026-10-30T17:35:48Z</updated>
+    <link href="https://arxiv.org/abs/2610.42084v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42084v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Continuous diffusion language models show promising potential in text generation tasks, but are prone to problems such as text repetition, semantic drift, and generation quality degradation when the generation length exceeds the training length. To address these challenges, we propose RangeSWA, a training-free length extrapolation method. The method combines local sliding-window attention, remote block summaries, and dynamic content retrieval to preserve local details and support long-range context access. In addition, generation degradation caused by length extrapolation is mitigated through positional remapping, conditioning attention correction, and denoising-stage-adaptive window scheduling. We conducted experiments on multiple continuous diffusion language models, and the results show that RangeSWA can effectively reduce generative perplexity and text repetition rates in long-text generation.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:35:48Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Guangfu Guo</name>
+    </author>
+    <author>
+      <name>Xiaoqian Lu</name>
+    </author>
+    <author>
+      <name>Linsey Pang</name>
+    </author>
+    <author>
+      <name>Weiran Yao</name>
+    </author>
+    <author>
+      <name>Haolin Chen</name>
+    </author>
+    <author>
+      <name>Long Cheng</name>
+    </author>
+    <author>
+      <name>Kunpeng Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42066v1</id>
+    <title>The Knowledge Layer Model (KLM): Evidence-Visible AI Output, Routing Diagnostics, and Negative Results</title>
+    <updated>2026-10-30T17:26:18Z</updated>
+    <link href="https://arxiv.org/abs/2610.42066v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42066v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>AI answers require more than apparent correctness: reviewers need to inspect their recorded basis. We introduce the Knowledge Layer Model (KLM), an open, implementation-neutral specification for inference records with versioned epistemic assessments, evidence relations, and explicit unknowns. SEDIM, the knowledge and evidence architecture of Nage AI OS, is a reference implementation. We reference KLM v0.3 (repository tag v0.3.0). Empirical material consists of separate internal experiments, not end-to-end validation. A historical platform-domain routing benchmark reports 137/150 classifications across 15 classes (91.3%; nominal 95% Wilson interval 85.7-94.9%); the numerator is recovered from a rounded summary, and historical example membership is unverified. A native-model weight-path configuration yielded 0/15 successful answers in a corrected two-source test. A capacity-growth comparison could not establish a reliable effect because of a defective legacy scorer and missing original outputs. Lexical and scoped diagnostics each yielded AUC 0.008 for silent-versus-contradicted examples, below the registered minimum of 0.65. Legacy packing lost gold-containing text in 118/221 selected cases; repaired packing retained it in 221/221. These measure text presence, not answer quality. Python and TypeScript verifiers reportedly agreed on six checks per synthetic fixture; a separate production disclosure was not accepted. Restoration, re-derivation, human-rubric support, boundary isolation, and bounded-response evaluations remain proposed. Findings are internal and author-reported; historical observations are distinguished from later reproductions. Evidence visibility does not establish correctness, causal reliance, security, or regulatory compliance. Independent replication and a complete public audit package remain future work.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:26:18Z</published>
+    <arxiv:comment>47 pages, 1 figure, 14 tables. Includes Appendix A</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Omer Asim Ozturk</name>
+    </author>
+    <author>
+      <name>Cihan Aydiner</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42060v1</id>
+    <title>PersonaChatBench: Evaluating Chat Assistants with Diverse Simulated Users</title>
+    <updated>2026-10-30T17:23:14Z</updated>
+    <link href="https://arxiv.org/abs/2610.42060v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42060v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Conversational assistants are expected to help people with diverse backgrounds, preferences, and communication styles. Yet evaluations centered on a single cooperative user provide limited insight into how reliably an assistant serves users with different personas. We introduce PersonaChatBench, a framework for evaluating task competence and responsiveness to diverse user needs. PersonaChatBench pairs the same underlying task with multiple simulated users, each guided by a private persona card that specifies distinct needs, preferences, and interaction behaviors. By holding the task fixed while varying the user, the framework examines how assistant performance changes across user conditions. We evaluate 20 language models across six domains, separately assessing native task outcomes, fulfillment of expressed persona needs, and simulator fidelity. Our results show that task performance and need fulfillment vary across personas and domains. Strong task performance does not necessarily translate into satisfying individual needs, and models' relative strengths in meeting those needs are not consistent across domains. PersonaChatBench makes these differences measurable, revealing gaps obscured by aggregate scores and helping identify which users an assistant serves well and where adaptation is needed. It provides a basis for evaluating consistency across users and guiding the development of assistants that better accommodate diverse needs in everyday applications.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:23:14Z</published>
+    <arxiv:comment>74 pages, including appendices</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Zheyuan Deng</name>
+    </author>
+    <author>
+      <name>Taoran Li</name>
+    </author>
+    <author>
+      <name>Jingwen Zhang</name>
+    </author>
+    <author>
+      <name>Yuante Li</name>
+    </author>
+    <author>
+      <name>Dachuan Zhao</name>
+    </author>
+    <author>
+      <name>Fulei Zhang</name>
+    </author>
+    <author>
+      <name>Yunkai Zhang</name>
+    </author>
+    <author>
+      <name>Zhikun Xu</name>
+    </author>
+    <author>
+      <name>Yajie Liao</name>
+    </author>
+    <author>
+      <name>Haichao Zhang</name>
+    </author>
+    <author>
+      <name>Haodi Hu</name>
+    </author>
+    <author>
+      <name>Cong Wang</name>
+    </author>
+    <author>
+      <name>Chen Yang</name>
+    </author>
+    <author>
+      <name>Siyang Wu</name>
+    </author>
+    <author>
+      <name>Defu Cao</name>
+    </author>
+    <author>
+      <name>Xu Hu</name>
+    </author>
+    <author>
+      <name>Haoming Li</name>
+    </author>
+    <author>
+      <name>Haixin Wang</name>
+    </author>
+    <author>
+      <name>Robert George</name>
+    </author>
+    <author>
+      <name>Weizhi Zhang</name>
+    </author>
+    <author>
+      <name>Yuchu Wang</name>
+    </author>
+    <author>
+      <name>Zhejian Peng</name>
+    </author>
+    <author>
+      <name>Yueying Li</name>
+    </author>
+    <author>
+      <name>Wanting Jiang</name>
+    </author>
+    <author>
+      <name>Shushu Liang</name>
+    </author>
+    <author>
+      <name>Zhiyuan Yu</name>
+    </author>
+    <author>
+      <name>Yifan Wang</name>
+    </author>
+    <author>
+      <name>Jintao Huang</name>
+    </author>
+    <author>
+      <name>Yijun Wang</name>
+    </author>
+    <author>
+      <name>Yuexing Hao</name>
+    </author>
+    <author>
+      <name>Xiaomin Li</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42054v1</id>
+    <title>CRoS: Causality Reward on Scrambled CoTs Improves Accuracy and Reasoning Faithfulness</title>
+    <updated>2026-10-30T17:18:35Z</updated>
+    <link href="https://arxiv.org/abs/2610.42054v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42054v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Reinforcement learning with verifiable rewards (RLVR) has become the standard method for training language models to reason. However, RLVR typically relies solely on outcome correctness, which does not guarantee that the CoT causally contributes to the final answer. Without this connection, outcome rewards may fail to reinforce high-quality reasoning. Existing causality metrics assess CoT causality by perturbing the CoT, such as deleting reasoning steps or injecting errors, and measuring changes in the final answer. However, these perturbations inevitably alter information in each step. Consequently, high causality scores may reflect sensitivity to information changes introduced by perturbation rather than true causality. Such confounding effects further induce undesirable reasoning behaviors when these metrics are used as training rewards, including generating less informative CoTs and reducing exploration and self-correction. To address this problem, we propose CRoS (Causality Reward on Scrambled CoTs), a novel CoT causality metric that perturbs the order of reasoning steps without altering content, thereby preserving information within each step. On Reasoning Gym with Gemma-3-4B, CRoS outperforms existing causality and outcome rewards in out-of-domain accuracy, CoT quality, and CoT faithfulness. Specifically, CRoS achieves 46.8% accuracy on five unseen logic and games datasets, outperforming the strongest baseline (43.8%). It also achieves better CoT quality, consistently outperforming baselines in CoT-Pass@K from K=1 to 128, averaging 43.4% vs. 41.4%. For CoT faithfulness, CRoS achieves a hint acknowledgment score of 34.0% vs. 20.2%.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T17:18:35Z</published>
+    <arxiv:comment>17 pages, 3 figures, 14 tables. Project page: https://xxiaoyuuuu.github.io/CRoS-Page</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Xiao Yu</name>
+    </author>
+    <author>
+      <name>Justin Chih-Yao Chen</name>
+    </author>
+    <author>
+      <name>Zaid Khan</name>
+    </author>
+    <author>
+      <name>Hyunji Lee</name>
+    </author>
+    <author>
+      <name>Mohit Bansal</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42018v1</id>
+    <title>Asynchronous Flow Map Language Models</title>
+    <updated>2026-10-30T16:51:40Z</updated>
+    <link href="https://arxiv.org/abs/2610.42018v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42018v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The order in which tokens are predicted in language modeling has a profound impact on the quality of generated sequences. Autoregressive and masked diffusion models iteratively fill in tokens and can exploit such orderings across generation steps, but how to leverage an ordering for one-step parallel language modeling is unclear. We introduce asynchronous flow map language models (aFMLMs), which incorporate prediction order into one-step modeling by learning the flow maps of asynchronous flows. These flows specify an ordering through a tokenwise time schedule that controls the relative denoising progress of tokens. We formulate a general class of asynchronous flows that admit both prescribed and learned, state-adaptive schedules, show that they define valid flow maps, and develop new methods for their flow map distillation. The resulting models can generate all tokens in a single forward pass by internalizing the ordering encoded in the flow into their hidden computations. On Sudoku solving and code generation for GSM8K math word problems, aFMLM establishes new state-of-the-art one-step performance.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T16:51:40Z</published>
+    <arxiv:comment>Code available at: https://github.com/david3684/async-fmlm</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Chanhyuk Lee</name>
+    </author>
+    <author>
+      <name>Wonjung Kim</name>
+    </author>
+    <author>
+      <name>Patrick Pynadath</name>
+    </author>
+    <author>
+      <name>Jaehoon Yoo</name>
+    </author>
+    <author>
+      <name>Satoshi Hayakawa</name>
+    </author>
+    <author>
+      <name>Ruqi Zhang</name>
+    </author>
+    <author>
+      <name>Jinwoo Kim</name>
+    </author>
+    <author>
+      <name>Seunghoon Hong</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42010v1</id>
+    <title>TurnTurk-GPT: Text-Based Turn-Taking Prediction for Turkish</title>
+    <updated>2026-10-30T16:48:32Z</updated>
+    <link href="https://arxiv.org/abs/2610.42010v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42010v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>This paper presents TurnTurk-GPT, a text-based turn-taking predictor for Turkish obtained by fine-tuning a Turkish GPT-2 model with the TurnGPT objective on synthetic and real dialogue, and evaluates it on real Turkish conversation against rule baselines, a zero-shot Turkish language model and a widely used multilingual end-of-turn detector. Evaluation uses word-level decision points on unpunctuated, lower-cased text approximating the output of streaming speech recognisers, recording-disjoint and speaker-disjoint folds, nested threshold selection and paired cluster bootstrap tests. TurnTurk-GPT outperforms the multilingual detector under both recording-disjoint and speaker-disjoint evaluation. It outperforms the zero-shot language model only when the test speakers occur in training; on unseen speakers the two are statistically indistinguishable. Removing the suffixes of the turn-final word reduces AP by up to 44%, against 2% for a sentence-internal word, locating the Turkish end-of-turn cue in verb-final morphology. Synthetic dialogue alone yields the weakest trained model, and when a speaker pauses the zero-shot and multilingual baselines remain close to chance. The model and the evaluation protocol are publicly released.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T16:48:32Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Ahmet Tuğrul Bayrak</name>
+    </author>
+    <author>
+      <name>Fatma Nur Korkmaz</name>
+    </author>
+    <author>
+      <name>Nur Yağmur Tuncer</name>
+    </author>
+    <author>
+      <name>Mustafa Sertaç Türkel</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.42000v1</id>
+    <title>Less Loss, Fixed Weights: Logit Corrections for Forgetting</title>
+    <updated>2026-10-30T16:44:30Z</updated>
+    <link href="https://arxiv.org/abs/2610.42000v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.42000v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>When a language model is fine-tuned to follow instructions, or further pretrained on a new subject, it often gets worse at predicting standard web text. This is known as "forgetting." We ask whether this loss can be undone by simple, fixed adjustments to the model's final token predictions. Across 14 pairs of base and derived models, from 1B to 7B parameters, we fitted a fixed bonus or penalty for each token (a vocabulary bias), alone or together with a temperature. On text held out from correction fitting, the largest top-4K bias recovery estimate is under 10%, with loss conditional on the retained vocabulary. Combining the bias with a temperature recovers up to 36%. Models further pretrained on math lose the most and recover almost nothing. Finally, in a controlled simulation where a model is damaged at random, with no planted bias or temperature change, the bias-plus-temperature fix still recovers 29%. Most of the real-model loss increase stays out of reach of our restricted fits.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T16:44:30Z</published>
+    <arxiv:comment>8 pages, 3 figures, 2 tables. Code and data: https://github.com/SeverinVisionary/prior-shift-diagnostic</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Hanyu Yang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41994v1</id>
+    <title>DAMI: Dual-Axis Memory Initialization for Enhanced Long-Context Retrieval in Gated Linear Attention</title>
+    <updated>2026-10-30T16:39:37Z</updated>
+    <link href="https://arxiv.org/abs/2610.41994v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41994v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Linear attention scales linearly with sequence length, but its finite-state memory can limit long-context retrieval. In gated linear recurrences, memory retention depends on state decay, which is shaped jointly by gate parameters A_log and dt_bias and by input activations. In controlled Gated DeltaNet (GDN) experiments, both parameters remain highly correlated with their initial values after training, highlighting the importance of initialization. Therefore, we introduce Dual-Axis Memory Initialization (DAMI), which jointly configures these parameters before training. DAMI assigns geometric timescales across heads for varied retrieval distances and a low-high-low input-sensitivity profile across layers. A small activation sample calibrates the GDN-family implementation to match both behavioral targets without adding trainable parameters. Across GDN, KDA, GDN2, Mamba-2, and RWKV-7, DAMI improves average RULER-style retrieval accuracy by 5.29 to 16.71 percentage points over the corresponding random-initialization baselines. Performance on language modeling, commonsense reasoning, and 2K real-world retrieval remains broadly comparable to those baselines. Our code is available at https://speedai.com/research/dami.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T16:39:37Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Zhangchi Feng</name>
+    </author>
+    <author>
+      <name>Harry Jiang</name>
+    </author>
+    <author>
+      <name>Yangyifei Luo</name>
+    </author>
+    <author>
+      <name>Ray Zhang</name>
+    </author>
+    <author>
+      <name>Richong Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41951v1</id>
+    <title>Aligning MLLMs with the Latent Structure of Human Cognition via Behavior-Derived Semantic Dimensions</title>
+    <updated>2026-10-30T16:06:08Z</updated>
+    <link href="https://arxiv.org/abs/2610.41951v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41951v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Multimodal Large Language Models (MLLMs) have achieved impressive performance across a wide range of reasoning tasks, yet it remains unclear whether their internal representations and decision criteria align with the latent structure of human cognition. In this work, we propose a novel framework to align MLLMs with the multidimensional mental representations underlying human similarity judgements. We build on a previously established behavior-derived semantic embedding space, in which objects are represented along 66 interpretable dimensions derived from 4.70 million human Odd-One-Out (O1O) judgements. For each triplet, we infer the most salient decision dimension and convert it into a dimension-grounded linguistic rationale. This enables MLLMs to learn both the final choice and a justification consistent with the inferred behavioral criterion. Experimental results demonstrate that our approach improves model consistency with human similarity judgements while retaining competitive performance on standard multimodal benchmarks. Furthermore, using searchlight Representational Similarity Analysis (RSA) on an independent fMRI Natural Scenes Dataset (NSD), we observe increased representational alignment between model and human. Ultimately, our findings point to a data-driven route for incorporating human cognitive structure into MLLMs alignment. The code is available \href{https://github.com/ening-open/cogalign}{here}.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T16:06:08Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Ning E</name>
+    </author>
+    <author>
+      <name>Changde Du</name>
+    </author>
+    <author>
+      <name>Yizhuo Lu</name>
+    </author>
+    <author>
+      <name>Huiguang He</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41905v1</id>
+    <title>Completeness and Cost of Retrieval Structures for Multi-Tool Requests in LLM Agents</title>
+    <updated>2026-10-30T15:40:02Z</updated>
+    <link href="https://arxiv.org/abs/2610.41905v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41905v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>An agent that must call several tools to fulfill a request fails when the tool retriever omits any one of them, yet tool retrievers are mostly built and evaluated on queries requiring a single tool. We compare representatives of six retrieval structures (flat lexical and dense retrieval, LLM query decomposition, LLM-navigated hierarchies, server-then-tool matching, dependency graphs, and trained set-level retrievers) across two multi-tool testbeds: 345 AppWorld queries with expert dependency labels and 103 MCP-Bench tasks over 257 MCP tools. We measure completeness@k, the share of queries whose entire required tool set appears in the top k, alongside the LLM calls, tokens, and latency that each structure incurs at retrieval time. A motivating analysis on all 7,961 ToolRet queries shows that aggregate completeness mixes two regimes: completeness at 10 is .58 to .67 on single-target queries and .08 to .17 on queries with four or more targets, and the ordering of retrievers on single-target queries reverses on multi-target ones. Across the two testbeds, none of the compared structures that is untrained on the testbed and makes at most one LLM call per query completes more than 10% of AppWorld queries at k = 16. The two structures that do better incur different costs: a set-level retriever trained on 75 to 90 in-domain queries reaches .33 on AppWorld and .58 on MCP-Bench with no LLM calls, while an LLM-navigated hierarchy reaches .30 and .40 with a median of 31 to 38 LLM calls and about five minutes per query. Their failure modes also differ: the trained retriever mostly ranks the missing tools just below the cutoff, whereas the hierarchy finds the target API and stops before collecting its prerequisites. In a downstream check with the official AppWorld agent, tasks with a complete retrieved set succeeded 21 of 21 times, whereas incomplete ones succeeded 2 of 39 times.</summary>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T15:40:02Z</published>
+    <arxiv:comment>17 pages, 3 figures, 9 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.IR"/>
+    <author>
+      <name>Shuyang Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41885v1</id>
+    <title>How Much Can Tool Calls Reveal About You? Privacy Leakage from Tool-Call Traces</title>
+    <updated>2026-10-30T15:30:23Z</updated>
+    <link href="https://arxiv.org/abs/2610.41885v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41885v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language model (LLM)-based agents interact with external tools through protocols such as the Model Context Protocol (MCP), producing tool-call traces that may expose behavioral signals about users. In this work, we systematically study the risk of user-profile inference from MCP tool-call traces, where observers infer user attributes from protocol-valid tool interactions without access to user conversations. We introduce PrivacyTrace, a benchmark containing 1,000 synthetic user profiles and 4,000 agent trajectories across four domains, generated with real MCP tools from 25 servers. Experiments with four mainstream LLM attackers show that tool-call traces enable a 26.25% attack success rate for profile inference, compared with 17.97% from prior-based guessing. Further analysis reveals that tool arguments and returned results provide the main trace-grounded evidence, while linking traces across sessions further amplifies profiling risk. These findings demonstrate that MCP tool-call traces can act as effective behavioral side channels for user profiling, motivating the development of privacy-aware mechanisms for agent-tool interactions. Code and data are available at https://github.com/AI45Lab/PrivacyTrace.</summary>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T15:30:23Z</published>
+    <arxiv:comment>24 pages, 12 figures, 8 tables, including references and appendices</arxiv:comment>
+    <arxiv:primary_category term="cs.CR"/>
+    <author>
+      <name>Donghang Duan</name>
+    </author>
+    <author>
+      <name>Qingyu Liu</name>
+    </author>
+    <author>
+      <name>Yifei Liu</name>
+    </author>
+    <author>
+      <name>Na Zou</name>
+    </author>
+    <author>
+      <name>Xia Hu</name>
+    </author>
+    <author>
+      <name>Dongrui Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41883v1</id>
+    <title>Text as an Index for Zero-Shot Cross-Domain Knowledge Tracing</title>
+    <updated>2026-10-30T15:29:08Z</updated>
+    <link href="https://arxiv.org/abs/2610.41883v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41883v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Knowledge tracing (KT) predicts a student's next response from their history. New platforms often have question texts but no response logs for training, motivating zero-shot cross-domain KT. Existing transfer and cold-start methods use question semantics, but cross-platform semantic discrepancies limit transferability. We propose TIZSKT, which separates behavioral sequence modeling from domain-local historical evidence construction and uses text as an index rather than a directly transferable predictive representation. The Mastery-Dynamics Encoder learns correctness dynamics without question identifiers or text embeddings. Domain-Local Question Addressing builds fixed question addresses using a frozen text encoder and an unsupervised per-domain projection. The Text-Addressing Kernel uses these addresses to aggregate the current student's previous outcomes into a question-specific historical correctness summary. Cross-Segment Continuation retains access to earlier responses without extending the behavioral encoder's input sequence. Evidence-Volume Read-Out preserves the total kernel mass discarded by normalization and combines its log-compressed value with the behavioral state and historical correctness summary to predict the next response. All trainable parameters are learned from source domains; target inference uses public question texts and the current student's observed history without target-domain training. Leave-one-domain-out experiments on three public datasets show that TIZSKT achieves the highest mean AUC and accuracy among evaluated baselines on all target domains. Ablations confirm the contributions of text addressing and cross-segment continuation.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CY" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T15:29:08Z</published>
+    <arxiv:comment>10 pages, 5 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Yin Yi</name>
+    </author>
+    <author>
+      <name>Haiping Ma</name>
+    </author>
+    <author>
+      <name>Siyu Song</name>
+    </author>
+    <author>
+      <name>Ziwen Wang</name>
+    </author>
+    <author>
+      <name>Shangshang Yang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41856v1</id>
+    <title>SimXAI: A Simple Drop-in Layer Increases Interaction Quality and Understanding in Conversational XAI</title>
+    <updated>2026-10-30T15:11:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.41856v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41856v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Conversational explainable AI (ConvXAI) agents often use GUS-style architectures with separate modules for intent recognition, dialogue management, and template-based response generation. While faithful to the underlying XAI methods, these pipelines are hard to adapt and often struggle with context-dependent follow-up questions. We present SimXAI, a lightweight LLM-centric conversational layer that replaces these modules with a single tool-calling LLM that bridges access to existing XAI resources. Rather than a standalone agent, SimXAI serves as a modular interface that enables conversational access to external XAI resources. We further introduce an evaluation suite for single- and multi-turn parsing, faithfulness, and contextualization. Across existing and new datasets, SimXAI achieves strong function-selection accuracy and high faithfulness while better handling context-dependent requests. In a user study replacing only the conversational layer of TalkToModel, a representative GUS-based agent, users completed tasks more accurately and in fewer turn. Overall, SimXAI improves GUS-based design while preserving faithfulness and improving conversational quality.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T15:11:47Z</published>
+    <arxiv:comment>Accepted at EMNLP 2026 Findings</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Van Bach Nguyen</name>
+    </author>
+    <author>
+      <name>Qianli Wang</name>
+    </author>
+    <author>
+      <name>Nils Feldhus</name>
+    </author>
+    <author>
+      <name>Jörg Schlötterer</name>
+    </author>
+    <author>
+      <name>Christin Seifert</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41855v1</id>
+    <title>Iterated Integrals as Lexical Fingerprints: Path Signature Embeddings for Lexical Similarity</title>
+    <updated>2026-10-30T15:11:18Z</updated>
+    <link href="https://arxiv.org/abs/2610.41855v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41855v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>While sentence embeddings are primarily designed for semantic generalization, their latent geometry implicitly encodes surface-level lexical properties, a relationship that remains poorly understood. Shallow pooling methods discard word order, while deep Transformer models obscure these lexical alignments behind computational complexity and uninterpretable spaces. We propose constructing sentence embeddings via the path signature of Word2Vec trajectories, leveraging the iterated integrals of rough path theory to create representations that explicitly capture sequential and lexical structure in a geometrically tractable manner. Through extensive ablations spanning Word2Vec dimensions, signature depths, and PCA compression, we correlate embedding distances against five lexical string metrics: Levenshtein, Jaro-Winkler, word Jaccard, phoneme Levenshtein, and character TF-IDF. We reveal that while average pooling almost entirely fails to capture character-level edit distances, path signatures strongly align with them, with depth 2 signatures optimally balancing character and word-level sensitivities. Furthermore, we demonstrate that the critical lexical variance is concentrated in a highly compact PCA subspace, and unlike pooling, signatures structurally preserve and quantify word order. These findings establish path signatures not as semantic generalizers, but as rigorous mathematical lenses that explicitly encode discrete lexical structures and word order, offering an interpretable alternative to opaque deep learning for lexical tracking.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T15:11:18Z</published>
+    <arxiv:comment>accepted in NeurIPS 2026 LP4FM Workshop</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Raj Shekhar Singh</name>
+    </author>
+    <author>
+      <name>Pratham Agarwal</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41785v1</id>
+    <title>Peeling the Matryoshka: Extracting Ontological Structure from Retrieval Embeddings</title>
+    <updated>2026-10-30T14:19:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.41785v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41785v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Taxonomy construction is essential for knowledge-intensive NLP yet remains costly: clustering-based methods (i) need careful per-corpus tuning and yield unstable hierarchies, while LLM-based pipelines (ii) depend on expensive task-specific training that does not transfer across domains. We report an empirical finding that bears on both: in Matryoshka Representation Learning (MRL) embeddings, where each leading prefix is itself a usable, coarser vector, prefix length aligns with the coarse-to-fine granularity of gold taxonomies; shuffled- and reverse-dimension controls isolate the alignment to the learned early prefix dimensions. The pattern holds across three architecturally distinct MRL models. To test whether this regularity is usable, we introduce PEEL (Peeling Embeddings to Extract Latent ontologies): a minimal probe over these frozen embeddings, trained once with an order-embedding objective that represents hierarchy as vector containment; a minimum spanning arborescence then decodes taxonomic DAGs. Using only a concept vocabulary (no documents), PEEL recovers taxonomic DAGs with high structural fidelity on two OLLM benchmarks, transferring to a new domain with no target-edge supervision. The end-to-end OLLM pipeline, which jointly discovers concepts and induces structure from document corpora, is reported as a cross-task reference. Pre-trained retrieval embeddings encode a decodable granularity gradient; a minimal probe renders it as explicit parent-child (is-a) structure.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T14:19:53Z</published>
+    <arxiv:comment>Accepted to EMNLP 2026 (Main Conference). 13 pages, 6 figures, 7 tables. Code: https://github.com/Eunchan24/PEEL</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Eunchan Kim</name>
+    </author>
+    <author>
+      <name>Inwhee Joe</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41769v1</id>
+    <title>Stepwise-Querying: Distilling Reasoning without Access to Teacher Chain-of-Thought</title>
+    <updated>2026-10-30T14:10:09Z</updated>
+    <link href="https://arxiv.org/abs/2610.41769v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41769v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Reasoning distillation is widely used to transfer the reasoning capabilities of large language models to smaller students through teacher-generated supervision. In the black-box setting, however, teachers may expose only final answers and brief solutions, leaving intermediate calculations and validity conditions unavailable and thus limiting the reasoning supervision available for distillation. We propose Stepwise Querying, which elicits step-specific explanations without requiring access to the teacher's internal chain-of-thought (CoT) traces. Independent queries to the same teacher request intermediate derivations, validity checks, and corrections for individual steps, the assembled solutions are then used for standard supervised fine-tuning. Across two teachers, two students, and four mathematics and code benchmarks, our method achieves the highest score in 14 of 16 comparisons with three baselines. We further introduce Stepwise Explanation Information Gain (SEIG), a diagnostic based on the log-ratio of a frozen student's probabilities of correct step completion under stepwise and global explanations. Analyses on GSM8K show that incorrect-answer trajectories can remain useful when they preserve valid intermediate reasoning, while further decomposition yields limited additional gains.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T14:10:09Z</published>
+    <arxiv:comment>15 pages, 7 figures, including appendices</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Dicong Yu</name>
+    </author>
+    <author>
+      <name>Wenhua Wang</name>
+    </author>
+    <author>
+      <name>Tian Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41743v1</id>
+    <title>Task Vectors Can Be Linearly Decomposed into Interpretable and Controllable Components</title>
+    <updated>2026-10-30T13:48:48Z</updated>
+    <link href="https://arxiv.org/abs/2610.41743v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41743v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Task Vectors (TVs) provide a compact way to steer large language models, but they are typically treated as atomized directions merely extracted from hidden states, leaving their internal functional structure poorly understood. Motivated by prior work that decomposes in-context learning into Task Recognition (TR) and Task Learning (TL), we ask whether a single TV can likewise be decomposed into functionally meaningful components. We formulate a TR/TL-based decomposition from candidate-label unembeddings, separating each TV into TR, TL, and residual components, and try to optimize the TR and TL coefficients using Bayesian optimization for more effective intervention. We evaluate this formulation across multiple model families, classification tasks, and both instruction- and demonstration-based TVs. Across these settings, TR/TL-based optimization identifies intervention directions that outperform the original TVs. Although optimization over random directions can also improve performance, TR/TL-based search yields more reliable gains, particularly for instruction-based TVs. Moreover, isolated interventions on the decomposed components produce distinct logit-level effects that are consistent with their intended functional roles. Together, these results suggest that TVs are not monolithic steering directions, but can be decomposed into functionally meaningful components that support both interpretation and control.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T13:48:48Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Yukiya Horiba</name>
+    </author>
+    <author>
+      <name>Hakaze Cho</name>
+    </author>
+    <author>
+      <name>Takahiro Yakoh</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41733v1</id>
+    <title>Leakage-Controlled Structure-Preserving Augmentation and Template-Aware Evaluation for Bangla Symptom-Based Disease Prediction</title>
+    <updated>2026-10-30T13:42:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.41733v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41733v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Bangla symptom-based disease prediction is commonly evaluated on a small, imbalanced structured benchmark containing many profiles that differ by only one or two symptoms. We test whether train-only asymmetric Bernoulli perturbation improves classification using 725 unique profiles spanning 85 diseases and 172 binary symptoms. Experiments use ten repeated real-profile holdouts and parent-grouped inner cross-validation. The 2 x 2 design separates augmentation from hyperparameter tuning, with exact duplication, random oversampling, class weighting, and SMOTEN as balancing controls. For Bernoulli Naive Bayes (BNB), the gain over tuned raw training does not withstand Holm correction, although BNB attains the highest mean accuracy (97.50%). The boosted-tree models benefit substantially: XGBoost, LightGBM, and CatBoost improve by 18.10, 28.45, and 10.09 percentage points, respectively. A Hamming-distance audit places 91.0% of standard held-out profiles within one symptom bit of the training data. Accuracy decreases on a same-disease 1-bit-purged challenge; nevertheless, XGBoost and LightGBM retain large augmentation gains. We also evaluate robustness to missing and spurious symptoms and the faithfulness of BNB explanations. Overall, Bernoulli perturbation is useful for some model families, but benchmark accuracy should be interpreted together with template proximity.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T13:42:56Z</published>
+    <arxiv:comment>6 pages, 5 figures, 5 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Sabah Nushra</name>
+    </author>
+    <author>
+      <name>Shovan Samanta Turzo</name>
+    </author>
+    <author>
+      <name>Moinul Hossain</name>
+    </author>
+    <author>
+      <name>Md Kishor Morol</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41732v1</id>
+    <title>From Training Exposure to Membership Evidence: A Controlled Study of OLMo 2</title>
+    <updated>2026-10-30T13:41:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.41732v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41732v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Whether a language model was trained on a document matters for copyright, privacy, and benchmark contamination. Yet most membership-inference (MI) evaluations on language models collect members and non-members after the fact, so success may reflect distribution shift and failure is inconclusive. We re-ran OLMo 2 1B's official 50-billion-token mid-training stage, replacing selected training chunks with documents from 7,814 pairs matched on domain and difficulty. For each pair, a coin flip determined which document was inserted and which was held out. The run released by the Allen Institute for AI (AI2) from the same seed saw identical data everywhere else and serves as the counterfactual. One exposure raises a previously unseen document's likelihood on average but rarely identifies it. Using the counterfactual as reference, the reference ratio has an area under the ROC curve (AUC) of 0.767 but, with one threshold across domains, catches 3.8% of members at a 1% false-positive rate (FPR). In contrast, 13 matched pairs give a paired test 80% power at the 5% level to detect training on a collection, given same-domain non-members and a close reference. A reference trained with another seed recovers 92% of the counterfactual's AUC advantage over chance, whereas reference-free attacks stay within 0.07 of chance when pooled over domains. The full official post-training recipe, re-run on both models, leaves 89% of the average effect. Even with a closely matched reference, substantial document-level variability limits individual membership inference. We will release the checkpoints, per-token log-probabilities, and the evaluation documents; the code is available at https://github.com/ali-bana/OLMo-Twin.</summary>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T13:41:56Z</published>
+    <arxiv:comment>20 pages, 11 figures. Code: https://github.com/ali-bana/OLMo-Twin</arxiv:comment>
+    <arxiv:primary_category term="cs.CR"/>
+    <author>
+      <name>Ali Banaei</name>
+    </author>
+    <author>
+      <name>Muhammad Shahab Shahzad</name>
+    </author>
+    <author>
+      <name>Gerald Q. Maguire</name>
+    </author>
+    <author>
+      <name>Marco Chiesa</name>
+    </author>
+    <author>
+      <name>Dejan Kostić</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41720v1</id>
+    <title>UpLoop: Training Looped Transformers via Upcycling at No Extra Pretraining Compute</title>
+    <updated>2026-10-30T13:29:35Z</updated>
+    <link href="https://arxiv.org/abs/2610.41720v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41720v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Looped language models can strengthen reasoning through repeated computation with shared weights, increasing execution depth without adding independent parameters. However, each additional pass increases training floating-point operations (FLOPs), making these gains more expensive to obtain. To address this cost, we propose UpLoop, a pretraining schedule that uses upcycling to train looped Transformers while exactly matching a standard dense baseline in final parameter count, total training tokens, and training FLOPs. Specifically, UpLoop begins with a shallow Transformer, progressively grows its depth by copying learned layers, and uses the computation saved early to support repeated execution of a shared middle block later in training. Experiments across model scales show improvements in language modeling and downstream performance, with the average score across 22 downstream tasks increasing from 22.99 to 27.52 at 1.3B parameters. These gains also extend to mathematical reasoning after supervised fine-tuning.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T13:29:35Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Cheng Liang</name>
+    </author>
+    <author>
+      <name>Tengfei Zhang</name>
+    </author>
+    <author>
+      <name>Ya Zhang</name>
+    </author>
+    <author>
+      <name>Yanfeng Wang</name>
+    </author>
+    <author>
+      <name>Zhouhan Lin</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41704v1</id>
+    <title>GraphNIAH: A Benchmark for Long-Context Reasoning over Real-World Graphs</title>
+    <updated>2026-10-30T13:07:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.41704v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41704v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The needle-in-a-haystack (NIAH) benchmark was introduced as a test for measuring a model's ability to find small relevant facts within a very large body of input text. However, existing NIAH benchmarks each suffer from one or more of the following limitations: (1) reliance on synthetic data, so their evaluations may not generalize to real-world settings; (2) reuse of previously published datasets, leading to the risk of benchmark contamination; (3) dependence on manual annotation, which requires human effort to create and update data and is prone to future benchmark contamination; and (4) unrealistic simplification of long-context multi-hop reasoning where each next step is trivial given previous steps, while real-world reasoning often requires planning over multiple possible proof paths. To address these limitations, we introduce \Benchmark, a dynamic benchmark built from real citation relationships among scientific papers published after the evaluated models' knowledge cutoff date, which utilizes real-world information while ensuring no benchmark contamination. The fully automated benchmark construction pipeline samples representative subgraphs of the citation graph formed by these papers and converts each subgraph into a long-context QA example with a verifiable answer. We use GraphNIAH to evaluate eight LLMs from the GPT-5.6, Gemini-3, and Qwen3.5 families. We find that accuracy falls as questions require longer reasoning paths: at question depths of 16 and 32, the GPT-5.6 and Qwen3.5 models answer YES/NO questions no better than random guessing, mostly by answering NO; four of the eight models answer no counting example correctly, and the others model get worse as the subgraph size increases. These findings suggest that current LLMs often stop searching the citation relationships in their context before they reach the answer, even though every fact they need is in the context.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T13:07:47Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Minh-Nam Tran</name>
+    </author>
+    <author>
+      <name>Abulhair Saparov</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41698v1</id>
+    <title>Precision--Recall Trade-off on the Inference Level for LLMs in Grammatical Error Correction</title>
+    <updated>2026-10-30T13:04:17Z</updated>
+    <link href="https://arxiv.org/abs/2610.41698v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41698v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language models (LLMs) have recently been adopted for Grammatical Error Correction (GEC), achieving strong performance via both full fine-tuning and prompt-based approaches. As probabilistic sequence models, LLMs expose inference-time parameters that directly modify token generation behavior; however, their potential for controlling GEC-specific trade-offs has not been systematically studied. In this work, we investigate decoding strategies for grammatical error correction. We show that the repetition penalty parameter enables controllable adjustment of the precision--recall trade-off at inference time, without modifying the model architecture, training procedure, or prompt. Through experiments on standard GEC benchmarks, we demonstrate that repetition-penalty-based decoding enables inference-time control of the precision--recall balance, conceptually related to methods previously proposed for sequence-to-sequence GEC models, such as Align-and-Predict Decoding (APD), while remaining simple and broadly applicable to existing LLMs that expose inference-time decoding penalties.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T13:04:17Z</published>
+    <arxiv:comment>17 pages, 2 figures, 13 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Ryszard Staruch</name>
+    </author>
+    <author>
+      <name>Filip Graliński</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41697v1</id>
+    <title>TSBPO: Tree-Structured Branching for Policy Optimization in Interactive Language Agents</title>
+    <updated>2026-10-30T13:04:05Z</updated>
+    <link href="https://arxiv.org/abs/2610.41697v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41697v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Training interactive language agents from terminal outcomes poses three coupled problems: which task and state continuations to sample, how to assign delayed feedback to decisions, and how to aggregate token losses for multi-token actions. We present TSBPO, a tree-structured sampling-to-update paradigm that addresses these problems within one training loop. A likelihood-fitted Root/Branch allocator uses retained task and state evidence to target continuations likely to produce contrasting terminal outcomes under fixed rollout budgets. On the resulting replayed physical trees, trajectory advantages compare immediate sibling segments, while observation-group step advantages compare outcomes at matched task/observation states. The actor then sums clipped token surrogates over each complete response and normalizes across active turns, avoiding response-length averaging in the policy-gradient term. With a Qwen2.5-1.5B actor, fixed checkpoints obtain 97.79% seen and 96.64% unseen stochastic success on ALFWorld and an 81.07% per-episode success rate over six stochastic episodes for each of the 500 WebShop test goals. A WebShop step-term ablation yields 75.93% at the same update-100 evaluation; an ALFWorld aggregation comparison shows higher observed command validity with complete-turn weighting. These results support the evaluated training configuration on two interactive benchmarks.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T13:04:05Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Rui Yu</name>
+    </author>
+    <author>
+      <name>Chong Mu</name>
+    </author>
+    <author>
+      <name>Jinchuan Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41691v1</id>
+    <title>Does Reasoning Make Language Models Agree?</title>
+    <updated>2026-10-30T12:57:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.41691v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41691v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Language models face two opposing concerns: monoculture, in which models err in correlated ways, and multiplicity, in which equally accurate models make conflicting decisions. The rise of reasoning models has complicated this debate: On the one hand, reasoning may increase model agreement if models anchor on the same salient features or follow similar reasoning paths. On the other hand, stochastic reasoning traces may introduce additional branch points leading to more diverse predictions. We resolve this tension by distinguishing reasoning as an intervention from reasoning as an observed behavior. We compare agreement under controlled changes in reasoning effort with agreement across observed reasoning lengths, measuring both against the agreement expected from model accuracy. Across nine models from two developers and three classification tasks, enabling reasoning increases agreement between models evaluated on the same individuals. Yet the individuals who elicit longer reasoning traces receive less consistent predictions across models. Both patterns persist after accounting for differences in accuracy. Asking models to reason more thus promotes agreement, while observing them reason longer signals disagreement.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CY" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T12:57:53Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Mila Gorecki</name>
+    </author>
+    <author>
+      <name>Moritz Hardt</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41661v1</id>
+    <title>When Steering Shifts Discourse: Identifying and Intervening on Discourse-Level Changes due to Activation Steering in LLMs</title>
+    <updated>2026-10-30T12:32:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.41661v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41661v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Activation steering is an inference-time technique used to control or modify the behavior, tone, or safety properties of a large language model (LLM) without retraining the model's weights or editing its input prompt, but simply by adding a vector to its residual-stream activations. However, activation steering also changes the generated text in unintended ways, unrelated to intended behavior change, that are not well understood. Prior work has measured these changes only through coarse signals such as perplexity. In this work, we show that steering systematically produces significant changes in discourse dimensions of the generated text, such as its formality, use of evidence, and ambiguity. We present a way of countering this by adding a second, complementary vector that targets the affected discourse dimension. This intervention restores about 78% of the unintended discourse changes while preserving the intended steering behavior in about 93% of the generations.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T12:32:47Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Shivam Adarsh</name>
+    </author>
+    <author>
+      <name>Hetianyu Huang</name>
+    </author>
+    <author>
+      <name>Lau Safin</name>
+    </author>
+    <author>
+      <name>Maria Maistro</name>
+    </author>
+    <author>
+      <name>Christina Lioma</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41629v1</id>
+    <title>GRIT: Gradient Masking for Visually Misgrounded Tokens in Text-Rich Reasoning</title>
+    <updated>2026-10-30T12:05:54Z</updated>
+    <link href="https://arxiv.org/abs/2610.41629v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41629v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Reinforcement learning with verifiable rewards (RLVR) has recently been extended to vision-language models (VLMs), yet its effectiveness remains limited for text-rich reasoning tasks. We highlight a key factor contributing to this limitation: models frequently arrive at correct final answers despite misperceiving visual information during intermediate steps. We define this phenomenon as Correct-but-Visually-Misgrounded Reasoning (CVMR). Because standard RLVR rewards only final-answer correctness, it fails to differentiate between properly grounded and misgrounded reasoning, reinforcing both equally. Through token-level analysis, we reveal that CVMR tokens exhibit distinct attention patterns that differ systematically from well-grounded ones. Based on this observation, we propose GRIT, a training framework that incorporates visual grounding into RLVR to mitigate the impact of CVMR. Furthermore, to address the lack of text-rich reasoning benchmarks that allow for systematic evaluation across text length and reasoning depth, we introduce GRIT-Bench. Experiments demonstrate that GRIT significantly improves both reasoning accuracy and grounding fidelity over existing RLVR methods.</summary>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T12:05:54Z</published>
+    <arxiv:comment>Accepted to WACV 2027</arxiv:comment>
+    <arxiv:primary_category term="cs.CV"/>
+    <author>
+      <name>Chanseul Cho</name>
+    </author>
+    <author>
+      <name>Noori Bae</name>
+    </author>
+    <author>
+      <name>Dongheon Lee</name>
+    </author>
+    <author>
+      <name>Youngmin Ro</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41576v1</id>
+    <title>Saidzoda-Tajik-LFM-2.6B: Adapting a 2.6B Hybrid Model to Tajik Tool Calling, and What Continued Pretraining Takes Away</title>
+    <updated>2026-10-30T11:06:30Z</updated>
+    <link href="https://arxiv.org/abs/2610.41576v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41576v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We release Saidzoda-Tajik-LFM-2.6B, a Tajik adaptation of the 2.6B-parameter hybrid model LFM2.5-2.6B-Base, built for tool calling in Tajik on modest hardware. The recipe has two stages: LoRA continued pretraining (CPT) on 1,485,319 cleaned Tajik web documents for 3 epochs, then one epoch of supervised fine-tuning (SFT) on a mix of machine-translated Tajik tool calls, English tool calls kept as replay, and Tajik instructions. On a 174-item tool-calling test set built from BFCL v3 and machine-translated to Tajik, strict full-call accuracy on Tajik prompts rises from 20.69 for the base model to 64.14 (paired difference +43.45 points, 95% interval +35.2 to +51.7); a lenient parser that also accepts the base model's own call formats puts the base at 31.72. English shows no detectable change (76.55 and 77.24). Every CPT checkpoint scores zero: CPT removes the native tool-call format and, as the lenient re-scoring shows, part of the skill itself. Outside tool calling, accuracy on a Tajik knowledge benchmark rises from 28.0 to 35.0, Belebele Tajik shows no significant change, and English MMLU falls from 60.8 to 52.5. The model is not a general Tajik assistant. It almost never declines when no tool fits (6.9% correct on Tajik, against 31.0% for the base under the lenient parser), it is weak at multi-turn calls, and its calls should be checked before they are executed. We describe the data, the training settings and every evaluation in enough detail to repeat them.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T11:06:30Z</published>
+    <arxiv:comment>12 pages, 9 tables, 3 figures. Technical report. Model: https://huggingface.co/Tohirju/Saidzoda-Tajik-LFM-2.6B</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Tohir Saidzoda</name>
+    </author>
+    <author>
+      <name>Nekruz Maxudov</name>
+    </author>
+    <author>
+      <name>Bedil Karimov</name>
+    </author>
+    <author>
+      <name>Abubakr Abdullozoda</name>
+    </author>
+    <author>
+      <name>Amin Jalilov</name>
+    </author>
+    <author>
+      <name>Jonibek Kishvarov</name>
+    </author>
+    <author>
+      <name>Rahmonali Sharipov</name>
+    </author>
+    <author>
+      <name>Mariyamkhon Shodyeva</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41574v1</id>
+    <title>BYOD: Build Your Own DLM - Efficient Autoregressive-to-Diffusion Language Model Conversion</title>
+    <updated>2026-10-30T11:04:29Z</updated>
+    <link href="https://arxiv.org/abs/2610.41574v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41574v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Unlike autoregressive (AR) models, diffusion language models (DLMs) permit parallel token updates, flexible generation, and bidirectional attention, but leading systems rely on costly pretraining or full-model fine-tuning. We present Build Your Own DLM (BYOD), a generalizable LoRA-only recipe for parameter-efficient AR-to-DLM conversion. Without architecture-specific tuning, BYOD induces diffusion generation in Gemma 2 9B, Llama 3.1 8B, Qwen2.5 7B, and Ministral 8B; to our knowledge, this is the first reported AR-to-DLM conversion of a Mistral model. The adapters comprise 4.1-5.8% of final parameters while every base-model parameter remains frozen; each 25,000-iteration conversion needs at most 102.4M tokens, processed in 3.1-4.0 hours on one Google Colab GPU. All four models generate from fully masked sequences, use bidirectional context in a controlled attention test, and retain substantial parent-model knowledge. BYOD-Gemma is the strongest BYOD conversion on our nine-task evaluation, reaching 50.6% average accuracy compared with 51.9% for LLaDA 8B Instruct in the same harness. Open-generation quality at low network function evaluation (NFE) budgets remains the principal limitation: BYOD perplexity is 8.3-11.1 versus 4.1 for LLaDA and 2.2-3.0 for the AR parents when generating 128 tokens in 64 steps. To enable further experimentation and inspection, we provide a standalone training and evaluation implementation and interactive demos for all four conversions. BYOD thus provides a practical route for extending diffusion generation to other existing model families while identifying the gap that efficient conversion must next close.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T11:04:29Z</published>
+    <arxiv:comment>21 pages, 8 figures. Code: https://github.com/RuurdKuiper/BYOD ; Gemma demo: https://huggingface.co/spaces/Ruurd/byod-gemma-2-9b . Links to all four demos are included in the paper</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Ruurd J. A. Kuiper</name>
+    </author>
+    <author>
+      <name>Robert A. Bagheri</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41562v1</id>
+    <title>SCRBench: Beyond Equivalence Checking for Semantic Change Reasoning in Code</title>
+    <updated>2026-10-30T10:56:30Z</updated>
+    <link href="https://arxiv.org/abs/2610.41562v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41562v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Understanding how code changes affect program semantics is a core aspect of code reasoning in language models. It is commonly evaluated by asking whether two programs are semantically equivalent, but a yes/no answer does not reveal whether a model knows which code change caused a semantic difference, or which sequence of code changes produced the modified program. We study two tasks that ask these questions directly, diagnosing semantic change and reconstructing sequences of code changes, alongside detecting semantic equivalence. We build SCRBench, 67,658 Python program pairs generated by applying sequences of code changes that preserve or alter program semantics, and evaluate five language models on a stratified subset of 4,500 pairs. Detecting semantic equivalence exposes weaker models, whose accuracy declines as changes accumulate, but the strongest models remain near the ceiling. Diagnosing semantic change reveals weaknesses that equivalence accuracy hides: a model with 94.71% equivalence accuracy diagnoses only 54.44% of semantic changes. Reconstructing sequences of code changes is much harder: the best model reconstructs the exact sequence for only 39.27% of pairs, and no model exceeds 1.11% when five changes are applied. High equivalence accuracy therefore overestimates how well models reason about the semantic effects of code changes.</summary>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T10:56:30Z</published>
+    <arxiv:comment>17 pages, including references and appendices</arxiv:comment>
+    <arxiv:primary_category term="cs.SE"/>
+    <author>
+      <name>Omid Saghatchian</name>
+    </author>
+    <author>
+      <name>Ali Mahzoun</name>
+    </author>
+    <author>
+      <name>Khashayar Etemadi</name>
+    </author>
+    <author>
+      <name>Saeed Reza Kheradpisheh</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41561v1</id>
+    <title>Digital sovereignty in professional translation workflows: a case study of migrating from Windows to Linux</title>
+    <updated>2026-10-30T10:55:02Z</updated>
+    <link href="https://arxiv.org/abs/2610.41561v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41561v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>This study examines digital sovereignty in professional translation through a screening of computer-assisted translation tools and translation management systems, and a case study of migrating a translator's workstation from Windows to Linux. The framework combines three principles - Control, Continuity and Exit - with three practical requirements: native Linux operation, independence from mandatory external services, and independent access to essential data and resources. Drawing on documentary evidence and the limited number of responses received from providers, the ecosystem screening distinguishes Linux accessibility from operational independence: browser-based platforms may remain dependent on provider-controlled infrastructure. The migration case demonstrates the feasibility of reconstructing one professional workflow around a locally operable Linux core, using LoopCAT, LibreOffice and locally run TranslateGemma, alongside tools for optical character recognition, communication, credential management and backup. Selected cloud services remained available where needed. The findings suggest that digital sovereignty depends on how workflow dependencies are organized, rather than on individual applications or operating systems. It does not require technological isolation, but meaningful control over essential components, continuity of work and practical exit options. The framework is tailored to the case examined here and may require adaptation to other professional workflows.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T10:55:02Z</published>
+    <arxiv:comment>14 pages, submitted for formal peer review at the 47th Translating and the Computer conference (Luxembourg) 8/10 December 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Michael Farrell</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41553v1</id>
+    <title>CEFR Level Assessment across Languages and Text Granularities</title>
+    <updated>2026-10-30T10:50:38Z</updated>
+    <link href="https://arxiv.org/abs/2610.41553v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41553v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Automatic assessment of textual CEFR levels is an important task in educational natural language processing. However, accurate CEFR level prediction remains challenging due to the naturally imbalanced distribution of CEFR levels and the ambiguous boundaries between adjacent levels. To address these challenges, we propose a unified training objective that combines focal loss with supervised contrastive learning. Focal loss mitigates class imbalance by emphasizing underrepresented and difficult examples, while supervised contrastive learning learns more discriminative representations by encouraging intra-class compactness and inter-class separation. We evaluate the proposed method on sentence- and document-level CEFR assessment in both monolingual and multilingual settings. Experimental results demonstrate that our method consistently outperforms strong baselines across all settings, establishing new state-of-the-art performance on multiple CEFR assessment benchmarks.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T10:50:38Z</published>
+    <arxiv:comment>8 pages, 2 figures, 5 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Eugene Matsumura</name>
+    </author>
+    <author>
+      <name>Yuki Arase</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41552v1</id>
+    <title>Enhancing Knowledge Entity Relation Extraction in Abstracts and Full-text Content of Academic Articles Using Large Language Models</title>
+    <updated>2026-10-30T10:50:28Z</updated>
+    <link href="https://arxiv.org/abs/2610.41552v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41552v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>This study investigates the effectiveness of large pre-trained language models (LLMs) for knowledge entity relation extraction (KERE) from academic papers. Existing studies have examined individual types of LLM-based strategies and evaluated model performance using metrics such as precision and recall. To provide a broader evaluation, this study investigates multiple strategies, including closed-source LLM-based CoT prompting, LoRA-adapted open-source LLMs, LLM-enhanced small pre-trained language models (SLMs), and SLM-enhanced closed-source LLMs. In addition, this study introduces two strategies, namely SLM-enhanced open-source LLMs and closed-source LLM-enhanced open-source LLMs. These strategies are evaluated from multiple perspectives, including metrics, their ability to mitigate errors observed in SLMs, and potential directions for model optimization. This study manually constructs two annotated datasets in the NLP domain, covering Abstract and Full-Text datasets. Experimental results show that the LoRA-adapted T5 model achieves the highest macro F1 scores of 0.7408 and 0.7013 on the Abstract and Full-Text datasets, respectively. SLMs also benefit from LLM-generated entity descriptions under the LLM-enhanced SLM strategy. Error analysis further reveals that the effectiveness of LLM-based strategies in mitigating SLM errors varies across error types. Based on the identified limitations and error patterns of these strategies, several optimization directions are proposed. In addition, combining strategies with different error patterns further improves KERE performance.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.DL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T10:50:28Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <arxiv:journal_ref>Scientometrics, 2026</arxiv:journal_ref>
+    <author>
+      <name>Yingyi Zhang</name>
+    </author>
+    <author>
+      <name>Chengzhi Zhang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41536v1</id>
+    <title>DAPS: Dependency-Aware Premise Selection for LLM Theorem Proving</title>
+    <updated>2026-10-30T10:28:34Z</updated>
+    <link href="https://arxiv.org/abs/2610.41536v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41536v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>LLM-based theorem proving in Lean 4 has advanced rapidly, but provers are difficult to leverage newly contributed lemmas, because retrieval skews toward popular foundational lemmas, leaving the right premises buried among hundreds of thousands of candidates. Existing neural selectors rank candidates by semantic similarity, with three intrinsic limitations: frequency-skewed retrieval, isolated pairwise ranking, and degradation on out-of-distribution queries such as competition problems and informal language. Given that mathematics is structured by dependencies rather than similarities, we restore this signal to both the training data and the model. We curate two underused dependency resources. We conduct the first systematic mining of 53 Lean Blueprint projects, a previously untapped corpus of 3,805 manually curated informal+formal nodes that capture rare, research-level premises absent from Mathlib4. We further pair it with the extraction of comprehensive, typed, multi-level Mathlib4 dependencies. We then introduce DAPS, a dependency-aware premise selector with a structural neighborhood encoder, a group-level contrastive objective, and a Mathlib-then-Blueprint adaptation procedure. DAPS reaches mean Recall@32 of 89.25 on Mathlib4-Heldout (+11.41 over the strong selector LeanHammer), and maintains this lead on two out-of-distribution benchmarks. Further experiments demonstrate that DAPS premises improve theorem proving on miniF2F and IMO-ProofBench. Project page: https://daps-eth.github.io/.</summary>
+    <category term="cs.LO" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T10:28:34Z</published>
+    <arxiv:primary_category term="cs.LO"/>
+    <arxiv:journal_ref>NeurIPS 2026</arxiv:journal_ref>
+    <author>
+      <name>Zixuan Chen</name>
+    </author>
+    <author>
+      <name>Wenyuan Jiang</name>
+    </author>
+    <author>
+      <name>Junling Wang</name>
+    </author>
+    <author>
+      <name>Mrinmaya Sachan</name>
+    </author>
+    <author>
+      <name>Yinya Huang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41518v1</id>
+    <title>Enhancing Sentiment Classification on Small Datasets through Data Augmentation and Transfer Learning</title>
+    <updated>2026-10-30T10:08:46Z</updated>
+    <link href="https://arxiv.org/abs/2610.41518v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41518v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Small-scale sentiment classification often suffers from data scarcity, which limits the generalization ability of the models. This study evaluates and compares the effectiveness of three data augmentation strategies: Easy Data Augmentation (EDA), back-translation, and contextual token substitution (nlpaug-style), with both traditional machine learning classifiers (Logistic Regression, Random Forest) and transformer-based models (BERT). We perform a comprehensive empirical comparison with low-resource sentiment datasets by summarizing the results of recent studies and performing targeted head-to-head experiments. Our findings indicate that all augmentation methods improve performance. Contextual augmentation yields the most consistent gains for BERT models, while EDA and back-translation provide greater benefits for traditional classifiers. These insights help guide the selection of data augmentation techniques tailored to model type and dataset size, filling a critical gap in research on data augmentation for sentiment classification on small datasets.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T10:08:46Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <arxiv:journal_ref>Discover Artificial Intelligence 6 (2026) 127</arxiv:journal_ref>
+    <author>
+      <name>Mahmoud S. Mayaleh</name>
+    </author>
+    <author>
+      <name>Samer A. Mayaleh</name>
+    </author>
+    <arxiv:doi>10.1007/s44163-025-00813-9</arxiv:doi>
+    <link rel="related" href="https://doi.org/10.1007/s44163-025-00813-9" title="doi"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41487v1</id>
+    <title>Sparse Text Diffusion under Dual Budgets: Context Connectivity and Expert Activation</title>
+    <updated>2026-10-30T09:43:20Z</updated>
+    <link href="https://arxiv.org/abs/2610.41487v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41487v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Long-context diffusion repeatedly pays for both token interaction and feed-forward computation. We formulate these costs as two separate budgets: the edges available to an attention graph and the experts activated for each token. This view connects local, dilated, and global attention with conditional expert computation without assuming that sparsity alone preserves document-level information. We specify normalized masked attention, distinguish denoising depth from sampling iterations, and derive graph and compute bounds. A reported sparse-expert configuration, denoted DualBudget, is analyzed across scientific summarization, multi-hop question answering, dialogue, and sentence-pair prediction. All supplied table measurements are retained. The length study shows gains over the listed baselines through 16K, together with measurable degradation as length increases. Ablations reveal mixed changes across the three reported scores, while the cost record indicates a 20% reduction relative to DiffuSeq under an unspecified timing convention. The analysis separates these observations from unmeasured claims about training speed, absorbing states, global coherence, and deployment memory.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T09:43:20Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Alexandros Christoforos</name>
+    </author>
+    <author>
+      <name>Chadbourne Davis</name>
+    </author>
+    <author>
+      <name>Paul Raj</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41482v1</id>
+    <title>KEEPER: Learning Control-Sufficient Textual Memory for Long-Horizon LLM Agents</title>
+    <updated>2026-10-30T09:36:06Z</updated>
+    <link href="https://arxiv.org/abs/2610.41482v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41482v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Recursive textual memory can carry earlier errors into later updates, yet task performance alone does not establish memory reliability. We define self-consistency bias as the persistence of incorrect claims already present in the incoming memory. We present KEEPER, a comparative analysis of four auxiliary objectives along information-content and update-sensitivity axes within a shared recursive interface, examining how supervision targets relate to agent performance. Among evaluated conditions, reward-related prediction achieve the highest task performance before and after offline reinforcement learning, outperforming joint supervision. A claim-level analysis of one baseline trajectory documents error persistence despite corrective observations. Together, these analyses motivate evaluating error persistence and valid-information retention alongside task outcomes.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T09:36:06Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Jinkyeong Choi</name>
+    </author>
+    <author>
+      <name>Chaebin Jeong</name>
+    </author>
+    <author>
+      <name>Junsung Jeon</name>
+    </author>
+    <author>
+      <name>Donghyeon Park</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41480v1</id>
+    <title>KV-Cache Patching: Tracing How and Where Fine-Tuned Behaviors Arise</title>
+    <updated>2026-10-30T09:35:33Z</updated>
+    <link href="https://arxiv.org/abs/2610.41480v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41480v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Fine-tuning a language model changes how it responds, but where is this fine-tuned behavior instantiated? To better understand this, we evaluate whether the change in model behavior arises only during the generation of the answer tokens where the change manifests, or whether altered processing of previous tokens causes it via the attention mechanism. For this, we patch the KV cache from a LoRA fine-tuned model into the unmodified base model, and vice versa. Our results show that for some behaviors, like responding in German or emergent misalignment, patching the KV cache can indeed transfer them from the fine-tuned to the base model. Correspondingly, patching the KV cache from base to fine-tune can partially or fully remove fine-tuned behavior. Furthermore, we find that the effect of patching grows with how much of the KV cache is patched and concentrates at a few pivotal positions, with system-prompt and chat-template tokens having disproportionate influence.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T09:35:33Z</published>
+    <arxiv:comment>Interpretability as a Science Workshop at NeurIPS 2026. Project page: https://jonasloos.github.io/kv-patching</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Jonas Loos</name>
+    </author>
+    <author>
+      <name>Oliver Eberle</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41437v1</id>
+    <title>A prospective randomized study of patient-centered AI for clinical visit preparation</title>
+    <updated>2026-10-30T08:39:59Z</updated>
+    <link href="https://arxiv.org/abs/2610.41437v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41437v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Patients often arrive at brief, time-constrained clinical visits unsure of what to expect or ask, and millions of adults now turn to general-purpose AI chatbots to prepare beforehand. Yet whether conversational AI improves visit readiness remains unclear. We designed a large language model (LLM)-based visit preparation agent to guide patients before an appointment by gathering clinical context, setting visit expectations, providing relevant health information, building a prioritized list of questions for their clinician, and generating a summary. In a prospective consented randomized study in the Google Health app, 802 U.S. adults held 866 health-related conversations with the visit preparation agent (standard or concise variant) or a minimally prompted control chatbot built on the same LLM. The visit preparation agent significantly outperformed the control across blinded clinician evaluations and patient self-reports. In clinician reviews of completed sessions (n = 272), the agent achieved a 16.6% higher rate of comprehensive preparation (67.2% vs. 50.6%; P &lt; 0.05) and an 8.5% higher rate of alignment with patients' health context (98.9% vs. 90.4%; P &lt; 0.01), while maintaining high medical safety and appropriateness across all study arms. Patient post-surveys (n = 460) showed 16.8% higher visit preparedness (73.8% vs. 57.0%; P &lt; 0.01), 14.3% higher confidence in knowing what to ask (81.4% vs. 67.1%; P &lt; 0.01), and 12.0% higher overall satisfaction (74.0% vs. 62.0%; P &lt; 0.05). Clinician and participant metrics were not significantly correlated, indicating that expert review and patient self-assessment capture complementary dimensions of patient-facing AI. These findings suggest that LLM chatbots can safely help patients prepare for clinical visits, with greater benefit when following a structured workflow, and motivate future studies on in-visit communication and clinical outcomes.</summary>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T08:39:59Z</published>
+    <arxiv:comment>50 pages (16 main text, 34 appendix), 6 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.HC"/>
+    <author>
+      <name>Xincheng Tan</name>
+    </author>
+    <author>
+      <name>Matthew Thompson</name>
+    </author>
+    <author>
+      <name>Xiang Ji</name>
+    </author>
+    <author>
+      <name>Angelica Willis</name>
+    </author>
+    <author>
+      <name>Will Vaughan</name>
+    </author>
+    <author>
+      <name>Roma Ruparel</name>
+    </author>
+    <author>
+      <name>Michael A. Sanchez</name>
+    </author>
+    <author>
+      <name>Sean Chang</name>
+    </author>
+    <author>
+      <name>Joseph Xu</name>
+    </author>
+    <author>
+      <name>Bhavna Daryani</name>
+    </author>
+    <author>
+      <name>Preeti Singh</name>
+    </author>
+    <author>
+      <name>Pinal Bavishi</name>
+    </author>
+    <author>
+      <name>Kejia Chen</name>
+    </author>
+    <author>
+      <name>Fan Zhang</name>
+    </author>
+    <author>
+      <name>Priya Gupta</name>
+    </author>
+    <author>
+      <name>Ernest Lim</name>
+    </author>
+    <author>
+      <name>Christina Chen</name>
+    </author>
+    <author>
+      <name>Bob Lou</name>
+    </author>
+    <author>
+      <name>Dimitrios Antos</name>
+    </author>
+    <author>
+      <name>Zach Wasson</name>
+    </author>
+    <author>
+      <name>Ray Luo</name>
+    </author>
+    <author>
+      <name>Fadi Yousif</name>
+    </author>
+    <author>
+      <name>Florence Thng</name>
+    </author>
+    <author>
+      <name>Mark Malhotra</name>
+    </author>
+    <author>
+      <name>Joseph Breda</name>
+    </author>
+    <author>
+      <name>Daniel McDuff</name>
+    </author>
+    <author>
+      <name>Kavi Goel</name>
+    </author>
+    <author>
+      <name>Katherine Chou</name>
+    </author>
+    <author>
+      <name>Dale R. Webster</name>
+    </author>
+    <author>
+      <name>Avinatan Hassidim</name>
+    </author>
+    <author>
+      <name>Yossi Matias</name>
+    </author>
+    <author>
+      <name>Po-Hsuan Cameron Chen</name>
+    </author>
+    <author>
+      <name>Yun Liu</name>
+    </author>
+    <author>
+      <name>Mike Schaekermann</name>
+    </author>
+    <author>
+      <name>Quang Duong</name>
+    </author>
+    <author>
+      <name>Jackie M. Barr</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41435v1</id>
+    <title>BlindToChange: AI Agents Can Find Changes When Asked But Do They Look When Needed?</title>
+    <updated>2026-10-30T08:39:22Z</updated>
+    <link href="https://arxiv.org/abs/2610.41435v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41435v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Given that AI agents can search the web broadly and deeply in real time, it is tempting to conclude that their outputs account for recent world events. We show that this conclusion does not hold in practice. While agents can search and easily find recent changes, the correctness of their responses depends on whether they search and what they search for. Popular agentic search benchmarks like BrowseComp cannot expose failures wherein agents do not recognize their own assumptions that should be verified, since these benchmarks explicitly state what needs to be found. In contrast, many user requests state only the final information need (e.g., an itinerary for a trip), leaving the agent to discover relevant changes (e.g., the temporary closure of a museum) and account for their consequences. To highlight such gaps, we introduce BlindToChange, a benchmark that measures whether agents proactively discover recent events that affect their responses. Our benchmark comprises requests for recommendations where an obvious candidate is no longer applicable due to a recent real-world event. These events are drawn automatically from Wikidata, allowing BlindToChange to be periodically refreshed. Strikingly, we find a big gap -- as high as 27.5 points, even at high reasoning effort -- in systems' performance, when the recent event is not explicitly mentioned compared to when we ask about it directly. Analyzing search trajectories, we learn that more than half of the failures can be attributed to the fact that agents do not directly search to verify whether a relevant fact has changed. Our benchmark highlights, and tracks, a new axis of progress, wherein systems account for recent information that is not explicitly mentioned in the user request.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T08:39:22Z</published>
+    <arxiv:comment>Preprint</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Anirudh Phukan</name>
+    </author>
+    <author>
+      <name>Tanya Goyal</name>
+    </author>
+    <author>
+      <name>Danish Pruthi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41432v1</id>
+    <title>Hybrid Computer Use: A Unified Programmatic, Semantic, and Visual Interface for General Agents</title>
+    <updated>2026-10-30T08:38:29Z</updated>
+    <link href="https://arxiv.org/abs/2610.41432v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41432v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Computer-use agents increasingly tackle tasks ranging from everyday desktop activities to long-horizon professional workflows. Yet interfaces centered on screenshots and mouse-and-keyboard actions can impose a human-interaction prior, requiring repeated screen interpretation while leaving the computer's semantic and programmatic capabilities underexposed. We argue for exposing these capabilities and letting models choose and combine them. We introduce Hybrid Computer Use (HCU), a unified interface for general agents that combines three complementary channels: programmatic interaction through code and command-line tools, semantic interaction through accessibility (AX), and visual interaction through graphical user interfaces (GUI). Our HCU supports efficient AX interaction and guards against stale-state actions during channel switching. A supplementary HCU skill guides agents in selecting and coordinating channels to use the unified interface effectively. Our designed AX tools return compact observations, execute actions in batches, and report their effects as AX diffs, so the model needs fewer round trips. On OSWorld 2.0, HCU achieves the highest Partial and Binary scores among the compared systems. Analyzing agent trajectories, we find that all evaluated models improve with HCU yet allocate work across the channels differently and consistently outperform compared baselines in terms of both efficiency and task success, highlighting the value of unified computer-use interfaces that allow flexible channel selection and combination.</summary>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T08:38:29Z</published>
+    <arxiv:primary_category term="cs.HC"/>
+    <author>
+      <name>Haoqing Wang</name>
+    </author>
+    <author>
+      <name>Xiaoyi Zhang</name>
+    </author>
+    <author>
+      <name>Sicheng Fan</name>
+    </author>
+    <author>
+      <name>Zhexin Zhang</name>
+    </author>
+    <author>
+      <name>Xinjie Zhang</name>
+    </author>
+    <author>
+      <name>Jiahao Li</name>
+    </author>
+    <author>
+      <name>Bin Li</name>
+    </author>
+    <author>
+      <name>Yan Lu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41420v1</id>
+    <title>SparseGDN: Chunk Sparse in Linear Attention</title>
+    <updated>2026-10-30T08:27:36Z</updated>
+    <link href="https://arxiv.org/abs/2610.41420v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41420v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Gated Delta Networks (GDNs) offer linear-time sequence modeling, yet long-context prefill remains costly due to dense intra-chunk computation, recurrent-state updates, and intermediate state storage. We introduce SparseGDN, a hardware-aware framework that combines structured intra-chunk approximation with input-dependent recurrent-event selection while producing outputs for every token. A block-adjacent solver reduces local Delta-solve computation, while a dynamic selector allocates recurrent-update budgets across head pairs. The GPU implementation materializes updates only for selected events and reconstructs token outputs using compact state snapshots and group-local interactions, reducing computation and memory traffic. We evaluate SparseGDN on Qwen3.5-4B and Qwen3.5-9B across RULER tasks and context lengths from 4K to 128K. Retaining approximately 29% of recurrent events on average, SparseGDN achieves 1.50-1.94x GDN-core prefill speedups over native FLA kernels, including online selection overhead.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T08:27:36Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Jiedong Zhuang</name>
+    </author>
+    <author>
+      <name>Peng Zhao</name>
+    </author>
+    <author>
+      <name>Jialin Tang</name>
+    </author>
+    <author>
+      <name>Haoji Hu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41396v1</id>
+    <title>ProSearch: Benchmarking Multi-Constraint Protocol Retrieval in Experimental Science</title>
+    <updated>2026-10-30T08:06:24Z</updated>
+    <link href="https://arxiv.org/abs/2610.41396v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41396v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In AI for Science scenarios, experimental design and method reproduction require retrieving protocols that satisfy multiple interdependent constraints, yet existing benchmarks lack systematic evaluation of this capability. To address this gap, we introduce ProSearch, a benchmark for multi-constraint protocol retrieval in experimental science. ProSearch has three key features: (1) realism, with queries grounded in real experimental records and expert-defined templates; (2) complexity, with 60 experimental fields and their dependencies; and (3) diagnosticity, with 3-5 explicit constraints per query, including numerical and negation constraints. We construct ProSearch through LLM-based extraction, data-driven constraint selection, controlled query generation, and evidence-based relevance validation. The resulting benchmark contains 1,515 queries across six experimental science domains. We conduct extensive experiments on ProSearch with 19 representative retrievers and complementary analyses. The best-performing retriever achieves an average nDCG@10 of only 0.290, which improves to 0.474 with reranking. Structured diagnostic analysis shows that explicit constraint matching provides a strong ranking signal, while manual error analysis identifies joint constraint binding as a key bottleneck. ProSearch provides a testbed for systematically evaluating scientific retrieval systems.</summary>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T08:06:24Z</published>
+    <arxiv:comment>Accepted to NeurIPS 2026 (Evaluations and Datasets Track). 48 pages, 4 figures. Wenliang Liang and Zhiyuan Ning contributed equally. Code: https://github.com/kg4sci/ProSearch. Data: https://huggingface.co/datasets/kg4sci/ProSearch</arxiv:comment>
+    <arxiv:primary_category term="cs.IR"/>
+    <author>
+      <name>Wenliang Liang</name>
+    </author>
+    <author>
+      <name>Zhiyuan Ning</name>
+    </author>
+    <author>
+      <name>Haolin Chen</name>
+    </author>
+    <author>
+      <name>Yuanchun Zhou</name>
+    </author>
+    <author>
+      <name>Wenjuan Cui</name>
+    </author>
+    <author>
+      <name>Yi Du</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41391v1</id>
+    <title>Comparative Evaluation of LLM-Based Review Paradigms for Academic Paper Quality Assessment</title>
+    <updated>2026-10-30T08:02:25Z</updated>
+    <link href="https://arxiv.org/abs/2610.41391v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41391v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Growing submission volumes have renewed interest in using large language models (LLMs) to support peer review. It remains unclear how such evaluation should be structured, how much the model matters, and whether LLM scores predict research impact. We evaluate five paradigms across three input representations and three LLMs on 232 stratified ICLR 2025 submissions. Direct absolute rating matches comparative ranking on rank correlation with human scores, yet compresses most predictions above the accept threshold, flagging almost none of the papers reviewers scored below it. A base-rate-matched recalibration control locates the cause: comparative ranking supplies placement, not better ordering, and after recalibration Direct Rating reaches higher agreement than Elo while making 24% as many API calls. Abstract-only input beats full-paper summarization, and model choice matters as much as paradigm choice. Replicating on all 11,513 scored submissions reproduces these patterns, shows absolute agreement depends on the evaluated set's score spread, and finds none beating an always-reject baseline in accuracy. Human scores track citations better than any paradigm, with one exception: Group Rating retains its citation correlation after controlling for human scores, and alone ranks within the accepted pool. Ranking quality alone cannot assess review quality; calibration, thresholds, model, and target outcome all matter.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.DL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T08:02:25Z</published>
+    <arxiv:comment>commit to EACL 2027</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Fan Huang</name>
+    </author>
+    <author>
+      <name>Hongyu Zhou</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41366v1</id>
+    <title>What We Keep of What We Forget: Replacement Operators and Routing Semantics in Training-Free MoE Expert Pruning</title>
+    <updated>2026-10-30T07:31:53Z</updated>
+    <link href="https://arxiv.org/abs/2610.41366v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41366v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Training-free expert pruning makes two decisions: which experts to remove, and what the layer computes when its router still selects a removed expert. Published methods change both at once. Holding the mask fixed, we compare replacement operators from three families on OLMoE, DeepSeek-V2-Lite and Moonlight, with Granite as a fourth router, using paired, multiplicity-corrected tests. The largest effect is a choice usually left implicit: the survivors' gate scale. On routers trained without top-k renormalization, renormalizing the survivors' gates, a common implementation choice, costs 0.8-8.5 points and reverses whether rerouting beats MoNE's mean-output replacement; on two routers trained with renormalization, the trained scale wins at 50% pruning. We introduce the tilted novice, a closed-form low-rank map of the pruned expert's input whose rank-0 case is MoNE's constant. At 50% pruning it adds 1.2-1.8% parameters and gains 3.45 and 1.37 points over the constant on OLMoE and Moonlight, stable across calibration draws and largely unchanged by 4- and 3-bit quantization. No operator dominates: trained-scale rerouting is best on DeepSeek-V2-Lite, and a partial copy of each pruned expert is statistically indistinguishable from the tilted novice on two models. Evaluation can change conclusions: at 25% pruning MoNE's constant keeps 92-97% of dense multiple-choice accuracy but only 5-65% of GSM8K and 0-17% of code scores, and the calibration domain moves the mask 4-9 times more than resampling. We propose a five-item reporting checklist.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T07:31:53Z</published>
+    <arxiv:comment>56 pages, 8 figures, 76 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Ezza Ali</name>
+    </author>
+    <author>
+      <name>Sehrish Bibi</name>
+    </author>
+    <author>
+      <name>Momina Moetesum</name>
+    </author>
+    <author>
+      <name>Faisal Shafait</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41308v1</id>
+    <title>SERIAL-7: Deriving, Realizing, and Preserving Machine-Verifiable Outputs Across Representations</title>
+    <updated>2026-10-30T06:15:59Z</updated>
+    <link href="https://arxiv.org/abs/2610.41308v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41308v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large language models increasingly generate structured outputs consumed by programs and downstream systems, where semantic correctness alone does not guarantee reliable execution. We introduce SERIAL-7, a Korean-English benchmark built around an executable verification framework for machine-verifiable generation across seven representations. Using 177 validated canonical artifacts, SERIAL-7 separates semantic derivation (Derive), constrained artifact generation (Realize), and cross-representation preservation (Preserve). Its 43 atomic representation constraints are paired with executable checks over format, structure, and task-specific semantics, enabling progressively stricter verification from representation compliance to full artifact validity. Across ten models, REALIZE-L3 HSR ranges from 42.0% to 93.9%, while Full Compliance exposes additional artifact-level failures beyond correct final answers and valid representations. These results show that reliable structured generation requires explicit, executable verification of how artifacts are realized and preserved across representations.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T06:15:59Z</published>
+    <arxiv:comment>NeurIPS 2026 Workshop on AI for Verifiable Coding</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Youngkyung Seo</name>
+    </author>
+    <author>
+      <name>MiHyeon Kim</name>
+    </author>
+    <author>
+      <name>Jisoo Lee</name>
+    </author>
+    <author>
+      <name>Hwijung Ryu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.41292v1</id>
+    <title>From Transcription to Reformulation: Defining and Benchmarking Grounded Generative Speech Recognition</title>
+    <updated>2026-10-30T05:53:56Z</updated>
+    <link href="https://arxiv.org/abs/2610.41292v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.41292v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Speech language models have expanded automatic speech recognition (ASR) from transcription to general speech-to-text generation. Yet existing benchmarks still assume a single ground-truth transcript per utterance, an assumption that struggles when models produce readable, formatted, or structured outputs. In this work, we introduce Grounded Generative Speech Recognition (GSR), reformulating speech recognition as generating semantically grounded text instead of a single transcript. We define a grounded reformulation space that characterizes all valid textual realizations supported by the input speech, and establish a four-level hierarchy of reformulation capabilities, including literal transcription, canonical reformulation, semantic reformulation and speech-grounded structuring. Based on this formulation, we present GSR-Bench, the first comprehensive benchmark designed to evaluate generative speech recognition systems beyond exact transcript matching. GSR-Bench covers diverse scenarios including refined meeting transcription, cross-dialect translation, context-aware speech understanding, and robustness under silent or noisy acoustic conditions. To address the limitations of word-level evaluation metrics, we develop a multi-dimensional evaluation framework combining speech grounding assessment and LLM-based semantic judgment, whose reliability is validated through human preference studies. Extensive experiments across representative architectures, ranging from conventional ASR systems to end-to-end Speech-LLMs, reveal fundamental trade-offs between transcription fidelity and generative reformulation ability. Our analysis further identifies critical failure modes, including acoustic hallucination, unsupported generation, and instruction drift, providing insights into the design and evaluation of future grounded generative speech systems.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.SD" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="eess.AS" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-30T05:53:56Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Qing Wang</name>
+    </author>
+    <author>
+      <name>Qihan Hu</name>
+    </author>
+    <author>
+      <name>Hang Lv</name>
+    </author>
+    <author>
+      <name>Yan Yang</name>
+    </author>
+    <author>
+      <name>Boqing Liu</name>
+    </author>
+    <author>
+      <name>Xuechao Zhu</name>
+    </author>
+    <author>
+      <name>Zehan Li</name>
+    </author>
+    <author>
+      <name>Hongjie Chen</name>
+    </author>
+    <author>
+      <name>Jian Kang</name>
+    </author>
+    <author>
+      <name>Jie Li</name>
+    </author>
+    <author>
+      <name>Yongxiang Li</name>
+    </author>
+    <author>
+      <name>Lei Xie</name>
+    </author>
+  </entry>
+</feed>
