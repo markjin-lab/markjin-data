@@ -19,6 +19,8 @@ FILES = {
                        "<summary>The model reaches 90% accuracy on MMLU. The method handles long documents well.</summary></entry></feed>",
     "x/01.json": f'{{"id": "{XPOST_ID}", "text": "release 2.0"}}',
     "fred/UNRATE.json": '{"series_id": "UNRATE", "realtime_start": "2026-01-02", "value": "4.2"}',
+    # #32 r3：FRED 序列单位存档（series 接口元数据的最小形式），支持位置核对用它比对单位
+    "fred/UNRATE.series.json": '{"id": "UNRATE", "units": "Percent", "units_short": "%"}',
 }
 
 
@@ -40,12 +42,21 @@ def make_repo(files=None):
     return d
 
 
-def arxiv_line(text="模型在 MMLU 上达到 90% 准确率。"):
-    return f"- {text} — `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1"
+ARXIV_LOC = "The model reaches 90% accuracy on MMLU."
+FRED_LOC = '"series_id": "UNRATE", "realtime_start": "2026-01-02", "value": "4.2"'
 
 
-def fred_line(text="UNRATE 为 4.2%。"):
-    return f"- {text} — `raw/{DATE}/fred/UNRATE.json` · https://fred.stlouisfed.org/series/UNRATE"
+def loc(text):
+    """#32：原文支持位置标注。传 None 表示不写位置。"""
+    return "" if text is None else f" 〔原文：{text}〕"
+
+
+def arxiv_line(text="模型在 MMLU 上达到 90% 准确率。", locator=ARXIV_LOC):
+    return f"- {text} — `raw/{DATE}/arxiv/cs.AI.xml` · https://arxiv.org/abs/{ARXIV_ID}v1{loc(locator)}"
+
+
+def fred_line(text="UNRATE 为 4.2%。", locator=FRED_LOC):
+    return f"- {text} — `raw/{DATE}/fred/UNRATE.json` · https://fred.stlouisfed.org/series/UNRATE{loc(locator)}"
 
 
 def x_line(text="发布 2.0 版。"):
