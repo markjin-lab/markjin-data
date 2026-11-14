@@ -1,0 +1,2008 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/AjqiJLBP/Dh39qWmUocGMGZ5ALg</id>
+  <title>arXiv Query: search_query=cat:cs.CL&amp;id_list=&amp;start=0&amp;max_results=50</title>
+  <updated>2026-11-14T00:52:53Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=cat:cs.CL&amp;start=0&amp;max_results=50&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>50</opensearch:itemsPerPage>
+  <opensearch:totalResults>125322</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17332v1</id>
+    <title>ArchSpace: Recording, Reviewing, and Referencing LLM Architecture Research</title>
+    <updated>2026-11-12T18:59:52Z</updated>
+    <link href="https://arxiv.org/abs/2611.17332v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17332v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Model architecture shapes the scaling behavior, training efficiency, and inference cost of LLMs, making it a central focus of both industry and academia. In industry, teams such as those behind DeepSeek, Qwen, and Kimi routinely introduce architectural innovations, yet public reports rarely document which ideas succeeded, which were abandoned, and why. In academia, limited compute and inconsistent baselines often restrict evaluations to small-scale, single-point comparisons, making it difficult to establish whether improvements hold at larger scales or translate into broader impact. ArchSpace addresses both gaps as a public platform for Recording, Reviewing, and Referencing Architecture Researc}: each proposal is recorded with its experiments and reasoning, reviewed by the community, and referenced by later work. To evaluate ideas before costly large-scale training, ArchSpace leverages scaling laws to predict model loss at larger scales from smaller experiments, a practice widely adopted in industry. We provide initial references that make the platform usable: Qwen3.5 and OLMo3 baselines, fitted scaling laws, and a reusable training recipe. Ideas validated through this review can in turn become new baselines, and ArchSpace thereby aims to broaden the range of ideas that shape the next generation of models.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:59:52Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Jie Wang</name>
+    </author>
+    <author>
+      <name>Tong Zhu</name>
+    </author>
+    <author>
+      <name>JiaHao Kuang</name>
+    </author>
+    <author>
+      <name>Zhe Xu</name>
+    </author>
+    <author>
+      <name>Yunkai Chai</name>
+    </author>
+    <author>
+      <name>Dehong Zheng</name>
+    </author>
+    <author>
+      <name>Yu Cheng</name>
+    </author>
+    <author>
+      <name>Tao Ji</name>
+    </author>
+    <author>
+      <name>ZhouHan Lin</name>
+    </author>
+    <author>
+      <name>Qi Zhang</name>
+    </author>
+    <author>
+      <name>Bowen Zhou</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17320v1</id>
+    <title>Learning When Diffusion Language Models Should Regenerate</title>
+    <updated>2026-11-12T18:58:50Z</updated>
+    <link href="https://arxiv.org/abs/2611.17320v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17320v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Remasking allows diffusion language models to revisit generated text, but effective correction requires knowing when and what to revise. Our diagnosis on Sudoku reveals two gaps. Hidden states contain error information that token confidence does not reliably expose, and remasking an isolated error usually reproduces it when the surrounding context remains fixed. These findings motivate DiVR , a verifier that predicts whether a partially generated sequence will reach a correct answer. Trained on the final correctness of the model's own trajectories, DiVR decides when to regenerate a block and which alternative to retain, while the generator itself stays unchanged. On five reasoning benchmarks with LLaDA-8B-Base, DiVR raises the average accuracy of the fine-tuned generator from 35.3\% to 43.4\% at $1.9$-$3.5\times$ the cost of greedy decoding, above search baselines that use $3.8$-$7.4\times$. It also complements post-training such as supervised fine-tuning and reinforcement learning, and generalizes to other generators, including Dream.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:58:50Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Minhae Oh</name>
+    </author>
+    <author>
+      <name>Jeonghye Kim</name>
+    </author>
+    <author>
+      <name>Jinwoo Koo</name>
+    </author>
+    <author>
+      <name>Yeongoon Kim</name>
+    </author>
+    <author>
+      <name>Jimin Seo</name>
+    </author>
+    <author>
+      <name>Minsik Seol</name>
+    </author>
+    <author>
+      <name>Jungwoo Lee</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17316v1</id>
+    <title>CoReMem: Cost-Internalizing Memory for Successive Coding Tasks with Prospective Valuation</title>
+    <updated>2026-11-12T18:58:22Z</updated>
+    <link href="https://arxiv.org/abs/2611.17316v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17316v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Coding agents tackle successive tasks on an evolving repository, carrying forward edits and writing memory before the next task is known. Selecting memory for unknown next tasks requires balancing future usefulness against the costs of writing and reading it. The actor must also decide when acting on available memory saves effort as the task unfolds. We introduce Coding-Repository Memory (CoReMem), a cost-internalizing framework that guides memory design and actor adaptation through measured memory value on the next task. Prospective segment valuation compares runs of the next task with and without individual trajectory segments from the same inherited repository state, guiding a compact memory built around anchors: repository locations and executable checks. Actor adaptation estimates on-policy memory value within rollout groups with and without memory, using a reward that prioritizes resolution and penalizes step count in successful runs. Provenance-gated value credit assigns the additional value term to steps identified as using memory-supplied anchors, while every step retains outcome credit. On ChainSWE, CoReMem raises the 27B actor's resolve rate from 21.0% to 25.7%, with 17% fewer steps and 11% fewer total cache-aware tokens, including memory-module calls, relative to the untrained actor model without memory.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:58:22Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Peiwen Li</name>
+      <arxiv:affiliation>Yale University</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Harshit Verma</name>
+      <arxiv:affiliation>Yale University</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Sophia Zhou</name>
+      <arxiv:affiliation>Yale University</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Haiwen Wang</name>
+      <arxiv:affiliation>Yale University</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Ngoc Bui</name>
+      <arxiv:affiliation>Yale University</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Heng Chang</name>
+      <arxiv:affiliation>Tsinghua University</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Fei Fei</name>
+      <arxiv:affiliation>Goodvision AI</arxiv:affiliation>
+    </author>
+    <author>
+      <name>David van Dijk</name>
+      <arxiv:affiliation>Yale University</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Rex Ying</name>
+      <arxiv:affiliation>Yale University</arxiv:affiliation>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17314v1</id>
+    <title>Linking Rapid Learning to Compositional Structure in Neural Networks: Evidence from Additive Analogies in Meta-Learned Parameter Spaces</title>
+    <updated>2026-11-12T18:57:49Z</updated>
+    <link href="https://arxiv.org/abs/2611.17314v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17314v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Humans can learn rapidly from limited experience, while neural networks typically require extensive training. In this work, we investigate what properties of a neural network can enable it to learn rapidly. We study neural networks that have been optimized via meta-learning, a technique that exposes a network to many related functions to facilitate its subsequent learning of similar functions. Prior work has shown that these meta-learned networks can learn new functions rapidly, but how they do so remains unclear. To investigate their internal structure, we take inspiration from classic work demonstrating additive relationships among the learned vectors that neural networks use to represent words (e.g., "king" minus "man" plus "woman" approximates "queen"). Analogously, we look for additive relationships among a meta-learned network's "representations" of different functions; when a meta-learned network rapidly learns to implement a specific function, all of its adapted parameter values can be concatenated into a single vector that we treat as representing the function. We find that such parameter vectors can be added and subtracted according to symbolic relationships among the functions they represent, yielding new parameter vectors that successfully represent the functions predicted by the corresponding symbolic manipulations: the networks specified by these artificially recombined vectors actually implement the intended functions without any direct training on them. Our results suggest that meta-learning can tune a network's starting point to organize subsequent learning along systematic, functionally meaningful trajectories through the space of possible parameter vectors, providing a geometric basis for realizing inductive biases in neural networks.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:57:49Z</published>
+    <arxiv:comment>24 pages plus references and appendices</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Abigail L. Tenenbaum</name>
+    </author>
+    <author>
+      <name>R. Thomas McCoy</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17297v1</id>
+    <title>Goal Encoding in LLMs</title>
+    <updated>2026-11-12T18:55:06Z</updated>
+    <link href="https://arxiv.org/abs/2611.17297v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17297v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We investigate whether and how LLMs encode goals: internal neural representations that precede and guide action, and that are flexible enough to be realized through many different execution paths. We construct a coding setting with multiple sub-tasks that allows us to evaluate goal-seeking behavior and the selection of sub-goals. In this setting, we localize an encoding of the next sub-goal in the outputs of a sparse set of attention heads. The same heads can be used to decode the LM's future actions in natural language (e.g., "I'm checking if a word is a palindrome"). We verify that this encoding is causal for next action and is plastic: transplanting it into a different environment, e.g., another programming language, triggers the same operation realized with a different sequence of tokens. The LM also sustains the encoding throughout the action's execution, which is puzzling because a transformer LM without recurrence cannot carry a state forward for more tokens than it has layers left. We propose that it does not need to. Under a non-recurrent goal-seeking (NRGS) account, the LM frequently re-reads the goal from the task specification, compares it with the progress visible in the growing context, and pursues what remains. We test the predictions of this account with targeted causal interventions.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:55:06Z</published>
+    <arxiv:comment>Project page, code and data: https://goals.baulab.info/</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Arnab Sen Sharma</name>
+    </author>
+    <author>
+      <name>Eric Todd</name>
+    </author>
+    <author>
+      <name>Sheridan Feucht</name>
+    </author>
+    <author>
+      <name>Andy Arditi</name>
+    </author>
+    <author>
+      <name>Rohit Gandikota</name>
+    </author>
+    <author>
+      <name>Natalie Shapira</name>
+    </author>
+    <author>
+      <name>Gabriele Sarti</name>
+    </author>
+    <author>
+      <name>Constanza Fierro</name>
+    </author>
+    <author>
+      <name>Lisa Schut</name>
+    </author>
+    <author>
+      <name>David Bau</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17294v1</id>
+    <title>Metal Sandbox: Isolated Execution and Command Scheduling for GPU Coding Agents on Apple Silicon</title>
+    <updated>2026-11-12T18:54:42Z</updated>
+    <link href="https://arxiv.org/abs/2611.17294v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17294v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>On-device inference requires kernels that make effective use of local accelerators. Efficient training and evaluation of models that generate Apple Metal kernels benefit from native macOS tools and concurrent agent sessions. These sessions alternate between model requests, development commands, and GPU execution, leaving GPU capacity idle for much of a rollout. We present Metal Sandbox, infrastructure that combines restricted per-instance file access, native command execution, and command-level scheduling across interconnected Macs. Each agent retains its workspace and private development environment. Parallel commands can run concurrently, while serial commands share one execution slot per node; eligible waiting commands can migrate to available Macs and return results to the original agent. Integration with Harbor supports task execution, automatic verification, and rollout collection through a common workflow. Controlled experiments on four Mac mini M4 nodes achieve $1.68\times$--$2.05\times$ gains in command throughput under concentrated demand. Sixteen static agent traces give an estimated $2.14\times$ sustained-throughput gain for four sessions per node versus one, assuming continuously replenished sessions and unchanged mean durations. Replaying these measured traces under dynamic scheduling reduces mean tool waiting by 18.8% and batch elapsed time by 22.3%, assuming unchanged phase durations. Metal Sandbox and its Harbor integration are open-source on GitHub.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.DC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:54:42Z</published>
+    <arxiv:comment>16 pages, 7 figures, 5 tables. Code available at https://github.com/WangHaoZhe/metal-sandbox and https://github.com/WangHaoZhe/harbor</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Haozhe Wang</name>
+    </author>
+    <author>
+      <name>Lina Chen</name>
+    </author>
+    <author>
+      <name>Fanqi Wan</name>
+    </author>
+    <author>
+      <name>Qi Han</name>
+    </author>
+    <author>
+      <name>Yinmin Zhang</name>
+    </author>
+    <author>
+      <name>Zheng Ge</name>
+    </author>
+    <author>
+      <name>Daxin Jiang</name>
+    </author>
+    <author>
+      <name>Junchi Yan</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17287v1</id>
+    <title>Negative-Only Policy Optimization for One-Sided Verifiable Rewards</title>
+    <updated>2026-11-12T18:52:33Z</updated>
+    <link href="https://arxiv.org/abs/2611.17287v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17287v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Reinforcement learning with verifiable rewards (RLVR) typically relies on a verifier that can reliably judge whether sampled solutions are correct. However, in many realistic settings, complete verification is generally unavailable, while cheap checks can only falsify failures. We formalize this regime as one-sided verifiability (OSV): verified negatives are reliable counterexamples, but verified positives are merely non-falsified candidates and may contain many false positives. This asymmetry makes standard RLVR unreliable, because reinforcing verified positives can directly reward shortcuts that pass partial checks. To address this issue, we propose Negative-Only Policy Optimization (NOPO), which treats verified positives as unlabeled and updates the policy only by suppressing trusted verified negatives. Specifically, NOPO combines a reference-relative negative suppression loss with a group-level adapter that scales each update by the proportion of non-falsified responses. Across unit-test, constraint-check, and LLM self-verifiers, NOPO improves pass@k over baselines on code, logic, and math benchmarks when oracle rewards are unavailable. These gains persist under inference-time scaling and cross-benchmark transfer.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:52:33Z</published>
+    <arxiv:comment>Accepted at NeurIPS 2026 (Spotlight)</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Jiacheng Xu</name>
+    </author>
+    <author>
+      <name>Shuo He</name>
+    </author>
+    <author>
+      <name>Fuxiang Zhang</name>
+    </author>
+    <author>
+      <name>Chaojie Wang</name>
+    </author>
+    <author>
+      <name>Bo An</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17280v1</id>
+    <title>Synthesis Smuggling: Maliciously Hiding Inferred Personal Attributes in LLM Outputs</title>
+    <updated>2026-11-12T18:51:05Z</updated>
+    <link href="https://arxiv.org/abs/2611.17280v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17280v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We propose Synthesis Smuggling, a novel threat model in which an adversarial LLM infers sensitive information about a user from routine assistance-seeking interactions and steganographically encodes that into innocuous-looking model-generated content. The user may then unknowingly transmit that information by sharing the generated artifact, say as an email, social-media post, or message, through ordinary communication channels. An adversary monitoring these channels can discover this information. We demonstrate this threat by training two open-weight models to infer gender and age-group labels from conversational cues and encode their predictions using invisible characters or word choices. These results show that user-shared model outputs can become a covert channel for personal inferences, even when the model itself has no direct means of contacting an adversary.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T18:51:05Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Gautam Galada</name>
+    </author>
+    <author>
+      <name>Supreeth Shastri</name>
+    </author>
+    <author>
+      <name>Sagnik Ray Choudhury</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17191v1</id>
+    <title>Maximizing Capacity Utilization of LoRA Adapters for Mitigating the Learning-Forgetting Trade-off</title>
+    <updated>2026-11-12T17:55:33Z</updated>
+    <link href="https://arxiv.org/abs/2611.17191v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17191v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Low-Rank Adaptation (LoRA) often underperforms full fine-tuning, especially in heterogeneous and continual-learning settings in which substantial forgetting occurs. In general, it suffers from an undesirable learning-forgetting trade-off across diverse fine-tuning settings. We identify a potential contributor: LoRA adapters, especially high-rank ones, frequently fail to realize the available capacity afforded by the configured rank. Specifically, we find that standard LoRA updates have effective rank far below their configured rank, limiting how broadly the update energy is distributed. Therefore, we propose training mechanisms that optimize the original objective while maximizing adapter effective rank. Our main method adds a simple, stable, differentiable, and SVD-free Rényi-2 effective-rank regularizer to the language-modeling loss. We also connect capacity maximization to norm-bounded updates. In mixed-domain rank sweeps on three models evaluated with multiple random seeds, a penalty weight of $λ=0.01$ lowers mean Wiki perplexity at every tested rank of at least $16$ relative to unpenalized LoRA. Mean training perplexity improves or increases by at most $0.02$ in all but one model-rank comparison. Single-task and scheduling experiments further show that the balance between learning and retention depends on the configuration. We also observe that several LoRA variants in the literature also suffer from the identified capacity issue, and our approach provides a complementary axis of improvement to LoRA-based parameter-efficient fine-tuning. These results suggest that effective rank is not only a post-hoc diagnostic of adapter quality, but a trainable objective for improving the learning-forgetting frontier. Our code is available at https://github.com/tomohiro-sawada/lora-capacity-utilization</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T17:55:33Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Tomohiro Sawada</name>
+    </author>
+    <author>
+      <name>Kartik Goyal</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17169v1</id>
+    <title>Parsed, Plausible, Wrong: Output Format Controls Silent Errors in Small-Model Semantic Parsing</title>
+    <updated>2026-11-12T17:43:44Z</updated>
+    <link href="https://arxiv.org/abs/2611.17169v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17169v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>A small fine-tuned parser that emits a well-formed but wrong tree fails silently: nothing downstream can tell. We ask whether the output format, a free design choice, controls how often this happens. On the PIZZA ordering benchmark we fine-tune two sub-billion models (Qwen3.5-0.8B and LFM2.5-350M) with LoRA on six lossless encodings of the same target tree, from 44.3 down to 10.9 tokens per order, including two matched-length pairs that vary surface form at fixed length. Across 300 runs (5 training pool sizes, 5 seeds) with a hierarchical bootstrap and Holm correction fixed before the results were read, shortening alone never helps, but writing the target in ordinary words does. The word encoding is the most accurate format on both models (87.5% vs. 85.8% exact match for the native s-expression on Qwen) while emitting 4.1x fewer tokens, and it cuts the silent error rate by 2.3x on Qwen and 1.8x on LFM2, separating at every pool size. Error analysis locates much of the gain in negation. All runs also learn to refuse off-menu input (held out: 95.9-99.0% handled) and to apply in-utterance self-corrections. Strict refusal has a measured price: 2.1-10.1% of real, mostly polite, orders are refused.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T17:43:44Z</published>
+    <arxiv:comment>10 pages, 6 figures, 11 tables. Code and models: https://github.com/UmarGit/coffee-llm</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Umar Ahmed</name>
+    </author>
+    <author>
+      <name>Maxim Dunaev</name>
+    </author>
+    <author>
+      <name>Mohammad Nour Al Awad</name>
+    </author>
+    <author>
+      <name>Sergey Ivanov</name>
+    </author>
+    <author>
+      <name>Ivan Khodnenko</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17167v1</id>
+    <title>Actor, Judge, or Teacher? Understanding Decision Models in Long-Horizon Agents</title>
+    <updated>2026-11-12T17:42:46Z</updated>
+    <link href="https://arxiv.org/abs/2611.17167v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17167v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Decision models answer a question with a typed output, such as a choice among options with a probability for each, so one model can choose an agent's actions, evaluate actions already taken, or score every action to teach a policy with reinforcement learning. Prior work has studied them mainly as actors, judging their usefulness by how well they act. We ask whether a decision model that acts poorly can still teach well. We compare three decision models and three general LLMs as actors and judges on ALFWorld, and use JEV as a teacher on ALFWorld and WebShop. As actors, all six models are pulled away from a subgoal that must come first by an easier one. As judges that see the whole trajectory, the same models credit the steps toward that subgoal, and asking whether each action helped, rather than whether the task will succeed, separates useful from useless actions. As a teacher, JEV raises a Qwen2.5-1.5B policy over GRPO from 72.8% to 82.9% success on ALFWorld and from 56.8% to 71.4% on WebShop. These results suggest that a poor actor can still teach well, because judging an action after the episode ends reveals the consequences that acting must anticipate. Code is available at https://github.com/ZJU-REAL/decision-agents.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T17:42:46Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Haochen Liu</name>
+    </author>
+    <author>
+      <name>Qianhao Zhu</name>
+    </author>
+    <author>
+      <name>Zixuan Wang</name>
+    </author>
+    <author>
+      <name>Dingming Li</name>
+    </author>
+    <author>
+      <name>Tongbo Chen</name>
+    </author>
+    <author>
+      <name>Peng Qiu</name>
+    </author>
+    <author>
+      <name>Yingqi Qu</name>
+    </author>
+    <author>
+      <name>Weiming Lu</name>
+    </author>
+    <author>
+      <name>Jun Xiao</name>
+    </author>
+    <author>
+      <name>Yongliang Shen</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17128v1</id>
+    <title>Parameter-Efficient Conciseness Adaptation: Differentiable Length Control for Concise Clinical Reasoning in Smaller Language Models</title>
+    <updated>2026-11-12T17:21:12Z</updated>
+    <link href="https://arxiv.org/abs/2611.17128v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17128v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Smaller language models (SLMs) make it feasible to deploy clinical natural language processing where large proprietary models are too costly, and parameter-efficient fine-tuning allows them to be specialised on commodity hardware. One obstacle persists after training: on medical tasks these models answer at far greater length than the clinical question requires. In clinical decision support and point-of-care use, where time is short, such verbosity is hard to act on even when the underlying reasoning is sound. Existing length-control methods depend on preference optimisation, reward models, or proprietary teachers that undercut the accessibility making SLMs attractive. We introduce Parameter-Efficient Conciseness Adaptation (PECA), which adds a single differentiable conciseness term to the QLoRA supervised fine-tuning objective. Because the token count is discrete and non-differentiable, PECA instead raises the end-of-sequence probability once generation exceeds a token budget, a smooth signal optimised during ordinary training, with no preference data, no auxiliary model, and a single commodity GPU. On a 1.7-billion-parameter model fine-tuned on the medical-o1-reasoning-SFT corpus, PECA reduces mean response length by 72.8% while improving multiple-choice diagnostic accuracy from 40.8% to 44.0%. A sweep over the conciseness strength traces an interpretable accuracy-to-length frontier for balancing brevity and diagnostic completeness.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T17:21:12Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Tanzeel Abbas</name>
+    </author>
+    <author>
+      <name>Ahmad Kamran Malik</name>
+    </author>
+    <author>
+      <name>Nafees Qamar</name>
+    </author>
+    <author>
+      <name>Sana Liaqat</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17115v1</id>
+    <title>CapLite: Prompt-Injection Defense for Small Language Model Agents without Model-Written Security Artifacts</title>
+    <updated>2026-11-12T17:07:22Z</updated>
+    <link href="https://arxiv.org/abs/2611.17115v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17115v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Enforcement defenses against prompt injection, such as CaMeL, Progent, IPIGuard and DRIFT, ask the agent's own model to write a security artifact (a program, a privilege policy, a dependency graph or a constraint list) that code then enforces. We ask whether small language model (SLM) agents can be trusted to write these artifacts. Across 15 open-weight models, 13 of them between 1.7B and 12B parameters, they cannot: the policies, graphs and constraints that the agent's model writes admit attacks on 14 (Progent), 13 (IPIGuard) and 11 (DRIFT) of the models, and CaMeL's programs fail to run in up to 68% of episodes. We present CapLite, which derives its policy from the tool schemas, commits the write calls before any tool result is read, and admits a write only if every argument that decides whom or what it affects is stated in the user's request. This guarantees write integrity: injected text cannot add a write, and no write reaches a recipient, amount, object or destination that the user did not state. No attack succeeds in 13,935 attacked AgentDojo episodes. CapLite reaches utility under attack comparable to CaMeL's (29.0% vs. 27.2%) with fewer tokens than every other enforcement defense and than the undefended agent: 17.1k per episode, 18% of CaMeL's, and the highest utility per token of all enforcement defenses.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T17:07:22Z</published>
+    <arxiv:comment>19 pages, 11 figures, 9 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Zimo Xu</name>
+    </author>
+    <author>
+      <name>Wenzhuo Liu</name>
+    </author>
+    <author>
+      <name>Hideki Nakayama</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17108v1</id>
+    <title>LazyWeights: Decode-on-Demand Edge LLMs</title>
+    <updated>2026-11-12T17:03:40Z</updated>
+    <link href="https://arxiv.org/abs/2611.17108v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17108v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Memory decides which LLMs an edge device runs, and how fast: capacity on a $4$ GB Jetson Nano, bandwidth on an $8$ GB Jetson Orin Nano Super. Deployed formats (GPTQ, AWQ, $\texttt{llama.cpp}$'s K- and I-quants) spend equal bits on every integer code of a matrix, although the codes are far from uniform. $\texttt{LazyWeights}$ keeps these formats but tunes GPTQ so the codes compress, Huffman-codes them losslessly in interleaved lanes, and decodes them on demand in a small unit between DRAM and L2, so GPU kernels run unchanged and DRAM moves only coded bytes. At $1\%$ and $3.5\%$ perplexity budgets, coded Phi-3-mini, Mistral-7B and SmolLM-1.7B are $5.7-31.4\%$ smaller than the best $\texttt{llama.cpp}$ format. A bit-exact $0.21$ mm$^2$ ASIC decoder unit ($1$ GHz, $7$ nm) cuts Orin latency and energy per token by up to $36\%$ and $38\%$ ($54\%$ and $44\%$ with prompt-lookup speculation). On the Nano, $\texttt{LazyWeights}$ needs $58-64\%$ less time and $53-57\%$ less energy per token than CPU $\texttt{llama.cpp}$, and runs a streamed Mistral-7B 6.6$\times$ faster at $3.89$ bits per weight. A Huffman decoder beats an rANS decoder in rate and area at equal throughput; the ASIC decoder unit runs bit-exact on a Zynq UltraScale+ FPGA (AMD ZCU102).</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IT" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T17:03:40Z</published>
+    <arxiv:comment>6 pages, 1 reference page, 5 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Arnab Sanyal</name>
+    </author>
+    <author>
+      <name>Gourav Datta</name>
+    </author>
+    <author>
+      <name>Sandeep P. Chinchali</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17107v1</id>
+    <title>Disentangling Spurious Correlations: How IRM Handles Diverse Shortcuts in Text Classification</title>
+    <updated>2026-11-12T17:03:05Z</updated>
+    <link href="https://arxiv.org/abs/2611.17107v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17107v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>In NLP, models trained via Empirical Risk Minimization (ERM) often exploit spurious correlations, such as dialectal markers, at the expense of robust linguistic features, thereby degrading their out-of-distribution (OOD) generalization. Invariant Risk Minimization (IRM) aims to suppress such shortcuts by identifying predictive relationships that remain stable across environments, but its practical utility for NLP remains debated. We use a causality-driven framework to evaluate IRM under three shortcut-generating mechanisms: label-generated features, confounding, and selection bias. Our results show that IRM successfully rejects shortcuts across the evaluated causal and anti-causal structures, including under limited environmental variation and increasing label noise. We then extend our analysis beyond controlled synthetic artifacts to two less constrained settings: gender-profession associations in Bias in Bios and semantically loaded actor-name shortcuts in ActorCorr. These experiments show that invariant learning can mitigate more realistic textual shortcuts, while semantically meaningful features require careful calibration of the invariance penalty.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T17:03:05Z</published>
+    <arxiv:comment>21 pages. Published at EMNLP 2026 (Main Conference)</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <arxiv:journal_ref>Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing (EMNLP), pp. 60785-60805 (2026)</arxiv:journal_ref>
+    <author>
+      <name>Paul Grunenwald</name>
+    </author>
+    <author>
+      <name>Benoît Crabbé</name>
+    </author>
+    <author>
+      <name>Guillaume Wisniewski</name>
+    </author>
+    <author>
+      <name>Pirmin Lemberger</name>
+    </author>
+    <arxiv:doi>10.18653/2026.emnlp-main.2671</arxiv:doi>
+    <link rel="related" href="https://doi.org/10.18653/2026.emnlp-main.2671" title="doi"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17091v1</id>
+    <title>Optimal Single-History Tokenization Disambiguation for Provably Secure Linguistic Steganography</title>
+    <updated>2026-11-12T16:54:18Z</updated>
+    <link href="https://arxiv.org/abs/2611.17091v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17091v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Provably secure linguistic steganography assumes that the receiver recovers the sender's tokens, but a text channel delivers only text, and ambiguous tokenizations break extraction. Existing fixes change the distribution, synchronize whole pools of tokens at a capacity that collapses with large vocabularies, or track several token histories. We prove that if extraction is exact and error-free across full-support language models, a single-history receiver is confined to a prefix-free candidate set at every step -- even if it reads the entire future text and the sender constrains later steps -- and must therefore give up the stop entropy, the entropy of deciding whether each prefix token ends there. Fixing these stop decisions on the prefix forest with shared randomness yields coin projection: a closed-form scheme that attains the bound, works with any distribution coder in one model call per token, preserves ordinary sampling, and refines SyncPool for every key. Across English, Chinese and Japanese, ambiguous text is rare (at most 11 in 1,000 tokens), yet the stop entropy at word and morpheme prefixes takes 7.2-9.0% of the entropy at every step; SyncPool's further loss comes from space and single-byte UTF-8 hubs that merge subtrees while carrying almost no stop uncertainty. Coin projection keeps 91-93% of the string entropy for the coder at every vocabulary size; with the full vocabulary, it turns 2.16-6.85 times as much entropy into message bits as SyncPool and recovers every completed message.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T16:54:18Z</published>
+    <arxiv:comment>19 pages, 4 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Feng Jiang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17072v1</id>
+    <title>Reasoning Supervision and Capability Retention in LoRA Domain Adaptation</title>
+    <updated>2026-11-12T16:45:12Z</updated>
+    <link href="https://arxiv.org/abs/2611.17072v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17072v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Fine-tuning foundation models on financial data has a wide range of applications, including identifying event types from news, monitoring risk and compliance language, and answering questions over filings and earnings calls. In this setting, the main challenge is to improve task performance without degrading the generalization capabilities of the model. In this paper, we present an extensive set of ablations for fine-tuning Qwen3-8B with low-rank adaptation (LoRA). We compare three training regimes: (1) response-only LoRA, where the supervised response is the label alone; (2) single-adapter reasoning, where reasoning traces from a teacher model are included alongside the labels in the training loss; and (3) dual-adapter composite training, where separate LoRA adapters are trained on traces and labels. Response-only LoRA improves in-domain performance and leaves general capabilities near those of the frozen model. The in-domain change is largest for calibration and argmax accuracy. Under single-adapter reasoning, the in-domain metrics remain behind those of the response-only regime, while MMLU-Pro can rise slightly and the other retention benchmarks stay within ordinary variation. Dual-adapter composite training remains on the same side of this comparison and yields no further gain. Finally, we compress the teacher traces by summarizing them before training, and show that shorter summaries move calibration toward the response-only regime without reaching it.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T16:45:12Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Saleh Ashkboos</name>
+    </author>
+    <author>
+      <name>Dhruv Desai</name>
+    </author>
+    <author>
+      <name>Lavinia Ghita</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17068v1</id>
+    <title>Discovering Effective Agent Memory Designs through Program Evolution</title>
+    <updated>2026-11-12T16:42:04Z</updated>
+    <link href="https://arxiv.org/abs/2611.17068v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17068v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Program evolution provides a promising approach to discover agent memory designs and study the choices underlying their effectiveness. We introduce MAPE, a framework that evolves whole memory programs from minimal seeds through a standardized lifecycle interface and an iterative diagnosis-proposal loop. Experiments on LoCoMo and LongMemEval yield an absolute accuracy gain of up to 12% over manually designed baselines at 35% of the serving cost, with further evaluations supporting transfer across serving backbones and benchmarks. Empirical analyses and ablations identify and validate two recurring design patterns: retaining raw conversations as retrievable evidence preserves details omitted from extracted memories, while composing retrieved evidence according to query intent helps the answering model use it effectively. Transplanting the composition module into five existing memory systems improves accuracy across all five. Beyond these patterns, the search objective shapes where computation goes: optimizing serving cost alongside accuracy shifts computation from LLM-based memory construction to selective processing at query time while retaining competitive accuracy. Together, these findings offer empirical lessons for agent memory design. Code is available at https://github.com/ash-ding/MAPE.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T16:42:04Z</published>
+    <arxiv:comment>24 pages, 8 figures, 10 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Xinheng Ding</name>
+    </author>
+    <author>
+      <name>Seyyed Saeid Cheshmi</name>
+    </author>
+    <author>
+      <name>Ziyang Zhang</name>
+    </author>
+    <author>
+      <name>Tairan Chen</name>
+    </author>
+    <author>
+      <name>Wenya Xie</name>
+    </author>
+    <author>
+      <name>Yu Hou</name>
+    </author>
+    <author>
+      <name>Rui Zhang</name>
+    </author>
+    <author>
+      <name>Zirui Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17053v1</id>
+    <title>Evaluating Pretrained Language Semantics for Structured EHR Prediction Tasks</title>
+    <updated>2026-11-12T16:34:49Z</updated>
+    <link href="https://arxiv.org/abs/2611.17053v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17053v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Structured Electronic Health Records (EHR) models typically treat each clinical concept as a dataset-specific token, discarding the natural-language semantics associated with the event. As a result, relationships between concepts must largely be learned from EHR co-occurrence, without directly exploiting any prior semantic knowledge. We investigate how pretrained causal language models can be adapted for longitudinal EHR prediction by developing tEHR. Here, we represent events with their natural language description and use this text stream to apply EHR-adaptive continued pretraining, followed by task-specific discriminative fine-tuning using LoRA, utilising the LLM as a longitudinal patient-encoder. We evaluate this approach across four prediction tasks on the MIMIC-IV dataset and pancreatic cancer prediction on the CPRD dataset at 1 to 12 month horizons, with tEHR using the Mistral-7B-v0.3 backbone achieving the strongest overall performance. Ablations show that performance declines when clinical descriptions are removed or misaligned, when numerical values are omitted, and when either stage of adaptation is removed, while explicit elapsed-time descriptions provide little additional benefit. Analysis of the learned patient representations further reveals clinically coherent structure associated with distinct patterns of disease risk and clinical history.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T16:34:49Z</published>
+    <arxiv:comment>Accepted for publication in Proceedings of Machine Learning Research (PMLR), Vol. 346, 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Ashvin Gupta</name>
+    </author>
+    <author>
+      <name>Brendan Delaney</name>
+    </author>
+    <author>
+      <name>Alessandra Russo</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17052v1</id>
+    <title>Auditing AI peer reviewers: a benchmark on real scientific papers</title>
+    <updated>2026-11-12T16:33:51Z</updated>
+    <link href="https://arxiv.org/abs/2611.17052v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17052v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>LLM-based peer review is now used at production scale, but its evaluation remains limited. We introduce a benchmark that injects objective, localisable errors of four types (general issues, mathematics, numerics, citations) at three severity levels into real papers and measures each reviewer's detection rate by error type and severity, together with its false-positive rate on clean copies. We also present Skepthical, a multi-agent reviewer that verifies citation-backed claims by retrieving the cited papers, mathematics with computer algebra, and numerical claims with executed code. We apply the benchmark to two corpora of 15 recent arXiv preprints each, one in astrophysics and one in machine learning (ML), injecting a total of 357 errors, and evaluate twelve reviewer systems: six single-LLM reviewers, two Claude Code configurations, three publicly available reviewers, and Skepthical. The choice of model has the largest impact on detection rate: given the same prompt, three frontier LLMs differ by about 50 percentage points in total detection on both corpora. Tools and scaffolding help when they contribute what the model cannot supply on its own. In particular, on astrophysics, Claude Code improves on a single Claude call in mathematics and numerics detection, and enforced citation retrieval gives Skepthical the highest citation error detection rate of all systems by a large margin. This citation lead, however, is not observed on ML, where the models appear to know the literature better and Skepthical's citation detection rate is statistically indistinguishable from that of the best single LLM. False-positive rates are below 10% for most systems, but vary with prompt, model, and scaffolding, with mathematics flags the main source of false positives. The evaluation pipeline, the injected errors, and the adjudication logs are released as a benchmark.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="astro-ph.IM" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.DL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T16:33:51Z</published>
+    <arxiv:comment>Accepted at NeurIPS 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Íñigo Zubeldia</name>
+    </author>
+    <author>
+      <name>Boris Bolliet</name>
+    </author>
+    <author>
+      <name>Francisco Villaescusa-Navarro</name>
+    </author>
+    <author>
+      <name>Pablo Villanueva-Domingo</name>
+    </author>
+    <author>
+      <name>Miles Cranmer</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17035v1</id>
+    <title>Prevalence Bounds for Edited Watermarked Text: Power Envelopes and Calibration Sensitivity</title>
+    <updated>2026-11-12T16:21:31Z</updated>
+    <link href="https://arxiv.org/abs/2611.17035v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17035v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Watermark detectors decide whether one document came from a watermarked language model. Auditors often need a different number: the share of a corpus that did. We study this share for Gumbel-max and green-list (KGW) watermarks when every document may have been edited by an unknown amount. Without restrictions on the edits, the upper end of the identified set is 1. Combining a known least-favourable next-token distribution with a sequential coupling, we derive a power envelope indexed by three budgets: a retention floor, an entropy budget, and a budget for in-place substitutions, which for Gumbel-max make edited positions look less watermarked than human text. The envelope gives an identified set that is sharp for the alternatives it dominates, finite-sample bounds on the realized share of a fixed corpus with either the exact null or a null calibrated on an independent human sample, and confidence sequences for streams. In Gumbel-max simulations where the envelope binds, the bounds cover, and the threshold that maximizes the gap between envelope and null is generally as tight as twelve thresholds. On text from OPT-1.3B and Qwen3-1.7B, 12,000 fresh human documents scored under three keys show no robust departure from the exact null, and all bounds covered in resampling trials from finite pools of documents with random edits, substitutions and paraphrases; at a share of 0.2 the exact-null bound is about [0.14,0.38]. These results are fragile in two ways we make precise. LLM-paraphrased KGW pools fall below the envelope, yet at 2000 documents the bounds still covered in these trials. A simulated null error of 0.01, comparable to the largest deviation we observed at our thresholds, is likewise harmless at 2000 documents but breaks exact-null coverage at 100,000; a null calibrated on an independent human sample keeps coverage there, but needs a large reference sample to stay narrow.</summary>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T16:21:31Z</published>
+    <arxiv:comment>31 pages, 3 figures, 8 tables. Code and results: https://github.com/YYKKCC-kevin/watermark-prevalence</arxiv:comment>
+    <arxiv:primary_category term="stat.ML"/>
+    <author>
+      <name>Kuancheng Ye</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.17030v1</id>
+    <title>Similar but Not Redundant: Embedding-Gated Refinement for High-Granularity Topic Models</title>
+    <updated>2026-11-12T16:17:08Z</updated>
+    <link href="https://arxiv.org/abs/2611.17030v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.17030v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>High-granularity topic modelling extracts hundreds of niche topics from a corpus, yet this regime is rarely studied and is more commonly framed as a failure mode: "over-clustering," in which coherent themes fragment into redundant subtopics. We argue that this framing conflates genuine redundancy with topics that are semantically similar but meaningfully distinct, and that the central challenge in high-granularity modelling is separating the two. Recent post-hoc refinement methods address topic redundancy through either embedding-based similarity thresholding or LLM-guided merging. We show that neither suffices in high-granularity settings and propose embedding-gated iterative merge (EGIM), a hybrid approach that iteratively generates context-rich topic representations, uses embedding similarity to propose candidate merges across the topic space, then applies LLM judgement to accept only genuinely redundant pairs while preserving niche distinctions. Across two patent corpora and one legal corpus, LLM judgement rejects 83% of embedding-identified candidates as non-redundant. EGIM improves discriminability on merged topics by 25-55% over a prior iterative LLM baseline while better preserving the original topic distribution.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T16:17:08Z</published>
+    <arxiv:comment>24 pages, 6 figures, 13 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Daniel Denley</name>
+    </author>
+    <author>
+      <name>Robert L. Nicol</name>
+    </author>
+    <author>
+      <name>Mike J. Chantler</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16968v1</id>
+    <title>Morphological Simplification in Alzheimer's Disease: Computational Analysis and Identification From Connected Speech</title>
+    <updated>2026-11-12T15:36:47Z</updated>
+    <link href="https://arxiv.org/abs/2611.16968v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16968v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Purpose: Morphology is often regarded as relatively spared in Alzheimer's disease (AD) and is rarely modeled in connected speech. This study asked which morphological features distinguish speakers with AD from healthy controls, how well morphology classifies AD compared with other linguistic levels and BERT-based models, and whether the signal exceeds transcript length and vocabulary. Method: Fifty-five automatic measures in eight families, seven of them new and theory-motivated, were computed from participant speech in the ADReSS Cookie Theft descriptions (78 AD, 78 controls) and analyzed with group comparisons, equivalence tests, SHAP, family ablation, likelihood-ratio tests, feature-selection classifiers, and BERT-based models. The automatic measures were validated manually, and models were transferred to two other corpora. Results: Nineteen of 38 measures differed between groups: speakers with AD produced fewer suffixed and inflected words, shorter verbs and nouns, and fewer present-progressive but more past-tense forms (largest effect r = -0.42), whereas errors were rare and statistically equivalent between groups. Eight measures survived adjustment for length and lexical frequency. With test-set feature selection, morphology reached a macro-F1 of 0.85, on par with syntax and above fine-tuned BERT (0.80 over five seeds); fully cross-validated selection gave 0.62. Adding morphology to BERT improved AUC (0.91 vs. 0.89) but not macro-F1. Transfer was limited, although two thirds of the effects kept their direction in mild cognitive impairment. Conclusions: AD connected speech shows morphological simplification and temporal reanchoring rather than breakdown. Morphology is more informative than its reputation suggests.
+  Keywords: Alzheimer's disease; morphology; connected speech; ADReSS; inflection; tense and aspect; SHAP; machine learning; BERT</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T15:36:47Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Mohamed Zakaria Kurdi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16956v1</id>
+    <title>Lara Mini Base: Language Diversity as a Resource, Not a Trade-off</title>
+    <updated>2026-11-12T15:28:56Z</updated>
+    <link href="https://arxiv.org/abs/2611.16956v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16956v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>General-purpose language models are trained mostly on English: over open models we review, at most, non-English pretraining data makes up only a 12% share. Models built for European languages give them far more, but score well below general-purpose models of the same size. A common concern is that, in small models, languages compete for capacity. We present Lara Mini base, a model trained from scratch on 6T tokens in English and 44 other languages, which together cover all 24 official languages of the European Union. As training progresses, the 44 other languages together come to outweigh English. To give these languages enough capacity at low cost, Lara Mini base uses a mixture of experts architecture with 7.2B total and 0.6B active parameters. Among open base models with up to 2B active parameters, it achieves the highest average score across standard English, multilingual, math, and code benchmarks, ahead of models trained on 4 to 6 times as many tokens. Its margin is largest on multilingual benchmarks in the languages it supports and on math benchmarks. It supports contexts of up to 128k tokens. We find that our MoE architecture reduces capacity competition between languages. For a single user on one GPU, without quantization, it generates text at least 1.8 times faster than any model with a higher average score. We release the weights of Lara Mini base under the CC BY-NC-SA 4.0 license. In addition, we will release T-HellaSwag, a higher-quality machine translation of the commonsense reasoning benchmark HellaSwag into 110 language variants.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T15:28:56Z</published>
+    <arxiv:comment>51 pages, 14 figures, 29 tables. Model weights: https://huggingface.co/translated/Lara-4-Mini-Base</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name> Translated</name>
+    </author>
+    <author>
+      <name>Maria Pia Adinolfi</name>
+    </author>
+    <author>
+      <name>Isabelle Andrieu</name>
+    </author>
+    <author>
+      <name>Grazia Fiorella Anfuso</name>
+    </author>
+    <author>
+      <name>Melania Annunziata</name>
+    </author>
+    <author>
+      <name>Daniele Antonini</name>
+    </author>
+    <author>
+      <name>Marta Arena</name>
+    </author>
+    <author>
+      <name>Luca Barone</name>
+    </author>
+    <author>
+      <name>Dana Barras Franco</name>
+    </author>
+    <author>
+      <name>Francesca Basiricò</name>
+    </author>
+    <author>
+      <name>Francesca Bee</name>
+    </author>
+    <author>
+      <name>Sofia Bertini</name>
+    </author>
+    <author>
+      <name>Nicola Bertoldi</name>
+    </author>
+    <author>
+      <name>Giorgio Biancini</name>
+    </author>
+    <author>
+      <name>Alessandra Bigi</name>
+    </author>
+    <author>
+      <name>Giulia Boccalini</name>
+    </author>
+    <author>
+      <name>Tommaso Bonomo</name>
+    </author>
+    <author>
+      <name>Enrico Boscardi</name>
+    </author>
+    <author>
+      <name>Sebastien Bratieres</name>
+    </author>
+    <author>
+      <name>Francesco Brigante</name>
+    </author>
+    <author>
+      <name>Giulia Brignola</name>
+    </author>
+    <author>
+      <name>Romolo Buondestino</name>
+    </author>
+    <author>
+      <name>Brenda Patricia Byrne</name>
+    </author>
+    <author>
+      <name>Giorgia Campora</name>
+    </author>
+    <author>
+      <name>Edoardo Cappelli</name>
+    </author>
+    <author>
+      <name>Veronica Carascosi</name>
+    </author>
+    <author>
+      <name>Francesca Carducci</name>
+    </author>
+    <author>
+      <name>Cody Carlson</name>
+    </author>
+    <author>
+      <name>Davide Caroselli</name>
+    </author>
+    <author>
+      <name>Ambra Cascio</name>
+    </author>
+    <author>
+      <name>Dario Cascio</name>
+    </author>
+    <author>
+      <name>Mauro Cassani</name>
+    </author>
+    <author>
+      <name>Andrea Castro</name>
+    </author>
+    <author>
+      <name>Alessandro Cattelan</name>
+    </author>
+    <author>
+      <name>Giulia Ceccacci</name>
+    </author>
+    <author>
+      <name>Paola Cellini</name>
+    </author>
+    <author>
+      <name>Giulia Chiriatti</name>
+    </author>
+    <author>
+      <name>Federico Cialini</name>
+    </author>
+    <author>
+      <name>Valentina Ciarlariello</name>
+    </author>
+    <author>
+      <name>Daniele Cocozza</name>
+    </author>
+    <author>
+      <name>Emanuela Coghe</name>
+    </author>
+    <author>
+      <name>Kathleen Compares</name>
+    </author>
+    <author>
+      <name>Marco Comunità</name>
+    </author>
+    <author>
+      <name>Davide Conti</name>
+    </author>
+    <author>
+      <name>Helen Rebecca Corfield</name>
+    </author>
+    <author>
+      <name>Michele Cortellessa</name>
+    </author>
+    <author>
+      <name>Anna Cracco</name>
+    </author>
+    <author>
+      <name>Aurora Cuppone</name>
+    </author>
+    <author>
+      <name>Arianna D'Andrea</name>
+    </author>
+    <author>
+      <name>Maurizio Davoli</name>
+    </author>
+    <author>
+      <name>Andrea De Angelis</name>
+    </author>
+    <author>
+      <name>Andrea De Blasi</name>
+    </author>
+    <author>
+      <name>Rebecca De Giorgi</name>
+    </author>
+    <author>
+      <name>Annalisa De Petra</name>
+    </author>
+    <author>
+      <name>Arianna De Pilla</name>
+    </author>
+    <author>
+      <name>Joris Demiraj</name>
+    </author>
+    <author>
+      <name>Elena Deufemia</name>
+    </author>
+    <author>
+      <name>Federica Di Antonio</name>
+    </author>
+    <author>
+      <name>Pierluigi Di Cianni</name>
+    </author>
+    <author>
+      <name>Vincenzo Di Cicco</name>
+    </author>
+    <author>
+      <name>Michela Di Clemente</name>
+    </author>
+    <author>
+      <name>Alan Di Francesco</name>
+    </author>
+    <author>
+      <name>Ylenia Di Gese</name>
+    </author>
+    <author>
+      <name>Federica Di Iulio</name>
+    </author>
+    <author>
+      <name>Claudia Di Lorenzo</name>
+    </author>
+    <author>
+      <name>Andrea Di Paola</name>
+    </author>
+    <author>
+      <name>Giulia Di Pilla</name>
+    </author>
+    <author>
+      <name>Jessica Dickson</name>
+    </author>
+    <author>
+      <name>Francesco Elefante</name>
+    </author>
+    <author>
+      <name>Ilaria Fabrizio</name>
+    </author>
+    <author>
+      <name>Alessandro Falappa</name>
+    </author>
+    <author>
+      <name>Viviana Fantozzi</name>
+    </author>
+    <author>
+      <name>Antonio Farina</name>
+    </author>
+    <author>
+      <name>Andrea Fernandez Tostado Ro. Diego Andrea</name>
+    </author>
+    <author>
+      <name>Andrea Ferrari</name>
+    </author>
+    <author>
+      <name>Sara Ferri</name>
+    </author>
+    <author>
+      <name>Simona Ferri</name>
+    </author>
+    <author>
+      <name>Fabio Fioramonti</name>
+    </author>
+    <author>
+      <name>Stefano Florio</name>
+    </author>
+    <author>
+      <name>Mariachiara Fornaro</name>
+    </author>
+    <author>
+      <name>Anna Maria Foti</name>
+    </author>
+    <author>
+      <name>Niccolò Fransoni</name>
+    </author>
+    <author>
+      <name>Alessandro Fusacchia</name>
+    </author>
+    <author>
+      <name>Emma Gamba</name>
+    </author>
+    <author>
+      <name>Francesco Gasperoni</name>
+    </author>
+    <author>
+      <name>Davide Gattini</name>
+    </author>
+    <author>
+      <name>Marta Giani</name>
+    </author>
+    <author>
+      <name>Claudia Giannetti</name>
+    </author>
+    <author>
+      <name>Valerio Giannini</name>
+    </author>
+    <author>
+      <name>Antonella Giudici</name>
+    </author>
+    <author>
+      <name>Mara Gramendola</name>
+    </author>
+    <author>
+      <name>Michele Grandinetti</name>
+    </author>
+    <author>
+      <name>Eleonora Graziani</name>
+    </author>
+    <author>
+      <name>L'Meese Hope Greaney</name>
+    </author>
+    <author>
+      <name>Dario Gubernari</name>
+    </author>
+    <author>
+      <name>Filomena Guglielmi</name>
+    </author>
+    <author>
+      <name>Jonathan Hammond</name>
+    </author>
+    <author>
+      <name>Stephen William Harris</name>
+    </author>
+    <author>
+      <name>Rowena Elizabeth Hogg</name>
+    </author>
+    <author>
+      <name>Marta Hontanon Del Olmo</name>
+    </author>
+    <author>
+      <name>Marco Ilari</name>
+    </author>
+    <author>
+      <name>Kenneth Larry Jackson</name>
+    </author>
+    <author>
+      <name>Sagar Joshi</name>
+    </author>
+    <author>
+      <name>Bartosz Alberto Karman</name>
+    </author>
+    <author>
+      <name>Iuliia Khimenko</name>
+    </author>
+    <author>
+      <name>Valerio Lanni</name>
+    </author>
+    <author>
+      <name>Giulio Leonardi</name>
+    </author>
+    <author>
+      <name>Veronica Levco</name>
+    </author>
+    <author>
+      <name>Matteo Licci</name>
+    </author>
+    <author>
+      <name>Alessio Ligios</name>
+    </author>
+    <author>
+      <name>Noemi Lomartire</name>
+    </author>
+    <author>
+      <name>Domenico Lupinetti</name>
+    </author>
+    <author>
+      <name>Jennifer Mirjam Maechtlen</name>
+    </author>
+    <author>
+      <name>Chiara Maggiori</name>
+    </author>
+    <author>
+      <name>Maria Luisa Malerba</name>
+    </author>
+    <author>
+      <name>Francesco Marconi</name>
+    </author>
+    <author>
+      <name>Domenico Marini</name>
+    </author>
+    <author>
+      <name>Francesca Marsili</name>
+    </author>
+    <author>
+      <name>Andrea Martinelli</name>
+    </author>
+    <author>
+      <name>James Mc Groary</name>
+    </author>
+    <author>
+      <name>Matteo Menicacci</name>
+    </author>
+    <author>
+      <name>Andrew Steven Miller</name>
+    </author>
+    <author>
+      <name>Marco Moauro</name>
+    </author>
+    <author>
+      <name>Giuliana Molon</name>
+    </author>
+    <author>
+      <name>Ilaria Mongelluzzi</name>
+    </author>
+    <author>
+      <name>Emiliano Morghen</name>
+    </author>
+    <author>
+      <name>Giovanni Moscati</name>
+    </author>
+    <author>
+      <name>Filippo Musmeci</name>
+    </author>
+    <author>
+      <name>Flavia Napoleoni</name>
+    </author>
+    <author>
+      <name>Nicola Giuseppe Ninni</name>
+    </author>
+    <author>
+      <name>Beatrice Ottoni</name>
+    </author>
+    <author>
+      <name>Federica Pagliani</name>
+    </author>
+    <author>
+      <name>Nicolò Palmiero</name>
+    </author>
+    <author>
+      <name>Daniele Palumbo</name>
+    </author>
+    <author>
+      <name>Chiara Pantani</name>
+    </author>
+    <author>
+      <name>Stefano Paolucci</name>
+    </author>
+    <author>
+      <name>Deborah Paritario</name>
+    </author>
+    <author>
+      <name>Michela Pascale</name>
+    </author>
+    <author>
+      <name>Thomas Passera</name>
+    </author>
+    <author>
+      <name>Daniele Patrioli</name>
+    </author>
+    <author>
+      <name>Chiara Patrizi</name>
+    </author>
+    <author>
+      <name>Silvia Patrizi</name>
+    </author>
+    <author>
+      <name>Giulia Pelos</name>
+    </author>
+    <author>
+      <name>Simone Giovanni Perone</name>
+    </author>
+    <author>
+      <name>Cristiano Perrone</name>
+    </author>
+    <author>
+      <name>Joshua Peterson</name>
+    </author>
+    <author>
+      <name>Katia Piredda</name>
+    </author>
+    <author>
+      <name>Francesca Piscitelli</name>
+    </author>
+    <author>
+      <name>Alessandra Posca</name>
+    </author>
+    <author>
+      <name>Lorenzo Pratesi</name>
+    </author>
+    <author>
+      <name>Francesca Prencipe</name>
+    </author>
+    <author>
+      <name>Daniela Proietto Cuco</name>
+    </author>
+    <author>
+      <name>Mattia Pupino Marangio</name>
+    </author>
+    <author>
+      <name>Disheng Qiu</name>
+    </author>
+    <author>
+      <name>Mirco Ramo</name>
+    </author>
+    <author>
+      <name>Federica Rapagnà</name>
+    </author>
+    <author>
+      <name>Waldo Luis Ribeiro</name>
+    </author>
+    <author>
+      <name>Federico Ricciuti</name>
+    </author>
+    <author>
+      <name>Alessia Ridoni</name>
+    </author>
+    <author>
+      <name>Eleonora Risi Valdettaro</name>
+    </author>
+    <author>
+      <name>Jon Matthew Ritzdorf</name>
+    </author>
+    <author>
+      <name>Serena Rivera</name>
+    </author>
+    <author>
+      <name>Federico Roma</name>
+    </author>
+    <author>
+      <name>Arianna Ruggiero</name>
+    </author>
+    <author>
+      <name>Eleonora Ruggiu</name>
+    </author>
+    <author>
+      <name>Mariafrancesca Sagliocco</name>
+    </author>
+    <author>
+      <name>Vanessa Salvi</name>
+    </author>
+    <author>
+      <name>Alessio Sampieri</name>
+    </author>
+    <author>
+      <name>Elena Santanelli</name>
+    </author>
+    <author>
+      <name>Roberto Sastre</name>
+    </author>
+    <author>
+      <name>Luca Scofano</name>
+    </author>
+    <author>
+      <name>Alessandro Sdei</name>
+    </author>
+    <author>
+      <name>Giuseppe Sebastiani</name>
+    </author>
+    <author>
+      <name>Claudia Nicole Siegenthaler</name>
+    </author>
+    <author>
+      <name>Monica Signoretti</name>
+    </author>
+    <author>
+      <name>Nicola Sobieski</name>
+    </author>
+    <author>
+      <name>Biancamaria Soellner</name>
+    </author>
+    <author>
+      <name>Valentina Stati</name>
+    </author>
+    <author>
+      <name>Michael Stevens</name>
+    </author>
+    <author>
+      <name>Arianna Stissi</name>
+    </author>
+    <author>
+      <name>Fabiana Stomaci</name>
+    </author>
+    <author>
+      <name>Leonardo Taddei</name>
+    </author>
+    <author>
+      <name>Christopher Thomas</name>
+    </author>
+    <author>
+      <name>Maurizio Tiberi</name>
+    </author>
+    <author>
+      <name>John Tinsley</name>
+    </author>
+    <author>
+      <name>Riccardo Tittarelli</name>
+    </author>
+    <author>
+      <name>Carla Tocco</name>
+    </author>
+    <author>
+      <name>Martina Totaro</name>
+    </author>
+    <author>
+      <name>Barbara Veronika Totzauer</name>
+    </author>
+    <author>
+      <name>Alessio Tranzocchi</name>
+    </author>
+    <author>
+      <name>Letizia Treossi</name>
+    </author>
+    <author>
+      <name>Mara Trombetti</name>
+    </author>
+    <author>
+      <name>Marco Trombetti</name>
+    </author>
+    <author>
+      <name>Andrea Valenzi</name>
+    </author>
+    <author>
+      <name>Kirti Vashee</name>
+    </author>
+    <author>
+      <name>Giulia Vestita</name>
+    </author>
+    <author>
+      <name>Teodosio Vezza</name>
+    </author>
+    <author>
+      <name>Giulia Vignola</name>
+    </author>
+    <author>
+      <name>Sara Virtuoso</name>
+    </author>
+    <author>
+      <name>Valentina Volpini</name>
+    </author>
+    <author>
+      <name>Francesca Vurro</name>
+    </author>
+    <author>
+      <name>Jolita Zaksauskaite</name>
+    </author>
+    <author>
+      <name>Giulia Zanarella</name>
+    </author>
+    <author>
+      <name>Paolo Zanotti</name>
+    </author>
+    <author>
+      <name>Francesca Zavettieri</name>
+    </author>
+    <author>
+      <name>Irene Zorzi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16929v1</id>
+    <title>SPADE: Soft Prompts for Ai-text DEtection</title>
+    <updated>2026-11-12T15:16:19Z</updated>
+    <link href="https://arxiv.org/abs/2611.16929v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16929v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>The easy access to Large Language Models (LLMs) has made AI-generated texts on the web increasingly ubiquitous, making AI-text detection a crucial task. Prompts greatly influence the generation process, but existing detectors focus solely on the generated texts --- supervised methods learn from labeled texts only, and zero-shot methods rely on the text's probability distributions --- ignoring the underlying generation process, which limits their robustness in open-world scenarios. We introduce SPADE: Soft Prompts for Ai-text DEtection, a novel framework for detecting AI-generated text that transfers better across datasets. Specifically, we measure the prompt's influence and use it as a discriminative signal. We characterize the prompt's influence by introducing a Pointwise Mutual Information (PMI) term that captures how much a prompt explains a text. Based on this quantity, SPADE trains one soft prompt per class to amplify the separation, and predicts the class whose prompt best explains the candidate text. Extensive experiments on several benchmarks against various detectors demonstrate the robustness and effectiveness of our method, achieving state-of-the-art (SOTA) performance on out-of-distribution (OOD) datasets.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T15:16:19Z</published>
+    <arxiv:comment>24 pages (8 main), 10 figures, 22 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Alex Jiang</name>
+    </author>
+    <author>
+      <name>Didier Schwab</name>
+    </author>
+    <author>
+      <name>Chuyuan Li</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16919v1</id>
+    <title>Beyond Word Error Rate: A Failure Taxonomy of Streaming Dictation ASR</title>
+    <updated>2026-11-12T15:09:15Z</updated>
+    <link href="https://arxiv.org/abs/2611.16919v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16919v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Speech recognition (ASR) systems are usually compared by word error rate (WER) on recorded files, after punctuation, capital letters and number format are removed. In dictation, the audio is streamed live and the text goes into the user's message as written, so what matters is which mistakes the user has to fix. The test set, streamed to eleven ASR systems, comprises 106 scripted English dictations from one speaker (read in a quiet room, with a fan on, and whispered), 20 clips in each of eleven other language and dialect sets, and 400 recordings that join clips in two languages. Every error was sorted by a fixed rule into four levels: recognition, output formatting, language handling and, for the self-hosted models, audio dropped before the model. Systems with similar WER failed in different ways. Zoom Scribe and OpenAI's GPT-Live-Transcribe have almost the same WER on quiet English (7.4% and 7.3%), but 34.7% and 8.8% on whispered English. Zoom and both AssemblyAI models left out 26-28% of whispered words, and still 21-26% with their end-of-turn detection relaxed or off; seven other systems left out at most 3%. Qwen3-ASR's 32% came from the speech detection in our own deployment (6% when relaxed). Across 107 EARS speakers, the same four systems lost 7-31% of whispered words, while six others lost under 2%. With only English selected, Gemini, Deepgram and our self-hosted Whisper lost the non-English part of a two-language recording in 86-99% of recordings, against 33-46% with both languages selected, while GPT-Live-Transcribe, OpenAI's realtime Whisper and Meta lost it in at most 20%. Running Whisper behind a Silero voice activity detector that drops audio judged to be silence raised whispered WER from 10.1% to 51.4%. Most English results come from one read speaker. The code, the recordings, both references and every transcript are released.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.SD" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T15:09:15Z</published>
+    <arxiv:comment>35 pages, 27 tables, 2 figures. Code: https://github.com/heylemon-ai/streaming-dictation-asr Data: https://huggingface.co/datasets/hey-lemon/streaming-dictation-asr</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Harras Mansoor</name>
+    </author>
+    <author>
+      <name>Muhammad Wisal</name>
+    </author>
+    <author>
+      <name>Hassan Bhatti</name>
+    </author>
+    <author>
+      <name>Masood Shakir</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16895v1</id>
+    <title>Human or Synthetic? What a Fixed Budget Buys for Post-Training</title>
+    <updated>2026-11-12T14:51:51Z</updated>
+    <link href="https://arxiv.org/abs/2611.16895v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16895v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Post-training of large language models typically combines supervised fine-tuning (SFT) with preference-based fine-tuning such as Direct Preference Optimization (DPO). Human-annotated and synthetically generated preference data differ substantially in per-sample cost, but prior work typically holds sample count fixed when comparing the two. In this work, we explicitly study the interplay between cost and performance by comparing the effect of post-training with human and synthetic preference data under a fixed, dollar-matched annotation budget. We train and evaluate multiple base model families across helpfulness and summarization tasks. We find that synthetic data is far more cost-efficient at low-to-moderate budgets, achieving high win rates with as little as \$200--\$400. On helpfulness, human data closes the gap only at budgets roughly two orders of magnitude larger; on summarization, it does not close the gap at any tested budget. We also find that human-annotated data varies in reliability: one widely used human preference source substantially underperforms another, and the gap persists even after standard remedies such as domain restriction and deduplication.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T14:51:51Z</published>
+    <arxiv:comment>20 pages, 9 figures. Code: https://github.com/shourikb/human-or-synthetic , Data: https://huggingface.co/datasets/liteshadow4/synthetic-pref-tulu3</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Shourik Banerjee</name>
+    </author>
+    <author>
+      <name>Ethan Mendes</name>
+    </author>
+    <author>
+      <name>Mohit Raghavendra</name>
+    </author>
+    <author>
+      <name>Wei Xu</name>
+    </author>
+    <author>
+      <name>Alan Ritter</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16890v1</id>
+    <title>Look It Up: Multi-bit LLM Watermarking via Codebook Search</title>
+    <updated>2026-11-12T14:49:23Z</updated>
+    <link href="https://arxiv.org/abs/2611.16890v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16890v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Attributing short LLM-generated texts to a specific source remains challenging for existing multi-bit watermarking methods, which often require long generations or costly decoding to recover payloads reliably. We propose a codebook-based watermarking scheme that maps an $n$-bit payload to a longer $u$-bit codeword and embeds it during generation through token-level logit biasing. During extraction, the received bit sequence is matched to the nearest codeword in a precomputed secret codebook using Hamming or Levenshtein distance. Experiments show that our method achieves near-perfect recovery for 16-24 bit payloads on 200-token generations and strong performance on 127-token generations for base models. Results are weaker on some instruction-tuned models with very short texts, where low-entropy output distributions reduce embedding reliability. We also study a BCH-based variant that avoids codebook storage but generally reduces robustness. The Levenshtein variant improves resilience to deletions and light paraphrasing, while insertions and stronger rewrites remain challenging. We analyze collision probability, codeword separation, extraction time, tokenization consistency, and text quality, highlighting both the practicality and limitations of codebook-based watermarking for short-form attribution.</summary>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T14:49:23Z</published>
+    <arxiv:comment>16 pages, 8 figures, 6 tables. Submitted to IEEE Transactions on Information Forensics and Security. Code: https://github.com/jaroslawjanas/llmw-codebook</arxiv:comment>
+    <arxiv:primary_category term="cs.CR"/>
+    <author>
+      <name>Jarosław Janas</name>
+    </author>
+    <author>
+      <name>Paweł Morawiecki</name>
+    </author>
+    <author>
+      <name>Josef Pieprzyk</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16882v1</id>
+    <title>Pretraining Data Statistics Shape the Phases of Learning Entity Comparison in Language Models</title>
+    <updated>2026-11-12T14:45:34Z</updated>
+    <link href="https://arxiv.org/abs/2611.16882v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16882v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>How does data shape language model (LM) behavior throughout pretraining? We investigate this question through a case study on entity comparison, e.g., Between France and Brazil, which country is larger?, across nine comparison tasks spanning five entity types. We begin with controlled experiments in which we train small LMs (163M parameters) on mixtures of natural text from pretraining corpora and synthetic task data. Our analysis identifies three distinct phases of learning: (1) an early phase where the LM selects entities by frequency, (2) a middle phase where the LM selects entities by position in the prompt (first vs. last mentioned entity), and (3) a late phase where the LM selects the entity that is the correct answer. We show that the emergence of these three phases is causally determined by statistical properties of the training data. With small amounts of task-specific synthetic data, we observe only the first two phases and the model fails to learn the task; with large amounts, the model jumps directly from the frequency-based heuristic to solving the task correctly. Moreover, changing the entity frequency distribution from a naturally occurring Zipfian distribution (a small number of entities are very common and the vast majority are rare) to a uniform one weakens the frequency phase and speeds up learning of the task. Lastly, we show that the three phases of training dynamics from our controlled experiments appear in the open source model OLMo-2 32B. Together, our findings demonstrate that properties of pretraining data are causal drivers of heuristic learning and show that small-scale synthetic experiments can predict training dynamics at larger scales.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T14:45:34Z</published>
+    <arxiv:comment>29 pages, 20 figures. NeurIPS 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Yik Siu Chan</name>
+    </author>
+    <author>
+      <name>Jing Huang</name>
+    </author>
+    <author>
+      <name>Yanai Elazar</name>
+    </author>
+    <author>
+      <name>Atticus Geiger</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16843v1</id>
+    <title>Shortcuts or Memorisation? Revisiting Data Corruption in Natural Language Understanding with Large Language Models</title>
+    <updated>2026-11-12T14:18:44Z</updated>
+    <link href="https://arxiv.org/abs/2611.16843v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16843v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Pre-trained encoders fine-tuned on natural language inference (NLI) and other language understanding tasks keep much of their accuracy after the input is perturbed, e.g. by removing all nouns or shuffling the words. Does the same hold for large language models (LLMs), and if so, is it because they have seen the benchmarks during pre-training? In this paper we revisit these perturbation experiments with eight LLMs alongside fine-tuned encoders on GLUE and the three rounds of ANLI. Regardless of model size, every system that answers directly retains 36-72% of its above-chance performance without nouns on MNLI compared to only 14-29% on ANLI. Only a model that reasons before answering departs from this pattern. We also check contamination indicators (including exact $n$-gram counts in the public pre-training data of two of the models) and find no link between exposure and robustness. Our strongest evidence comes from 368 new, human-validated items that none of the models can have seen. All eight LLMs keep more of their performance without nouns on items written in MNLI's style than on items written without its cues. When the perturbation instead removes the function words carrying such cues, this advantage reverses. In light of these results, we argue that robustness to perturbation on familiar NLI benchmarks reflects dataset shortcuts rather than memorisation, and tells us more about the benchmark than about the model.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T14:18:44Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Aarne Talman</name>
+    </author>
+    <author>
+      <name>Stergios Chatzikyriakidis</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16816v1</id>
+    <title>Outcome-Mass Alignment: Controlling Length-Dependent Trajectory Influence in Multi-Turn LLM Agent Reinforcement Learning</title>
+    <updated>2026-11-12T13:52:12Z</updated>
+    <link href="https://arxiv.org/abs/2611.16816v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16816v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>To keep long interaction contexts tractable, stepwise group-relative training for multi-turn LLM agents materializes each source trajectory into multiple response rows and valid tokens. This expansion creates an outer-accounting problem distinct from within-trajectory credit assignment: row-based outcome statistics can count one episode outcome multiple times, while token-level reduction can assign unequal aggregate objective mass across trajectories. We term these effects outcome-statistics multiplicity and objective-mass imbalance. We introduce Outcome-Mass Alignment (OMA), a two-component method that makes both accounting choices explicit. Outcome Alignment computes outcome statistics over unique source trajectories, while Mass Alignment controls aggregate objective mass after within-trajectory aggregation of optimizer-native token objectives. Neither redesigns the base optimizer's credit assignment, importance ratios, or clipping. Across matched ALFWorld GRPO comparisons at two model scales, where failed trajectories typically expand much more than successful ones, OMA improves matched-horizon endpoint success by 7.0-9.4 percentage points. Ordinary WebShop exhibits weak or reversed expansion-outcome coupling and correspondingly mixed effects, whereas in a success-oriented WebShop setting, WebShop-SOL, OMA improves success nAUC from 0.399 to 0.511. Component ablations and GiGPO and GSPO comparisons further support component separability and cross-optimizer compatibility. These results show that trajectory expansion always defines an implicit weighting rule, but its practical effect depends on how expansion couples to outcomes and optimizer-native updates.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T13:52:12Z</published>
+    <arxiv:comment>18 pages, 6 figures, including appendices</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Dawei Zhang</name>
+    </author>
+    <author>
+      <name>Yubin Huangfu</name>
+    </author>
+    <author>
+      <name>Jessica Fan</name>
+    </author>
+    <author>
+      <name>Boyu Wei</name>
+    </author>
+    <author>
+      <name>Likang Wu</name>
+    </author>
+    <author>
+      <name>Hongke Zhao</name>
+    </author>
+    <author>
+      <name>Ming He</name>
+    </author>
+    <author>
+      <name>Zhu Teng</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16803v1</id>
+    <title>Detection Is Not Early Warning: Evaluating Token-Level Alarms on Language Model Failures</title>
+    <updated>2026-11-12T13:43:19Z</updated>
+    <link href="https://arxiv.org/abs/2611.16803v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16803v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Many failures of language models begin at a specific token, the onset. A monitor that reads the model during generation can classify the finished response, detect the failure once it is under way, or warn before it begins, and only a warning leaves time to stop or steer the generation. Monitors are usually evaluated with response-level metrics such as AUROC, which ignore when the monitor fires. We introduce PREWARN, an evaluation protocol for any failure with an annotated onset. It calibrates each monitor's threshold on validation data to an error rate chosen for the application, runs the monitor, and scores its alarms relative to the onset on all three tasks. As a case study we apply it to repetitive degeneration in three open language models, with early warning as the main task, using linear probes on activations and six untrained baselines. Response-level metrics saturate on this failure, and a rule that reads only the response length scores almost perfectly, while probes that AUROC ranks as equal warn very differently under PREWARN. Probes warn before the onset on most degenerate responses of two of the three models, low-rank adapters below the probe more than double the share of tokens just before the onset that it flags, largely by flagging degenerate responses long before the onset, and no untrained baseline warns much more often than random alarms. We release the probes with calibrated thresholds at https://huggingface.co/collections/marcodene/prewarn-degeneration-probes</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T13:43:19Z</published>
+    <arxiv:comment>Accepted at the NeurIPS 2026 Workshop on Interpretability as a Science. 30 pages (10 main text), 6 figures, 16 tables. Code: https://github.com/swiss-ai/degeneration-probe</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Marco De Negri</name>
+      <arxiv:affiliation>ETH Zurich</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Luca Sartori</name>
+      <arxiv:affiliation>ETH Zurich</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Lorenzo Baggi</name>
+      <arxiv:affiliation>ETH Zurich</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Moritz Reihs</name>
+      <arxiv:affiliation>ETH Zurich</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Eduard Frank Ďurech</name>
+      <arxiv:affiliation>ETH AI Center</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Mennatallah El-Assady</name>
+      <arxiv:affiliation>ETH Zurich</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Valentina Pyatkin</name>
+      <arxiv:affiliation>ETH Zurich</arxiv:affiliation>
+      <arxiv:affiliation>ETH AI Center</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Anna Hedström</name>
+      <arxiv:affiliation>ETH AI Center</arxiv:affiliation>
+      <arxiv:affiliation>Solaris Research</arxiv:affiliation>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16714v1</id>
+    <title>Towards Green Text Generation: Memory-Based Speculative Decoding</title>
+    <updated>2026-11-12T12:32:14Z</updated>
+    <link href="https://arxiv.org/abs/2611.16714v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16714v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Speculative decoding accelerates text generation with large language models by letting a cheap draft model propose tokens that a large verifier checks in a single forward pass. We introduce Olifant, a draft model built on a memory-based classifier. It predicts the next token from a four-token window in under 0.3 ms on CPU, requiring no GPU, no backpropagation, and no accelerator memory. We measure throughput and energy under two verifier regimes on consumer hardware. Without a KV cache, drafting is nearly free: a domain-matched Olifant model reaches 38.1% acceptance on EU legal text, delivering 2.43x throughput and 2.51x lower energy per token than the neural verifier model alone. With a KV-cached verifier, itself a ~10x energy saver, drafting costs matter: a TinyLlama draft model halves throughput and triples energy despite high acceptance, whereas Olifant still yields 1.25x throughput and the lowest energy in the study (93 J per 100 tokens, 14x below the uncached baseline). We further show that KV caching decouples time from energy: verification of longer drafts raises power draw, shifting the energy-optimal draft length below the speed-optimal one. Speculative decoding is not dead in the age of fast verifiers, provided drafting is nearly free.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T12:32:14Z</published>
+    <arxiv:comment>11 pages, 2 figures, 7 tables. Published at the 19th International Natural Language Generation Conference (INLG 2026). Code: https://github.com/antalvdb/olifant-speculative ; models: https://huggingface.co/antalvdb/olifant-speculative-ibases</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <arxiv:journal_ref>Proceedings of the 19th International Natural Language Generation Conference: Long Papers, pages 472-482, October 2026</arxiv:journal_ref>
+    <author>
+      <name>Antal van den Bosch</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16704v1</id>
+    <title>Forecasting Sales Delay through Time-aware Analysis of Sales Events in Textual Reports</title>
+    <updated>2026-11-12T12:21:09Z</updated>
+    <link href="https://arxiv.org/abs/2611.16704v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16704v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Business-to-business (B2B) companies develop and deliver a one-of-a-kind product in response to a client's orders. To prepare resources for development beforehand, companies estimate dates when they will receive orders from clients in their sales process, called scheduled order dates. However, dates when the companies actually receive orders can differ from the scheduled order dates. This difference increases costs in the development. If the difference could be forecasted before receiving orders, companies could optimize their resource preparation. Towards reducing the costs, we introduce sales delay forecasting, a novel task of forecasting delay days from the scheduled order dates during sales process where sales representatives (sales reps) interact with the clients to receive orders. Sales delay forecasting is challenging because the sales process progress inherently involves uncertainty and depends on the client's willingness to order. To address this task, we propose confidence features which represent sales reps' confidence as a proxy measure of the client's willingness to order. To represent it, our method extracts dates of future sales events anticipated by sales reps from textual reports. To consider whether the confidence objectively looks reasonable, we also introduce status features which describe sales process status based on current date and past events. In experiments using real sales data, our method achieved a 16% lower mean absolute error compared with a feature-based baseline similar to a prior work. Moreover, our method outperformed non-feature-based baselines using large language models, indicating that it is crucial to explicitly create our features.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T12:21:09Z</published>
+    <arxiv:comment>9 pages</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Masaya Tsunokake</name>
+    </author>
+    <author>
+      <name>Yuta Koreeda</name>
+    </author>
+    <author>
+      <name>Yuhei Niwa</name>
+    </author>
+    <author>
+      <name>Terufumi Morishita</name>
+    </author>
+    <author>
+      <name>Teppei Inoue</name>
+    </author>
+    <author>
+      <name>Hiroaki Ozaki</name>
+    </author>
+    <author>
+      <name>Yasuhiro Sogawa</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16694v1</id>
+    <title>When Expert Disagreement Hurts: Prestige and Selectivity in LLM Decision Revision</title>
+    <updated>2026-11-12T12:11:03Z</updated>
+    <link href="https://arxiv.org/abs/2611.16694v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16694v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>When language models revise a decision after another agent disagrees, neither reversal counts nor final accuracy shows whether they are fixing mistakes or abandoning correct answers. We introduce a controlled two-pass audit that holds the question, the evidence, and the model's initial answer fixed and varies only the revision context: neutral reflection, anonymous disagreement, or disagreement attributed to a domain expert. For binary decisions the accounting is exact: revision raises accuracy only if it is selective enough, reversing wrong answers more than $a/(1-a)$ times as often as correct ones, where $a$ is initial accuracy (nine times at 90%). Across five models and 1,989 evidence-grounded decisions in medicine, science, and law, no model clears this bar under expert disagreement, and accuracy falls by up to 16.1 points. The expert label, a prestige cue, adds reversals for four of the five models, yet its effect on accuracy ranges from a 5.2-point loss to a 2.4-point gain, so reversal counts are a poor proxy for harm. With identical arguments from both sources, the label still raises reversal for three proprietary models and in a pooled analysis of four newer models. Models also respond to stated source reliability. Revision pipelines should therefore be evaluated with paired, conditional metrics, per model and protocol.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T12:11:03Z</published>
+    <arxiv:comment>Accepted at NeurIPS 2026. 38 pages, 7 figures, 36 tables. Code and data: https://github.com/yupengtang/when-expert-disagreement-hurts</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Yupeng Tang</name>
+    </author>
+    <author>
+      <name>Mingfeng Lin</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16662v1</id>
+    <title>MuSeToM: Multi-Sensory Evaluation of Belief Revision with Textual Cues Across Six Senses</title>
+    <updated>2026-11-12T11:38:52Z</updated>
+    <link href="https://arxiv.org/abs/2611.16662v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16662v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Theory of Mind (ToM), the ability to infer mental states in others, is pivotal for human social cognition. Existing evaluations of ToM in large language models (LLMs) mainly focus on static belief attribution and false-belief reasoning, leaving a critical aspect of social reasoning underexplored: can LLMs decide whether perceptual evidence is sufficient to justify another person's belief revision? To address this gap, we present MuSeToM, a human-validated, text-based benchmark for evaluating epistemic belief revision in ToM reasoning. MuSeToM contains 2,415 instances adapted from BigToM and OpenToM, with textual cues spanning six sensory categories, and tests whether models can determine when a protagonist should revise a belief and infer the resulting updated belief state. Using MuSeToM, we systematically evaluate state-of-the-art LLMs under direct and chain-of-thought prompting, revealing a pronounced dissonance: while models often detect that a belief may change, they struggle to identify the updated belief and frequently over-update on perceptually salient but epistemically insufficient cues.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T11:38:52Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Chunkit Chan</name>
+    </author>
+    <author>
+      <name>Kawai Chung</name>
+    </author>
+    <author>
+      <name>Sze Heng Douglas Kwok</name>
+    </author>
+    <author>
+      <name>Yuxuan Liu</name>
+    </author>
+    <author>
+      <name>Yauwai Yim</name>
+    </author>
+    <author>
+      <name>Tianshi Zheng</name>
+    </author>
+    <author>
+      <name>Haochen Shi</name>
+    </author>
+    <author>
+      <name>Qing Zong</name>
+    </author>
+    <author>
+      <name>Wong Kai Chung</name>
+    </author>
+    <author>
+      <name>Pak Hin Lau</name>
+    </author>
+    <author>
+      <name>Calvin Yang</name>
+    </author>
+    <author>
+      <name>Yifan Gao</name>
+    </author>
+    <author>
+      <name>Xiaoman Pan</name>
+    </author>
+    <author>
+      <name>Ginny Wong</name>
+    </author>
+    <author>
+      <name>Simon See</name>
+    </author>
+    <author>
+      <name>Yangqiu Song</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16612v1</id>
+    <title>Unibuc - NLP at "Voight-Kampff" Generative AI Detection PAN 2025</title>
+    <updated>2026-11-12T10:49:03Z</updated>
+    <link href="https://arxiv.org/abs/2611.16612v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16612v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>This paper describes the approach of the Unibuc - NLP team in tackling the "Voight-Kampff" Generative AI Detection task from PAN at CLEF 2025. In the Subtask 1: Voight-Kampff AI Detection Sensitivity we have explored different approaches of leveraging embeddings extracted from LLMs, using either classical ML models or further fine-tuning LLMs with a classification head for the downstream binary classification task. Our experiments showed that using a majority vote ensemble of classical ML models (Light GBM, XGB, Logistic Regression and SVM) is comparable with fine-tuning for downstream task achieving around 99.4% F1 score. For the Subtask 2: Human-AI Collaborative Text Classification we explored a way of combining features at different layers extracted using transformer backbone with layer-wise projection and attentive pooling which proved modest results.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T10:49:03Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Teodor Marchitan</name>
+    </author>
+    <author>
+      <name>Claudiu Creanga</name>
+    </author>
+    <author>
+      <name>Liviu P. Dinu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16581v1</id>
+    <title>Do the Details Help the Whole? One-Way Transfer from Person Actions to Group Intent in VLMs on JRDB-Social</title>
+    <updated>2026-11-12T10:14:07Z</updated>
+    <link href="https://arxiv.org/abs/2611.16581v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16581v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Social scene datasets label people at two levels: what each person is doing and what the group is there for. Training on both levels at once is often assumed to help each of them. We test this assumption for vision-language models (VLMs) on JRDB-Social, treating person actions as the details and group intent as the whole. We fine-tune Qwen3.5 4B under eight training arms with three seeds, repeat the core arms on Qwen3.5 9B and Qwen3-VL 4B, and judge every arm with a verdict rule fixed before testing. Writing each member's actions before the intent raises intent macro-F1 from 30.1 to 31.0, and writing the intent first reaches 31.2, while action F1 stays within 0.2 points of an action-only model. Under the selected recipe, no arm trained with intent improves actions. The gain requires correct, image-grounded actions: empty action lists or actions borrowed from another group with the same intent lower intent F1. Forced-prefix tests, occlusion, member masking, linear probes and component grafting show that the intent follows the written actions, relies more on people and partly resides in the vision tower. Supplying actions as input instead of as targets hurts both levels.</summary>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T10:14:07Z</published>
+    <arxiv:primary_category term="cs.CV"/>
+    <author>
+      <name>Chengguang Gan</name>
+    </author>
+    <author>
+      <name>Zhixi Cai</name>
+    </author>
+    <author>
+      <name>Yunhao Liang</name>
+    </author>
+    <author>
+      <name>Hanjun Wei</name>
+    </author>
+    <author>
+      <name>QingHao Zhang</name>
+    </author>
+    <author>
+      <name>Shiwen Ni</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16526v1</id>
+    <title>Lost in Delegation: Studying the Effectiveness of Task Orchestration in Generative Search</title>
+    <updated>2026-11-12T09:25:33Z</updated>
+    <link href="https://arxiv.org/abs/2611.16526v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16526v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>LLMs have quickly evolved from models used in isolation to agentic systems that delegate tasks to external tools and other LLMs to solve complex assignments. This agentic augmentation has led to impressive capability gains. However, when and how delegation improves performance remains poorly understood. For example, it is unclear whether delegation helps when tasks involve post-cutoff information that the orchestrating LLM cannot reliably resolve from its own knowledge. In this work, we use purpose-built datasets with pre- and post-cutoff splits to compare various delegation modes. We find that delegation provides no consistent accuracy improvement over non-delegated setups, with effects varying across models and tasks. When tasks involve knowledge unavailable to the orchestrator, delegation can substantially degrade accuracy, while direct tool use with the same LLM performs much better. Our analysis identifies distorted delegated queries, inefficient tool use, and failures to preserve and use information between agents as recurring failure modes. These findings suggest that effective orchestration requires both well-calibrated delegation decisions and effective exchange of information between agents.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T09:25:33Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Tamara Stojanovska</name>
+    </author>
+    <author>
+      <name>Elisabeth Kirsten</name>
+    </author>
+    <author>
+      <name>Leon Swazinna</name>
+    </author>
+    <author>
+      <name>Muhammad Bilal Zafar</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16500v1</id>
+    <title>EvenVLM: A Text and Multimodal Dataset for the Even Language with Vision-Language Fine-Tuning</title>
+    <updated>2026-11-12T09:03:06Z</updated>
+    <link href="https://arxiv.org/abs/2611.16500v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16500v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We present EvenVLM, the first text and multimodal (VQA) dataset for Even (Lamut), an endangered Northern Tungusic language spoken by approximately 6,800 people in Siberia. Our dataset comprises 50,521 structured Even-Russian entries extracted from dictionary and phrasebook sources via GPT-4o Mini-based parsing, from which we synthetically generate 107,543 training examples spanning translation, grammar, reading comprehension, and semantic classification. To address tokenization inefficiency on Even's agglutinative morphology, we propose a three-step tokenizer expansion algorithm that adds Even-specific graphemes (eng, oe, o-umlaut), whitelisted vocabulary, and BPE merges, reducing average tokens per word by 27% (4.99 to 3.64). Using LoRA fine-tuning of Qwen3-VL-4B, we adapt the model for text tasks (0.53% trainable parameters, rank 32) and separately for visual question answering (rank 64, frozen vision encoder). Our best configuration achieves 11.4% exact match and a 13.6 weighted score on text benchmarks, 0.1283 chrF for sentence translation, and 65% accuracy on VQA (up from 0% for the base model and text-only fine-tuning). We release our datasets, evaluation benchmarks, and training pipeline to support further research on Even and other low-resource languages.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T09:03:06Z</published>
+    <arxiv:comment>Published in Proceedings of the Workshop on Open Reasoning Across Cultures Languages (ORACLE) at EMNLP 2026</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <arxiv:journal_ref>Proceedings of the Workshop on Open Reasoning Across Cultures Languages (ORACLE), pp. 40-46, Budapest, Hungary, October 2026</arxiv:journal_ref>
+    <author>
+      <name>Daniil Makovetskii</name>
+    </author>
+    <author>
+      <name>Ivan Bondarenko</name>
+    </author>
+    <arxiv:doi>10.18653/2026.oracle-main.3</arxiv:doi>
+    <link rel="related" href="https://doi.org/10.18653/2026.oracle-main.3" title="doi"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16477v1</id>
+    <title>Where in the Input Does a One-Pass Decision Encoder Look?</title>
+    <updated>2026-11-12T08:42:11Z</updated>
+    <link href="https://arxiv.org/abs/2611.16477v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16477v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Laya is a small model that answers a multiple-choice question about a text in one pass: the question, the options (each with a name and a description) and the text form one sequence of at most 512 tokens, the window, in the English release. A longer text is silently cut at the end, and we measure what that costs. Test documents place a held-out row's text, the evidence, at a chosen token offset among distractor text; 177 items, five tasks, three checkpoints (released, short-row fine-tune, long-document fine-tune), four window sizes and 93,275 scored requests. When the evidence lies beyond the window, accuracy falls to 26.4% for the released checkpoint (27.2% for both fine-tunes), near the 27.0% of guessing and below the 35.6% of always giving the commonest label. Confidence gives no warning (AUROC 0.50 to 0.55 for telling cut from read requests; 0.5 = chance), and the runtime's truncation flag also fires on requests whose evidence was visible. The released checkpoint reads visible evidence badly once text precedes it: 38.5% pooled against 60% when the evidence comes first, so a larger window alone gains +6.2 points. Fine-tuning on long documents adds +27.6 points on visible evidence over the short-row fine-tune (95% interval +22.3 to +33.1) and nothing on cut evidence. That is an in-family result: training rows and test documents share generator and question types, and the main filler is of the training kind. With encyclopedic filler never seen in training the gain is +13.2 (+9.9 to +16.6), with rows of other tasks as filler -2.0. Among training-free rearrangements a 312-token window scan helps most (+11.9 points over the default for the released checkpoint) at six to eleven forward passes. Documents are synthetic, labels are LLM-made and one backbone is studied, so these diagnose this model, not long documents in general.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T08:42:11Z</published>
+    <arxiv:comment>25 pages, 19 figures, 23 tables</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Mohammed Nayeem Khan</name>
+    </author>
+    <author>
+      <name>Allan Kevin T</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16466v1</id>
+    <title>How Should Planning Agents ReSHAPE Their Search Space?</title>
+    <updated>2026-11-12T08:22:18Z</updated>
+    <link href="https://arxiv.org/abs/2611.16466v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16466v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Planning agents and benchmarks treat a user's initial specification as fixed. Yet the requests users write exclude plans they would gladly take, since they rarely discover the possible trade-offs they would accept until seeing the options. Agents already revise requests through interaction, but whether this helps planning is unknown. We formalize this step as the ReSHAPE task, which judges a revision by whether its search space matches the acceptable plans and a planner finds one there. Using ReSHAPE Planter, which builds instances from planning benchmarks with a human-validated simulated user, we analyze 5,800 agent-revised specifications in travel and shopping. We find that reshaping matters: one correct trade-off makes the same planner reach an acceptable plan up to 4.6x as often, and search space quality predicts what the planner finds. Current agents, however, admit at most 32% of the acceptable plans, where that trade-off alone admits over 52%, because they ask about preferences instead of showing plans; in travel, showing plans raises F1 by 9.7 points over asking, with two model families. Planning agents should thus treat a request as a hypothesis to test against the user's reactions to concrete plans to recognize user trade-offs.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T08:22:18Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Yilin Zhang</name>
+    </author>
+    <author>
+      <name>Xinran Zhao</name>
+    </author>
+    <author>
+      <name>Tong Chen</name>
+    </author>
+    <author>
+      <name>Ziming Yuan</name>
+    </author>
+    <author>
+      <name>Tongshuang Wu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16433v1</id>
+    <title>daVinci-Prover: Agent-Native Mid-Training for Formal Theorem Proving</title>
+    <updated>2026-11-12T07:44:09Z</updated>
+    <link href="https://arxiv.org/abs/2611.16433v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16433v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Advances in large language models (LLMs) are rapidly transforming formal theorem proving. Yet further progress remains constrained by the lack of a transparent and effective data recipe for systematically improving theorem-proving models. In this work, we argue that effective agentic provers require strong mathematical skill priors to ground theorem proving and agentic trajectories to enable long-horizon, interactive proof construction. To this end, we synthesize an agent-native 33.7B-token mid-training corpus covering decomposition, search, self-verification, and revision, together with verifier-grounded agentic trajectories. We further introduce the daVinci-Prover harness, which enables models to construct proofs and interact with a Lean verifier in an isolated workspace, and use it to collect approximately 36K high-quality agent trajectories for supervised fine-tuning. Our mid-training recipe yields an average improvement of 13.7 points over the matched Qwen3-8B SFT-only baseline across MiniF2F, FATE-M, and ProofNet. When applied to the Qwen3.5 series, our approach also yields strong performance across theorem-proving benchmarks and achieves near-saturating MiniF2F performance with memory compaction. The results highlight agent-native mid-training as an effective foundation for developing stronger interactive theorem-proving agents.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T07:44:09Z</published>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Wenhong Zhu</name>
+    </author>
+    <author>
+      <name>Xuefeng Li</name>
+    </author>
+    <author>
+      <name>Jiashuo Zhang</name>
+    </author>
+    <author>
+      <name>Yu Chen</name>
+    </author>
+    <author>
+      <name>Tiantian Mi</name>
+    </author>
+    <author>
+      <name>Qipeng Guo</name>
+    </author>
+    <author>
+      <name>Pengfei Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16425v1</id>
+    <title>RMIT-ADM+S at TREC RAG 2026: Research Agents, Retriever Ablations, and Open-Weight Replication</title>
+    <updated>2026-11-12T07:34:28Z</updated>
+    <link href="https://arxiv.org/abs/2611.16425v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16425v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We describe the RMIT-ADM+S team's participation in the TREC 2026 Retrieval-Augmented Generation (RAG) track using the ClimbMix corpus. We submitted seven research-agent runs using proprietary OpenAI and open-weight models, exploring different retrieval strategies, writer models, and agent workflows. Pre-submission ablations identified writer selection and adjacent-chunk expansion as the main factors affecting answer quality. In the official NIST evaluation, six of seven runs exceeded the track median across all three rubric/nugget collections. Our best-performing run, brief-hybrid, achieved the highest all-item coverage among our submissions and tied the track maximum (0.892) for Batch-1 vital coverage. Human side-by-side preferences differed across evaluation batches: the open-weight owa-glm5 led Batch 1 despite lower automated coverage, while sol-research-first led Batch 2. These findings highlight differences between automated coverage measures and human preferences, as well as the potential of lower-cost open-weight models for research-agent systems.</summary>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T07:34:28Z</published>
+    <arxiv:primary_category term="cs.IR"/>
+    <author>
+      <name>Oleg Zendel</name>
+    </author>
+    <author>
+      <name>Kun Ran</name>
+    </author>
+    <author>
+      <name>Chenglong Ma</name>
+    </author>
+    <author>
+      <name>Nguyen Khoi Vo</name>
+    </author>
+    <author>
+      <name>Shuai Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16409v1</id>
+    <title>Experience-Handoff Reinforcement Learning for Recursive Self-Improvement</title>
+    <updated>2026-11-12T07:18:30Z</updated>
+    <link href="https://arxiv.org/abs/2611.16409v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16409v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>It is common to train Large Language Models (LLMs) for agentic tasks with Reinforcement Learning (RL) from scalar rewards. However, this throws away the fine-grained information about the environment that the agent experienced during the trial (e.g., error logs). To utilize this rich information, recent works wrap the agent in a harness that refines its own inputs through reflection or compaction and hands past experience to future rollouts, but the construction of the handed-off artifacts (e.g., a playbook) is itself not learned. We want the best of both worlds: gradient updates from a scalar reward, while also utilizing environment information to hand off experience. As a concrete testbed, we fix the Agentic Context Engineering (\ace{}) harness and train one model to act, reflect, and curate task-local playbooks. Our method, \acerl{}, evaluates candidate experience-handoff artifacts by their downstream effect on future actor rollouts, and co-optimizes the role-specific behaviors (action generator, insight reflector, and playbook curator) under a fixed scaffold. Across agentic benchmarks, \acerl{} achieves higher held-out performance than baseline methods. The results suggest that agent training should optimize not only the actions in the current rollout, but also the model-written experience that future rollouts inherit.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T07:18:30Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Doyoung Kim</name>
+    </author>
+    <author>
+      <name>Byeongguk Jeon</name>
+    </author>
+    <author>
+      <name>Kailin Zhang</name>
+    </author>
+    <author>
+      <name>Sherry Yang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16399v1</id>
+    <title>Saidzoda-Kazakh-EmbeddingGemma-300M: How Far One Epoch of Generated Questions Takes a Small Kazakh Embedder</title>
+    <updated>2026-11-12T07:09:08Z</updated>
+    <link href="https://arxiv.org/abs/2611.16399v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16399v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>EmbeddingGemma-300M is a small open embedder, and used as released it finds the right passage first for 60.8% of the Kazakh Belebele retrieval questions. We present Saidzoda-Kazakh-EmbeddingGemma-300M, the same model fully fine-tuned for one epoch on 208,511 pairs: 166,263 Kazakh questions that our own language model wrote about source passages from encyclopedias, Wikipedia, news and books, each checked by a second model, plus English and Russian replay. On Kazakh Belebele, recall@1 rises from 60.8% to 78.0% and recall@10 from 76.3% to 91.4%. Our model scores above 161 of the 194 models with a published MTEB score on the same test, among them OpenAI text-embedding-3-large (47.1%). The other 33 score higher: the ten best are large multi-billion-parameter or closed models, reaching up to 92.2%, and at least 9 are open models of up to 0.6B parameters, the smallest with 339M. We also scored 6 Kazakh-specific embedders shared on Hugging Face with the same code in one run: our model (77.3% there) is ahead of 4 of them, including the two E5-base models of similar size (72.6% and 69.0%), and behind kaz-embedder (86.0%, three towers with 1,695M parameters in total) and a BGE-M3 fine-tune (81.0%); at recall@10 its interval overlaps those of its nearest neighbours on both sides. Our four-language model, trained with a capped share of the same Kazakh pairs, is 2.8 points lower at recall@1, with overlapping recall@10 intervals. The Kazakh model also scores higher than the released model on the Uzbek and Kyrgyz versions of Belebele, but our Tajik model, trained without any Turkic pairs, gains as much there, so these gains are not specific to Kazakh training. Our Kazakh Wikipedia test questions come from the same generator family as the training questions, so we rest the main claims on Belebele.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T07:09:08Z</published>
+    <arxiv:comment>12 pages, 8 tables, 2 figures. Technical report. Model: https://huggingface.co/Tohirju/Saidzoda-Kazakh-EmbeddingGemma-300M</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Tohir Saidzoda</name>
+    </author>
+    <author>
+      <name>Madina Abdusalomzoda</name>
+    </author>
+    <author>
+      <name>Abubakr Abdullozoda</name>
+    </author>
+    <author>
+      <name>Amin Jalilov</name>
+    </author>
+    <author>
+      <name>Faroiz Bobokhon</name>
+    </author>
+    <author>
+      <name>Aibek Shokanuly</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16384v1</id>
+    <title>Beyond Compressing Everything: Contrastive Memory Learning for Selective Context Compression</title>
+    <updated>2026-11-12T06:51:49Z</updated>
+    <link href="https://arxiv.org/abs/2611.16384v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16384v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>As large language models (LLMs) advance toward increasingly long inputs, soft context compression offers a promising approach to efficient inference by converting long inputs into compact memory slots. Under limited memory budgets, effective context compression remains challenging because task-relevant evidence varies substantially across queries, ranging from localized evidence to multiple distant spans or information dispersed throughout the full document. Instead of compressing everything indiscriminately, we propose CoMem, a query-guided selective context compression framework that learns memory representations conditioned on both the document and the query. CoMem develops Contrastive Compressor Learning to achieve query-sensitive yet context-preserving memory representations. To inject a strong prior over query-dependent evidence distributions, we devise a same-context hard negative mining strategy by pairing a single document with multiple queries, requiring the compressor to selectively retain information according to each query's distinct evidence needs. To address the restricted information flow imposed by causal masking, we further enable bidirectional attention among memory slots. Experiments demonstrate that CoMem consistently outperforms existing context compression methods across compression ratios on question answering and RULER-NIAH benchmarks. Our code is available at https://github.com/scar-on/CoMem.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T06:51:49Z</published>
+    <arxiv:comment>WSDM camera ready</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Sikui Zhang</name>
+    </author>
+    <author>
+      <name>Haowei Liu</name>
+    </author>
+    <author>
+      <name>Ziyun Gan</name>
+    </author>
+    <author>
+      <name>Chunfeng Yuan</name>
+    </author>
+    <author>
+      <name>Guangze Gao</name>
+    </author>
+    <author>
+      <name>Nian Liu</name>
+    </author>
+    <author>
+      <name>Boyu Cai</name>
+    </author>
+    <author>
+      <name>Bo Li</name>
+    </author>
+    <author>
+      <name>Xiaolei Lv</name>
+    </author>
+    <author>
+      <name>Jun Gao</name>
+    </author>
+    <author>
+      <name>Bing Li</name>
+    </author>
+    <author>
+      <name>Weiming Hu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16375v1</id>
+    <title>Recursive State-Augmented Language Models: Persistent Latent-State Adaptation of Pretrained Language Models</title>
+    <updated>2026-11-12T06:42:54Z</updated>
+    <link href="https://arxiv.org/abs/2611.16375v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16375v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Language models rely on finite token contexts, limiting access to earlier interactions. We introduce Recursive State-Augmented Language Models (Recursive SALM), a framework in which a persistent latent state evolves with each observation and generates adaptations of a pretrained language model. A modular read-transition-write architecture separates observation encoding, latent dynamics, and predictor adaptation. We develop deterministic and stochastic formulations.
+  The experiments evaluate only deterministic SALM with frozen GPT-2 small and exclude earlier evidence from its decoder context. On a four-turn hypothesis-inference task, latent-gated LoRA reaches 89.1% accuracy, comparable to 88.0% for a trained full-context LoRA baseline, with earlier evidence available solely through a 64-dimensional state. Zeroing or shuffling the state substantially reduces accuracy. In a two-turn task with codewords unseen in training, several interfaces improve candidate ranking over chance, but rarely generate the exact codeword under the evaluated training schedule. These experiments show that persistent latent-conditioned adaptation can support sequential inference when earlier evidence is absent from the decoder context.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T06:42:54Z</published>
+    <arxiv:comment>13 pages, 2 figures. Preprint</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Omer Haq</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16359v1</id>
+    <title>IsharaBART: An efficient BART-Based Framework for Low-Resource Bangla Sign Language Translation</title>
+    <updated>2026-11-12T06:21:34Z</updated>
+    <link href="https://arxiv.org/abs/2611.16359v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16359v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Millions of Bangla Sign Language (BdSL) users lack reliable automatic translation tools. Existing systems are limited by data scarcity, unidirectional design, and computationally expensive architectures that are not suitable for low-resource deployment. We introduce IsharaBART, a bidirectional generative framework for gloss-sentence translation in BdSL. IsharaBART uses Bidirectional and Auto-Regressive Transformers (BART)-based conditional language modeling with denoising learning objectives. We developed a parallel dataset of 1,000 professionally annotated gloss-sentence pairs, balanced across tenses and structures. We expanded the dataset to 4,831 pairs through four augmentation techniques: rule-based tense transformations, masked token substitutions, back-translation, and one-shot prompting. A compact denoising sequence-to-sequence model was pre-trained from scratch on monolingual Bangla text from six different corpora, then fine-tuned on the annotated and augmented datasets. We compare IsharaBART against four larger baseline models under identical conditions, where it achieves comparable or superior bidirectional performance. On the gloss-to-sentence (G2S) task, it attains Bilingual Evaluation Understudy (BLEU-4) score up to 51.7, and on the sentence-to-gloss (S2G) task, it achieves 61.40, outperforming multilingual models despite having fewer than 10% of the parameters. Ablation studies demonstrate that pre-training provides 62.5-90.4% faster convergence and 11.5-118% higher BLEU-4 than scratch. Low-rank adaptation (LoRA) reduces trainable parameters by 99.3%, but with 28.0-52.2% loss of BLEU-4 compared to full-parameter fine-tuning.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T06:21:34Z</published>
+    <arxiv:comment>36 pages</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Aonmoy Das</name>
+    </author>
+    <author>
+      <name>Ananna Dev Aishi</name>
+    </author>
+    <author>
+      <name>Md. Fazlul Kader</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.16323v1</id>
+    <title>Does Deep Knowledge Tracing Learn Semantic Relations Between Knowledge Components?</title>
+    <updated>2026-11-12T05:47:46Z</updated>
+    <link href="https://arxiv.org/abs/2611.16323v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.16323v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Deep Knowledge Tracing (DKT) is a knowledge tracing (KT) model that updates a shared latent state from sequences of interactions, each pairing a knowledge component (KC) with a response. An interaction with one KC can therefore affect predictions for other KCs. We ask: Are the KC relations learned by DKT semantic? We construct text-derived semantic KC representations using nine pipelines to test whether the conclusions hold across alternative ways of constructing those representations.
+  The first test compares DKT-derived KC relation graphs with semantic relation structures induced by pairwise cosine similarities among the KC representations. Across the evaluated datasets, embedding models, and pipelines, the two structures align only weakly and inconsistently. The second test introduces semantic information into DKT; the pretrained text-derived representations do not consistently outperform the standard DKT baseline.
+  In the reduced-data experiments, semantic initialization yields a higher test area under the ROC curve (AUC) than the baseline at eight of nine nested sample sizes for ASSISTments 2017. KC-supervised fine-tuned BERT produces small positive AUC differences in some matched comparisons, but the study does not establish their stability across runs. These effects remain limited and inconsistent. The findings suggest that behavioral, temporal, structural, or psychometric signals may also shape DKT's learned relations. DKT-derived relations are not primarily semantic: the tested text-derived semantic structures do not strongly recover the DKT-derived relation structure.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-12T05:47:46Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Kia Karbasi</name>
+    </author>
+    <author>
+      <name>Mahdi Saiedi</name>
+    </author>
+    <author>
+      <name>Kevin Hong</name>
+    </author>
+    <author>
+      <name>Gregory Pottie</name>
+    </author>
+  </entry>
+</feed>
